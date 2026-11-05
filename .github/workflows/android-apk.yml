@@ -56,13 +56,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v0.1.${GITHUB_RUN_NUMBER}"
+          TAG="v0.2.${GITHUB_RUN_NUMBER}"
           APK="build/app/outputs/flutter-apk/app-release.apk"
           if gh release view "$TAG" > /dev/null 2>&1; then
             gh release upload "$TAG" "$APK" --clobber
           else
             gh release create "$TAG" "$APK" \
               --title "DreamTX ${TAG}" \
-              --notes "Automated release build of the DreamTX dashboard (Flutter, Android). Signed with the committed development test key." \
+              --notes "DreamTX 0.2.0 — the project creation experience: creation options (blank / import / AI assistant via MCP), slide size configuration with real EMU dimensions, import preview with validation, and local project persistence. Signed with the committed development test key." \
               --latest
           fi

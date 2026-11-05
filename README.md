@@ -1,14 +1,24 @@
 # DreamTX
 
-A premium presentation creation studio — starting with the Android dashboard, built with Flutter.
+A premium presentation creation studio — starting with the Android app, built with Flutter.
 
 ## Status
 
-Foundation milestone: the Dashboard + app shell (Explore / Library / Settings), a mock data
-layer behind repositories, and CI builds that produce installable release APKs.
+Milestone 2: the **project creation experience** on top of the Dashboard + app shell.
 
-The presentation editor, AI & MCP connection layer, document import and the Rust/C++ core are
-planned as separate development tasks and are intentionally not faked in this build.
+- Creation options — start from scratch, import a file, or create with an external AI
+  assistant (MCP-powered workflow).
+- Project configuration — name, slide size (16:9 / 4:3 / 9:16 / custom in–cm), stored as
+  real EMU dimensions in the project document.
+- Import preview — native Android file picker, extension validation (PPTX / PDF / DOCX),
+  honest "Import pending" staging for the future conversion engine.
+- Local persistence — one JSON `.dreamtx` document per project in the app's private
+  storage; nothing is faked when a save fails.
+- AI & MCP connections screen introducing the external-assistant workflow (clearly marked
+  demo state until the server ships).
+
+The presentation editor, document conversion, the MCP server itself and the Rust/C++ core
+are planned as separate development tasks and are intentionally not faked in this build.
 
 ## Design identity
 
@@ -22,31 +32,47 @@ planned as separate development tasks and are intentionally not faked in this bu
 
 - **Dashboard** — welcome, primary "New Presentation" action, quick actions (import, blank
   project, design studio, open project), recent projects (rename / duplicate / delete with
-  confirmation), design discovery, AI & MCP connections (clearly marked demo state).
-- **Explore** — searchable design directions.
-- **Library** — all projects with overflow actions.
-- **Settings** — appearance, workspace preferences, licenses.
-- **Placeholder flows** — new presentation, file import (real Android file picker via a
-  platform channel), notifications.
+  confirmation), design discovery, AI & MCP connections.
+- **Creation options** — "Let's create something." Blank canvas, file import, or an AI
+  assistant.
+- **Project configuration** — presentation name (fallback "Untitled Presentation") and
+  slide size with live dimension preview; the create action stays reachable above the
+  keyboard.
+- **Import preview** — file facts (name, extension, size, type), validation status and
+  cancel / continue actions; unsupported formats get a tailored explanation.
+- **Editor placeholder** — honest "editor is next" destination showing the persisted
+  project facts (slide size, source, status).
+- **AI & MCP connections** — how the external-assistant workflow works plus current
+  (demo) connection state.
+- **Explore / Library / Settings** — design direction discovery, all projects with
+  overflow actions, preferences.
 
 ## Project structure
 
 ```
 lib/
-  app/            app widget, shell, routes, theme tokens
+  app/              app widget, shell, routes, theme tokens
   features/
-    dashboard/    dashboard screen + section widgets
-    explore/      design direction discovery
-    library/      project library
-    settings/     preferences
-    projects/     new presentation & import flows
+    connections/    AI & MCP connections screen
+    dashboard/      dashboard screen + section widgets
+    explore/        design direction discovery
+    library/        project library
+    projects/
+      models/         PresentationProject, SlideSize (EMU-based)
+      screens/        creation options, configuration, import preview, editor placeholder
+      widgets/        option cards, slide size selector, name field, import file card
+      services/       ProjectService, FileImportService
+      repositories/   ProjectRepository + LocalProjectRepository (JSON documents)
   shared/
-    models/       project, design collection, connection
-    repositories/ mock implementations behind interfaces
-    services/     service locator, native file picker
-    widgets/      reusable UI (logo, cards, thumbnails, painters)
-    utils/        formatting helpers
+    models/          design collection, connection
+    repositories/    mock implementations behind interfaces
+    services/        service locator, native file picker, app storage
+    widgets/         reusable UI (logo, cards, thumbnails, painters)
+    utils/           formatting helpers
 ```
+
+Storage lives behind `ProjectRepository`; screens never touch file IO, so the JSON store
+can be swapped for a database or the future native core without UI changes.
 
 ## Building locally
 
@@ -70,7 +96,7 @@ Replace them with your own keystore before publishing to any store.
 ## Roadmap
 
 - Presentation editor & rendering engine
-- Document import (PDF / DOCX / PPTX)
+- Document import engine (PDF / DOCX / PPTX conversion)
 - Design engine (dynamic compositions, not templates)
-- AI & MCP connection layer
+- MCP server & AI assistant connections
 - Rust/C++ native core

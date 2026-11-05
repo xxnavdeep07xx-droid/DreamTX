@@ -1,19 +1,59 @@
 import 'package:flutter/material.dart';
 
+import '../../features/connections/screens/connections_screen.dart';
 import '../../features/library/screens/library_screen.dart';
 import '../../features/notifications/screens/notifications_screen.dart';
-import '../../features/projects/screens/import_screen.dart';
-import '../../features/projects/screens/new_presentation_screen.dart';
+import '../../features/projects/models/presentation_project.dart';
+import '../../features/projects/screens/creation_options_screen.dart';
+import '../../features/projects/screens/editor_placeholder_screen.dart';
+import '../../features/projects/screens/import_preview_screen.dart';
+import '../../features/projects/screens/project_configuration_screen.dart';
+import '../../features/projects/services/file_import_service.dart';
 import '../../features/settings/screens/settings_screen.dart';
 import '../../shared/models/design_collection.dart';
-import '../../shared/services/file_picker_service.dart';
 import 'theme/app_colors.dart';
 
 /// Central navigation helpers — easy to extend with a real router later.
 abstract final class AppRoutes {
-  static void openNewPresentation(BuildContext context) {
+  static void openCreationOptions(BuildContext context) {
     Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const NewPresentationScreen()),
+      MaterialPageRoute<void>(builder: (_) => const CreationOptionsScreen()),
+    );
+  }
+
+  static void openProjectConfiguration(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const ProjectConfigurationScreen(),
+      ),
+    );
+  }
+
+  static void openImportPreview(
+    BuildContext context,
+    ImportCandidate import,
+  ) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ImportPreviewScreen(import: import),
+      ),
+    );
+  }
+
+  static void openEditor(
+    BuildContext context,
+    PresentationProject project,
+  ) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => EditorPlaceholderScreen(project: project),
+      ),
+    );
+  }
+
+  static void openConnections(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const ConnectionsScreen()),
     );
   }
 
@@ -43,24 +83,6 @@ abstract final class AppRoutes {
   static void openNotifications(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => const NotificationsScreen()),
-    );
-  }
-
-  static void openImport(BuildContext context, PickedFile file) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => ImportScreen(file: file)),
-    );
-  }
-
-  static void openConnections(BuildContext context) {
-    return _pushComingSoon(
-      context,
-      title: 'Connections',
-      message:
-          'AI assistants and MCP servers will be managed from here once the '
-          'connection layer ships. Nothing is connected yet — the states you '
-          'saw on the dashboard are demo data.',
-      icon: Icons.hub_outlined,
     );
   }
 

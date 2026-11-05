@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../../app/routes.dart';
 import '../../../app/theme/app_colors.dart';
-import '../../../shared/models/project.dart';
 import '../../../shared/services/services.dart';
 import '../../../shared/utils/format.dart';
 import '../../../shared/widgets/empty_state.dart';
@@ -10,7 +9,7 @@ import '../../../shared/widgets/pressable_card.dart';
 import '../../../shared/widgets/project_overflow_menu.dart';
 import '../../../shared/widgets/section_header.dart';
 import '../../../shared/widgets/slide_thumbnail.dart';
-import '../../projects/screens/editor_placeholder_screen.dart';
+import '../../projects/models/presentation_project.dart';
 
 /// Recent projects as a horizontal rail, backed by the project repository.
 class RecentProjectsSection extends StatefulWidget {
@@ -21,7 +20,7 @@ class RecentProjectsSection extends StatefulWidget {
 }
 
 class _RecentProjectsSectionState extends State<RecentProjectsSection> {
-  List<Project>? _projects;
+  List<PresentationProject>? _projects;
 
   @override
   void initState() {
@@ -66,7 +65,7 @@ class _RecentProjectsSectionState extends State<RecentProjectsSection> {
           )
         else if (_projects!.isEmpty)
           _EmptyProjectsState(
-            onCreate: () => AppRoutes.openNewPresentation(context),
+            onCreate: () => AppRoutes.openCreationOptions(context),
           )
         else
           SizedBox(
@@ -121,7 +120,7 @@ class _EmptyProjectsState extends StatelessWidget {
 class ProjectCard extends StatelessWidget {
   const ProjectCard({super.key, required this.project});
 
-  final Project project;
+  final PresentationProject project;
 
   @override
   Widget build(BuildContext context) {
@@ -143,7 +142,7 @@ class ProjectCard extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             Text(
-              project.title,
+              project.name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
@@ -177,10 +176,6 @@ class ProjectCard extends StatelessWidget {
   }
 
   void _openProject(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => EditorPlaceholderScreen(project: project),
-      ),
-    );
+    AppRoutes.openEditor(context, project);
   }
 }

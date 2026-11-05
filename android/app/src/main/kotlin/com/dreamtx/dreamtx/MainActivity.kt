@@ -23,6 +23,7 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "pickDocument" -> openDocumentPicker(result)
+                    "getFilesDirectory" -> result.success(filesDir.absolutePath)
                     else -> result.notImplemented()
                 }
             }

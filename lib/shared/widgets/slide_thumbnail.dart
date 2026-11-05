@@ -3,16 +3,21 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../../app/theme/app_colors.dart';
-import '../models/project.dart';
+import '../../features/projects/models/presentation_project.dart';
 
 /// Deterministic abstract "slide" preview for a project.
 ///
 /// The composition is derived from the project id, so a project always keeps
 /// the same placeholder thumbnail — realistic without any assets.
 class SlideThumbnail extends StatelessWidget {
-  const SlideThumbnail({super.key, required this.project, this.width, this.height});
+  const SlideThumbnail({
+    super.key,
+    required this.project,
+    this.width,
+    this.height,
+  });
 
-  final Project project;
+  final PresentationProject project;
   final double? width;
   final double? height;
 

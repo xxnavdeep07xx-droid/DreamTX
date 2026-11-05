@@ -2,14 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../../../app/routes.dart';
 import '../../../app/theme/app_colors.dart';
-import '../../../shared/models/project.dart';
 import '../../../shared/services/services.dart';
 import '../../../shared/utils/format.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/pressable_card.dart';
 import '../../../shared/widgets/project_overflow_menu.dart';
 import '../../../shared/widgets/slide_thumbnail.dart';
-import '../../projects/screens/editor_placeholder_screen.dart';
+import '../../projects/models/presentation_project.dart';
 
 /// Library tab — every project, lazily rendered, kept in sync with the
 /// repository.
@@ -21,7 +20,7 @@ class LibraryScreen extends StatefulWidget {
 }
 
 class _LibraryScreenState extends State<LibraryScreen> {
-  List<Project>? _projects;
+  List<PresentationProject>? _projects;
 
   @override
   void initState() {
@@ -74,7 +73,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                                 'show up here.',
                             action: FilledButton.icon(
                               onPressed: () =>
-                                  AppRoutes.openNewPresentation(context),
+                                  AppRoutes.openCreationOptions(context),
                               style: FilledButton.styleFrom(
                                 minimumSize: const Size.fromHeight(46),
                                 shape: RoundedRectangleBorder(
@@ -123,7 +122,7 @@ class _Header extends StatelessWidget {
               ),
             ),
             FilledButton.icon(
-              onPressed: () => AppRoutes.openNewPresentation(context),
+              onPressed: () => AppRoutes.openCreationOptions(context),
               style: FilledButton.styleFrom(
                 minimumSize: const Size(0, 42),
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -146,16 +145,12 @@ class _Header extends StatelessWidget {
 class _ProjectTile extends StatelessWidget {
   const _ProjectTile({required this.project});
 
-  final Project project;
+  final PresentationProject project;
 
   @override
   Widget build(BuildContext context) {
     return PressableCard(
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => EditorPlaceholderScreen(project: project),
-        ),
-      ),
+      onTap: () => AppRoutes.openEditor(context, project),
       child: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
@@ -172,7 +167,7 @@ class _ProjectTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    project.title,
+                    project.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(

@@ -12,7 +12,7 @@ class CreatePresentationCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return PressableCard(
       key: const Key('create-presentation-card'),
-      onTap: () => AppRoutes.openNewPresentation(context),
+      onTap: () => AppRoutes.openCreationOptions(context),
       child: Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(

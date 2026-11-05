@@ -3,8 +3,9 @@ import 'package:flutter/material.dart';
 import '../../../app/routes.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../shared/services/file_picker_service.dart';
+import '../../../shared/services/services.dart';
 import '../../../shared/widgets/pressable_card.dart';
-import '../../projects/screens/import_screen.dart';
+import '../../projects/screens/import_preview_screen.dart';
 
 /// Four quick actions in a two-column grid.
 class QuickActionsGrid extends StatelessWidget {
@@ -14,10 +15,12 @@ class QuickActionsGrid extends StatelessWidget {
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final file = await const FilePickerService().pickDocument();
-      if (file == null) return; // user cancelled
+      final candidate = await fileImportService.pickFile();
+      if (candidate == null) return; // user cancelled
       await navigator.push(
-        MaterialPageRoute<void>(builder: (_) => ImportScreen(file: file)),
+        MaterialPageRoute<void>(
+          builder: (_) => ImportPreviewScreen(import: candidate),
+        ),
       );
     } on FilePickerUnsupportedException {
       messenger.showSnackBar(
@@ -54,7 +57,7 @@ class QuickActionsGrid extends StatelessWidget {
                     accent: AppColors.violet,
                     title: 'Blank Project',
                     subtitle: 'Start from scratch',
-                    onTap: () => AppRoutes.openNewPresentation(context),
+                    onTap: () => AppRoutes.openProjectConfiguration(context),
                   ),
                 ),
               ],
