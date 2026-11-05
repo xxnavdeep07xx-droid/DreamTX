@@ -1,0 +1,25 @@
+# Flutter / Dart
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+coverage/
+
+# Machine-specific
+android/local.properties
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Misc
+*.log
+.DS_Store
+
+# NOTE: `android/key.properties` and `android/app/dreamtx-test.keystore` are
+# intentionally committed — they hold a development-only TEST signing key so CI
+# can produce installable release APKs. Replace them before publishing.

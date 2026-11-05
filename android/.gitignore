@@ -1,0 +1,12 @@
+gradle-wrapper.jar
+/.gradle
+/captures/
+/gradlew
+/gradlew.bat
+/local.properties
+GeneratedPluginRegistrant.java
+
+# NOTE: This project intentionally commits a development-only TEST keystore
+# (`app/dreamtx-test.keystore` + `key.properties`) so CI can produce
+# installable release APKs for testing. Replace with your own before
+# publishing — see the README.

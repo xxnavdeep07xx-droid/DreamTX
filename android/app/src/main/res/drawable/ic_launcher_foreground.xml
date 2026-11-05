@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DreamTX mark: two overlapping diamonds (layered slides). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Outer diamond, muted violet stroke, lifted up-left. -->
+    <path
+        android:pathData="M43,29 L63,49 L43,69 L23,49 Z"
+        android:strokeColor="#8B7CF6"
+        android:strokeWidth="4.2"
+        android:strokeLineJoin="round" />
+    <!-- Inner diamond, cool blue fill, pushed down-right. -->
+    <path
+        android:pathData="M61,52 L69,60 L61,68 L53,60 Z"
+        android:fillColor="#6BA6F5" />
+</vector>
