@@ -23,10 +23,14 @@ are planned as separate development tasks and are intentionally not faked in thi
 ## Design identity
 
 - Deep charcoal surfaces with hairline borders — flat and restrained.
-- Muted violet as the primary accent, cool blue as the secondary accent.
-- A custom geometric mark (two overlapping diamonds — layered slides).
+- The DreamTX mark: a neon-gradient chat bubble (violet → blue → sky → pink → orange → gold)
+  with a play glyph, text bars and a sparkle burst — redesigned in SVG
+  (`assets/brand/dreamtx_mark.svg`, plus a compact variant for tiny sizes) and reused as the
+  adaptive/round/monochrome launcher icon and cold-start splash.
+- Electric violet primary and periwinkle blue secondary, sampled from the mark; the gradient
+  family appears only on brand moments (welcome headline, create action).
 - Refined Roboto type scale with tight display letter-spacing.
-- No heavy gradients, no neon, no glassmorphism.
+- No glassmorphism; gradients stay confined to the brand moments.
 
 ## Screens
 

@@ -2,6 +2,6 @@
 <resources>
     <!-- Launch / window background — matches the DreamTX dark identity. -->
     <color name="launch_bg">#0E0E12</color>
-    <!-- Adaptive launcher icon background. -->
-    <color name="ic_launcher_background">#15151B</color>
+    <!-- Adaptive launcher icon background — the mark's near-black. -->
+    <color name="ic_launcher_background">#05050A</color>
 </resources>

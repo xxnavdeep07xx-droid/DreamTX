@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DreamTX monochrome (themed) launcher icon — the mark as a single glyph. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+  <path android:pathData="M33.53,41.35 A9.18,9.18 0 0 1 40.02,38.66 L56.37,38.66 A9.18,9.18 0 0 1 62.86,41.35 L58.46,44.31 A4.01,4.01 0 0 0 55.62,43.14 L39.33,44.56 A4.01,4.01 0 0 0 36.5,45.74 Z" android:fillColor="#FFFFFFFF"/>
+  <path android:pathData="M62.85,41.35 A9.18,9.18 0 0 1 65.54,47.83 L65.54,64.18 A9.18,9.18 0 0 1 62.85,70.68 L59.89,66.28 A4.01,4.01 0 0 0 61.06,63.43 L59.64,47.15 A4.01,4.01 0 0 0 58.46,44.31 Z" android:fillColor="#FFFFFFFF"/>
+  <path android:pathData="M62.85,70.67 A9.18,9.18 0 0 1 56.37,73.36 L40.02,73.36 A9.18,9.18 0 0 1 33.52,70.66 L37.92,67.7 A4.01,4.01 0 0 0 40.77,68.88 L57.05,67.45 A4.01,4.01 0 0 0 59.89,66.27 Z" android:fillColor="#FFFFFFFF"/>
+  <path android:pathData="M33.53,70.67 A9.18,9.18 0 0 1 30.84,64.18 L30.84,47.83 A9.18,9.18 0 0 1 33.54,41.34 L36.5,45.74 A4.01,4.01 0 0 0 35.32,48.58 L36.75,64.87 A4.01,4.01 0 0 0 37.93,67.7 Z" android:fillColor="#FFFFFFFF"/>
+  <path android:pathData="M39.45,58.1 L39.45,53.91 Q39.45,50.99 42,52.41 L46.45,54.88 Q48.48,56.01 46.45,57.14 L42,59.61 Q39.45,61.03 39.45,58.1 Z" android:fillColor="#FFFFFFFF"/>
+  <path android:pathData="M50.77,54.07 L58.8,54.07 A0.86,0.86 0 0 0 58.8,52.35 L50.77,52.35 A0.86,0.86 0 0 0 50.77,54.07 Z" android:fillColor="#FFFFFFFF"/>
+  <path android:pathData="M50.77,56.87 L57.23,56.87 A0.86,0.86 0 0 0 57.23,55.15 L50.77,55.15 A0.86,0.86 0 0 0 50.77,56.87 Z" android:fillColor="#FFFFFFFF"/>
+  <path android:pathData="M50.77,59.66 L55.65,59.66 A0.86,0.86 0 0 0 55.65,57.94 L50.77,57.94 A0.86,0.86 0 0 0 50.77,59.66 Z" android:fillColor="#FFFFFFFF"/>
+  <path android:pathData="M68.47,42.56 L71.34,35.11 A1.29,1.29 0 0 0 68.93,34.18 L66.06,41.64 A1.29,1.29 0 0 0 68.47,42.56 Z" android:fillColor="#FFFFFFFF"/>
+  <path android:pathData="M70.25,45.34 L77.85,40.46 A1.29,1.29 0 0 0 76.46,38.29 L68.86,43.16 A1.29,1.29 0 0 0 70.25,45.34 Z" android:fillColor="#FFFFFFFF"/>
+  <path android:pathData="M70.31,48.24 L76.91,49.53 A1.29,1.29 0 0 0 77.4,47 L70.81,45.71 A1.29,1.29 0 0 0 70.31,48.24 Z" android:fillColor="#FFFFFFFF"/>
+</vector>

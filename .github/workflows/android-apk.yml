@@ -63,6 +63,6 @@ jobs:
           else
             gh release create "$TAG" "$APK" \
               --title "DreamTX ${TAG}" \
-              --notes "DreamTX 0.2.0 — the project creation experience: creation options (blank / import / AI assistant via MCP), slide size configuration with real EMU dimensions, import preview with validation, and local project persistence. Signed with the committed development test key." \
+              --notes "DreamTX 0.3.0 — new brand identity: the neon-gradient chat-bubble mark redesigned in SVG (play glyph, text bars, sparkle burst), used as the in-app logo (full + compact variants), the Android launcher icon (adaptive, round and monochrome), and the cold-start splash. Theme refreshed to the mark's palette with gradient brand moments. Signed with the committed development test key." \
               --latest
           fi

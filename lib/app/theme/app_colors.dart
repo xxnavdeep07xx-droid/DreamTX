@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 
 /// DreamTX color tokens.
 ///
-/// A restrained, premium dark identity: deep charcoal surfaces, hairline
-/// borders, one muted violet accent and one cool blue secondary accent.
+/// A dark identity built around the DreamTX mark: near-black surfaces with
+/// hairline borders, an electric violet primary, a periwinkle blue secondary,
+/// and the mark's neon gradient family reserved for brand moments.
 abstract final class AppColors {
   // Surfaces
   static const Color background = Color(0xFF0E0E12); // deep charcoal, almost black
@@ -12,10 +13,33 @@ abstract final class AppColors {
   static const Color cardActive = Color(0xFF20202A);
   static const Color border = Color(0xFF26262E); // very subtle grey border
 
-  // Accents
-  static const Color violet = Color(0xFF8B7CF6); // muted violet
-  static const Color blue = Color(0xFF6BA6F5); // cool blue
-  static const Color violetDeep = Color(0xFF5D5478);
+  // Accents — sampled from the DreamTX mark's bubble ring.
+  static const Color violet = Color(0xFF8B5CF6); // mark violet, primary
+  static const Color blue = Color(0xFF6E9BF0); // mark periwinkle, secondary
+  static const Color violetDeep = Color(0xFF4E3FA8); // pressed / container violet
+
+  // Mark gradient family — for brand moments only, keep the UI restrained.
+  static const Color sky = Color(0xFF6FD2FA); // ring, top-right
+  static const Color pink = Color(0xFFFF4FD8); // sparkles
+  static const Color orange = Color(0xFFFF9A3D); // ring, bottom-right
+  static const Color gold = Color(0xFFFFC43C); // ring, gold accent
+
+  /// The signature sweep around the mark's bubble ring.
+  static const List<Color> markGradient = [
+    Color(0xFF9B1BFB), // electric violet
+    Color(0xFF6E8CF5), // periwinkle
+    Color(0xFF6FD2FA), // sky
+    Color(0xFFCE52F2), // orchid
+    Color(0xFFFF9A3D), // orange
+    Color(0xFFFFC43C), // gold
+  ];
+
+  /// Warm accent run used on the primary create action.
+  static const List<Color> emberGradient = [
+    Color(0xFF8B5CF6), // violet
+    Color(0xFFE935C1), // magenta
+    Color(0xFFFF9A3D), // orange
+  ];
 
   // Text
   static const Color textPrimary = Color(0xFFEDEDF2); // soft white

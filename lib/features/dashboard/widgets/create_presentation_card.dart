@@ -18,7 +18,7 @@ class CreatePresentationCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.card,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.violet.withOpacity(0.28)),
+          border: Border.all(color: AppColors.violet.withOpacity(0.30)),
         ),
         child: Row(
           children: [
@@ -26,7 +26,14 @@ class CreatePresentationCard extends StatelessWidget {
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: AppColors.violet.withOpacity(0.14),
+                gradient: LinearGradient(
+                  colors: [
+                    AppColors.violet.withOpacity(0.20),
+                    AppColors.pink.withOpacity(0.14),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: const Icon(

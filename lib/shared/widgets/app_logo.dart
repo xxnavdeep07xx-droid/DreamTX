@@ -1,69 +1,31 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
-import '../../app/theme/app_colors.dart';
-
-/// The DreamTX geometric mark: two overlapping diamonds — layered slides.
+/// The DreamTX mark: a neon-gradient chat bubble with a play glyph, text
+/// bars and a sparkle burst — presentations that speak.
+///
+/// Renders the compact variant (bubble + play glyph) below [_compactBelow]
+/// so the mark stays legible when used inline at small sizes.
 class AppLogo extends StatelessWidget {
   const AppLogo({super.key, this.size = 34});
 
   final double size;
 
+  /// Below this size the full mark's bars and sparkles smudge; the compact
+  /// variant keeps the silhouette readable.
+  static const double _compactBelow = 26;
+
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final String asset = size < _compactBelow
+        ? 'assets/brand/dreamtx_mark_compact.svg'
+        : 'assets/brand/dreamtx_mark.svg';
+    // The full mark is wider than tall (the sparkle burst reaches right), so
+    // it is letterboxed inside the square slot via BoxFit.contain.
+    return SizedBox(
       width: size,
       height: size,
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(size * 0.3),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: CustomPaint(
-        painter: _LogoMarkPainter(),
-        size: Size.square(size),
-      ),
+      child: SvgPicture.asset(asset),
     );
   }
-}
-
-class _LogoMarkPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final unit = size.width;
-
-    void drawDiamond(Offset c, double radius, Paint paint) {
-      final path = Path()
-        ..moveTo(c.dx, c.dy - radius)
-        ..lineTo(c.dx + radius, c.dy)
-        ..lineTo(c.dx, c.dy + radius)
-        ..lineTo(c.dx - radius, c.dy)
-        ..close();
-      canvas.drawPath(path, paint);
-    }
-
-    // Outer diamond — muted violet stroke, lifted slightly up-left.
-    final stroke = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = unit * 0.075
-      ..strokeJoin = StrokeJoin.round
-      ..color = AppColors.violet;
-    final offset = unit * 0.10;
-    drawDiamond(
-      center.translate(-offset, -offset),
-      unit * 0.29,
-      stroke,
-    );
-
-    // Inner diamond — cool blue fill, pushed slightly down-right.
-    final fill = Paint()..color = AppColors.blue;
-    drawDiamond(
-      center.translate(offset * 0.75, offset * 0.75),
-      unit * 0.125,
-      fill,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _LogoMarkPainter oldDelegate) => false;
 }

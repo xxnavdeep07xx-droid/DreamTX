@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../shared/services/services.dart';
+import '../../../shared/widgets/gradient_button.dart';
 import '../models/slide_size.dart';
 import '../repositories/project_repository.dart';
 import '../widgets/project_name_field.dart';
@@ -178,24 +179,19 @@ class _CreateBar extends StatelessWidget {
         color: AppColors.background,
         border: Border(top: BorderSide(color: AppColors.border)),
       ),
-      child: SizedBox(
-        height: 52,
-        child: FilledButton(
-          key: const Key('create-presentation-button'),
-          onPressed: enabled ? onPressed : null,
-          style: FilledButton.styleFrom(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-          ),
-          child: creating
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Create Presentation'),
-        ),
+      child: GradientButton(
+        key: const Key('create-presentation-button'),
+        onPressed: enabled ? onPressed : null,
+        child: creating
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : const Text('Create Presentation'),
       ),
     );
   }

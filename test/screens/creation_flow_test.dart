@@ -6,6 +6,7 @@ import 'package:dreamtx/features/projects/screens/import_preview_screen.dart';
 import 'package:dreamtx/features/projects/services/file_import_service.dart';
 import 'package:dreamtx/shared/services/file_picker_service.dart';
 import 'package:dreamtx/shared/services/services.dart';
+import 'package:dreamtx/shared/widgets/gradient_button.dart';
 
 import '../helpers/widget_test_globals.dart';
 
@@ -139,7 +140,7 @@ void main() {
       await openConfiguration(tester);
 
       expect(find.textContaining('13.33 × 7.5 in'), findsWidgets);
-      expect(tester.widget<FilledButton>(createButton()).onPressed, isNotNull);
+      expect(tester.widget<GradientButton>(createButton()).onPressed, isNotNull);
     });
 
     testWidgets('creates an untitled widescreen project and opens the editor',
@@ -194,7 +195,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // No dimensions entered yet — creation must be impossible.
-      expect(tester.widget<FilledButton>(createButton()).onPressed, isNull);
+      expect(tester.widget<GradientButton>(createButton()).onPressed, isNull);
 
       await tester.enterText(
         find.byKey(const Key('custom-width-field')),
@@ -205,7 +206,7 @@ void main() {
         '10',
       );
       await tester.pump();
-      expect(tester.widget<FilledButton>(createButton()).onPressed, isNull);
+      expect(tester.widget<GradientButton>(createButton()).onPressed, isNull);
       expect(tap('Enter a number'), findsOneWidget);
 
       await tester.enterText(
@@ -213,7 +214,7 @@ void main() {
         '8.5',
       );
       await tester.pumpAndSettle();
-      expect(tester.widget<FilledButton>(createButton()).onPressed, isNotNull);
+      expect(tester.widget<GradientButton>(createButton()).onPressed, isNotNull);
       expect(find.textContaining('8.5 × 10 in'), findsOneWidget);
 
       await tester.tap(createButton());

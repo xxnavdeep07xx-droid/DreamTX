@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- DreamTX compact mark — bubble ring and play glyph only, for tiny
+       inline sizes where the full mark would smudge. -->
+  <defs>
+    <linearGradient id="ringTop" gradientUnits="userSpaceOnUse" x1="121.77" y1="96" x2="390.23" y2="96">
+      <stop offset="0" stop-color="#9B1BFB"/>
+      <stop offset="0.5" stop-color="#6E8CF5"/>
+      <stop offset="1" stop-color="#6FD2FA"/>
+    </linearGradient>
+    <linearGradient id="ringRight" gradientUnits="userSpaceOnUse" x1="416" y1="121.77" x2="416" y2="390.23">
+      <stop offset="0" stop-color="#6FD2FA"/>
+      <stop offset="0.5" stop-color="#CE52F2"/>
+      <stop offset="1" stop-color="#FFC43C"/>
+    </linearGradient>
+    <linearGradient id="ringBottom" gradientUnits="userSpaceOnUse" x1="390.23" y1="416" x2="121.77" y2="416">
+      <stop offset="0" stop-color="#FFC43C"/>
+      <stop offset="0.22" stop-color="#FFB545"/>
+      <stop offset="0.45" stop-color="#FD6375"/>
+      <stop offset="0.68" stop-color="#E62FD8"/>
+      <stop offset="1" stop-color="#5A1FE0"/>
+    </linearGradient>
+    <linearGradient id="ringLeft" gradientUnits="userSpaceOnUse" x1="121.77" y1="96" x2="121.77" y2="416">
+      <stop offset="0" stop-color="#9B1BFB"/>
+      <stop offset="1" stop-color="#5A1FE0"/>
+    </linearGradient>
+    <linearGradient id="tri" gradientUnits="userSpaceOnUse" x1="252" y1="182" x2="252" y2="330">
+      <stop offset="0" stop-color="#FFC43C"/>
+      <stop offset="0.5" stop-color="#FF6AAE"/>
+      <stop offset="1" stop-color="#A44CF0"/>
+    </linearGradient>
+  </defs>
+    <path d="M121.77,121.77 A88,88 0 0 1 184,96 L328,96 A88,88 0 0 1 390.3,121.85 L344.07,155.36 A32,32 0 0 0 321.4,146 L177.95,158.55 A32,32 0 0 0 155.34,167.96 Z" fill="url(#ringTop)"/>
+    <path d="M390.23,121.77 A88,88 0 0 1 416,184 L416,328 A88,88 0 0 1 390.15,390.3 L356.64,344.07 A32,32 0 0 0 366,321.4 L353.45,177.95 A32,32 0 0 0 344.04,155.34 Z" fill="url(#ringRight)"/>
+    <path d="M390.23,390.23 A88,88 0 0 1 328,416 L184,416 A88,88 0 0 1 121.7,390.15 L167.93,356.64 A32,32 0 0 0 190.6,366 L334.05,353.45 A32,32 0 0 0 356.66,344.04 Z" fill="url(#ringBottom)"/>
+    <path d="M121.77,390.23 A88,88 0 0 1 96,328 L96,184 A88,88 0 0 1 121.85,121.7 L155.36,167.93 A32,32 0 0 0 146,190.6 L158.55,334.05 A32,32 0 0 0 167.96,356.66 Z" fill="url(#ringLeft)"/>
+    <path d="M196,285.38 L196,226.62 Q196,182 233.23,206.6 L285.27,240.98 Q308,256 285.27,271.02 L233.23,305.4 Q196,330 196,285.38 Z" fill="url(#tri)"/>
+</svg>
