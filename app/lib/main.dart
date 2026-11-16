@@ -1,13 +1,52 @@
+import 'dart:async';
+
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'screens/decks_screen.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Fullscreen: keep the Android status bar (top) and navigation bar (bottom)
+  // hidden. immersiveSticky = a swipe from the screen edge reveals them
+  // briefly, then they tuck themselves away again.
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   runApp(const DreamTxApp());
 }
 
-class DreamTxApp extends StatelessWidget {
+class DreamTxApp extends StatefulWidget {
   const DreamTxApp({super.key});
+
+  @override
+  State<DreamTxApp> createState() => _DreamTxAppState();
+}
+
+class _DreamTxAppState extends State<DreamTxApp> with WidgetsBindingObserver {
+  Timer? _immersiveDebounce;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    _immersiveDebounce?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Keyboards, dialogs and app switches can bring the system bars back;
+  /// re-enter immersive mode once things settle (debounced — metrics fire
+  /// continuously while the keyboard animates).
+  @override
+  void didChangeMetrics() {
+    _immersiveDebounce?.cancel();
+    _immersiveDebounce = Timer(const Duration(milliseconds: 400), () {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
