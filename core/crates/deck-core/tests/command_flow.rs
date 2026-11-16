@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 
 fn run(v: Value) -> Value {
     let s = serde_json::to_string(&v).unwrap();
-    serde_json::from_str(&deck_core::run(&s)).unwrap()
+    serde_json::from_str(&dreamtx::run(&s)).unwrap()
 }
 
 #[test]
@@ -52,12 +52,14 @@ fn full_flow() {
     assert_eq!(r["ok"], json!(true));
     let b64 = r["base64"].as_str().unwrap();
     assert!(!b64.is_empty());
-    assert_eq!(b64_decode_prefix(b64), b"PK");
+    let p = b64_decode_prefix(b64);
+    assert_eq!((p[0], p[1]), (b'P', b'K'));
 
     r = run(json!({ "op": "export_pdf", "deck": deck }));
     assert_eq!(r["ok"], json!(true));
     let b64 = r["base64"].as_str().unwrap();
-    assert_eq!(b64_decode_prefix(b64), b"%PD");
+    let p = b64_decode_prefix(b64);
+    assert_eq!((p[0], p[1], p[2]), (b'%', b'P', b'D'));
 }
 
 #[test]
