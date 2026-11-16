@@ -332,6 +332,10 @@ class _EditorScreenState extends State<EditorScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Tooltip(message: family, child: Text(title)),
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(2),
+          child: ColoredBox(color: Color(0xFF17181A)),
+        ),
         actions: [
           IconButton(tooltip: 'New variant of this design', icon: const Icon(Icons.shuffle), onPressed: _cycleVariant),
           IconButton(tooltip: 'Switch design family', icon: const Icon(Icons.palette_outlined), onPressed: _cycleFamily),
