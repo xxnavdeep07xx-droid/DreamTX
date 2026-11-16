@@ -1,0 +1,19 @@
+name = "dreamtx-worker"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+
+# Free-tier friendly: Durable Objects on SQLite storage.
+[[durable_objects.bindings]]
+name = "REGISTRY"
+class_name = "PairingRegistry"
+
+[[durable_objects.bindings]]
+name = "DECKS"
+class_name = "DeckDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PairingRegistry", "DeckDO"]
+
+# The wasm engine (deck-core compiled with `--features wasm`) is wired in at
+# M1 via a bundled module import in src/engine.ts.
