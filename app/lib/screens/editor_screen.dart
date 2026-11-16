@@ -309,7 +309,9 @@ class _EditorScreenState extends State<EditorScreen> {
       final dir = await getTemporaryDirectory();
       final file = File('${dir.path}/${(_deck['title'] ?? 'deck').toString().replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_')}.$ext');
       await file.writeAsBytes(bytes, flush: true);
-      await Share.shareXFiles([XFile(file.path)], text: _deck['title'].toString());
+      await SharePlus.instance.share(
+        ShareParams(files: [XFile(file.path)], text: _deck['title'].toString()),
+      );
     } catch (e) {
       _toast('Export error: $e');
     } finally {
