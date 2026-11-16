@@ -41,7 +41,7 @@ fn rect_sp(x: f64, y: f64, w: f64, h: f64, color: &str, radius: f64, id: u32) ->
     let round = if radius > 0.0 {
         format!(r#"<a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val {}"/></a:avLst></a:prstGeom>"#, (radius / w.min(h) * 1000.0).clamp(0.0, 50000.0) as u32)
     } else {
-        r#"<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>".to_string()
+        r#"<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>"#.to_string()
     };
     format!(
         r#"<p:sp><p:nvSpPr><p:cNvPr id="{id}" name="rect{id}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="{x}" y="{y}"/><a:ext cx="{cx}" cy="{cy}"/>{a}{fill}</p:spPr><p:txBody><a:bodyPr/><a:p/></p:txBody></p:sp>"#,

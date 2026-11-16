@@ -96,7 +96,7 @@ class _PairSheetState extends State<PairSheet> {
     WebSocket.connect(wsUri.toString()).then((ws) {
       _ws = ws;
       ws.add(jsonEncode({'type': 'subscribe', 'since_version': _lastVersion}));
-      ws.stream.listen(
+      ws.listen(
         (msg) {
           final data = jsonDecode(msg.toString()) as Map<String, dynamic>;
           if (data['type'] == 'update' || data['type'] == 'snapshot') {
