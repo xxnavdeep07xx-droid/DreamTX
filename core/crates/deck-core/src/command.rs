@@ -7,7 +7,7 @@
 //! command is a pure function: deck JSON in (where needed) → deck JSON /
 //! layout JSON / file bytes (base64) out.
 
-use crate::dna::{cycle_family, next_variant, resolve, DnaFamily};
+use crate::dna::{cycle_family, next_variant, resolve};
 use crate::export::pdf::to_pdf;
 use crate::export::pptx::to_pptx;
 use crate::layout::layout_slide;

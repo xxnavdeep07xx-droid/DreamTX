@@ -136,7 +136,6 @@ pub fn to_pdf(deck: &Deck) -> Vec<u8> {
     let resources = format!("<< /Font << {font_refs} >> >>");
 
     let mut kids = String::new();
-    let mut page_objs: Vec<u32> = Vec::new();
     for content in &pages_content {
         let page_num = objs.len() + 1;
         let content_num = page_num + 1;
@@ -146,7 +145,6 @@ pub fn to_pdf(deck: &Deck) -> Vec<u8> {
         ));
         objs.push(format!("<< /Length {} >>\nstream\n{}\nendstream", content.len(), content));
         kids.push_str(&format!(" {} 0 R", page_num));
-        page_objs.push(page_num);
     }
 
     objs[0] = "<< /Type /Catalog /Pages 2 0 R >>".to_string();
@@ -198,7 +196,7 @@ mod tests {
                 },
             ],
         };
-        let b = to_pdf(&deck());
+        let b = to_pdf(&deck);
         let s = String::from_utf8_lossy(&b);
         assert!(s.starts_with("%PDF-1.4"));
         assert!(s.contains("/Count 2"));

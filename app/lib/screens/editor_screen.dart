@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -403,7 +403,7 @@ class _EditorScreenState extends State<EditorScreen> {
                             decoration: BoxDecoration(
                               border: Border.all(color: selected ? Theme.of(context).colorScheme.primary : Colors.black12, width: selected ? 2 : 1),
                               borderRadius: BorderRadius.circular(8),
-                              color: Colors.black.withOpacity(0.02),
+                              color: Colors.black.withValues(alpha: 0.02),
                             ),
                             child: Center(
                               child: Padding(

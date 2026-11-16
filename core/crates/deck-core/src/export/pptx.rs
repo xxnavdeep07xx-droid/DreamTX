@@ -71,10 +71,12 @@ fn text_sp(el: &Element, id: u32) -> String {
     for line in lines {
         paras.push_str(&format!(
             r#"<a:p><a:pPr algn="{algn}"/><a:r><a:rPr lang="en-US" sz="{sz}"{b}><a:solidFill><a:srgbClr val="{}"/></a:solidFill><a:latin typeface="{face}"/><a:ea typeface="Noto Sans SC"/></a:rPr><a:t>{}</a:t></a:r></a:p>"#,
+            esc(color),
+            esc(line),
+            algn = algn,
             sz = pt(size).max(1) * 100,
             b = if bold { " b=\"1\"" } else { "" },
-            esc(color),
-            esc(line)
+            face = typeface(serif, bold)
         ));
     }
     if paras.is_empty() {

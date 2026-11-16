@@ -6,7 +6,7 @@
 //! is flagged for splitting instead).
 
 use crate::dna::{resolve, FontRole, Motif, ResolvedDna};
-use crate::fonts::{measure, wrap};
+use crate::fonts::wrap;
 use crate::model::*;
 use serde::{Deserialize, Serialize};
 
@@ -202,11 +202,11 @@ impl Builder {
         for (i, item) in items.iter().enumerate() {
             let col = i / rows_per_col;
             let row = i % rows_per_col;
-            let x = MARGIN + col as f64 * (col_w(col_w) + GUTTER);
+            let x = MARGIN + col as f64 * (col_w + GUTTER);
             let y = top + row as f64 * row_h;
             let num = format!("{:02}", i + 1);
             self.fit_text(&format!("agenda.{i}.num"), &num, x, y + 6.0, 72.0, 34.0, 22.0, &p.accent, self.r.body_font, true, Align::Left, MIN_BODY);
-            self.fit_text(&format!("agenda.{i}"), item, x + 84.0, y + 4.0, col_w(col_w) - 84.0 - GUTTER, row_h - 16.0, 24.0, &p.fg, self.r.body_font, false, Align::Left, MIN_BODY);
+            self.fit_text(&format!("agenda.{i}"), item, x + 84.0, y + 4.0, col_w - 84.0 - GUTTER, row_h - 16.0, 24.0, &p.fg, self.r.body_font, false, Align::Left, MIN_BODY);
         }
     }
 
@@ -319,7 +319,7 @@ impl Builder {
         let panel_h = SLIDE_H - top - MARGIN;
         for (side, x, tag) in [(left, MARGIN, "left"), (right, MARGIN + panel_w + 48.0, "right")] {
             self.elements.push(Element::Rect { x, y: top, w: panel_w, h: panel_h, color: p.surface.clone(), radius: self.r.corner });
-            let c = if *tag == "left" { p.accent.clone() } else { p.fg.clone() };
+            let c = if tag == "left" { p.accent.clone() } else { p.fg.clone() };
             self.fit_text(&format!("{tag}.title"), &side.title, x + 32.0, top + 28.0, panel_w - 64.0, 44.0, 26.0, &c, self.r.display_font, true, Align::Left, 20.0);
             let mut y = top + 96.0;
             for (j, pt) in side.points.iter().enumerate() {
@@ -407,10 +407,6 @@ impl Builder {
     }
 }
 
-fn col_w(col: f64) -> f64 {
-    col // local helper keeps call sites readable
-}
-
 fn format_value(v: &f64) -> String {
     if v.fract() == 0.0 { format!("{}", *v as i64) } else { format!("{:.1}", v) }
 }
@@ -418,7 +414,6 @@ fn format_value(v: &f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::*;
 
     #[test]
     fn cover_has_bg_and_text() {

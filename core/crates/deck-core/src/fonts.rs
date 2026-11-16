@@ -77,7 +77,7 @@ pub fn wrap(text: &str, max_w: f64, size: f64, serif: bool, bold: bool) -> Vec<S
     let mut cur = String::new();
     let mut cur_w = 0.0;
 
-    let mut push = |lines: &mut Vec<String>, cur: &mut String, cur_w: &mut f64| {
+    let push = |lines: &mut Vec<String>, cur: &mut String, cur_w: &mut f64| {
         if !cur.is_empty() {
             lines.push(std::mem::take(cur));
             *cur_w = 0.0;

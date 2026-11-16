@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Renders a deck-core layout JSON (1280x720 space) via CustomPainter.
 /// Tapping a text element reports its content `key` for the editor.
