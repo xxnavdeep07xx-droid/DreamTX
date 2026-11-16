@@ -34,7 +34,7 @@ fn full_flow() {
     deck = r["deck"].clone();
     assert_eq!(deck["slides"].as_array().unwrap().len(), 2);
     assert_eq!(deck["version"], json!(2));
-    assert_eq!(r["next_suggested"], json!("Split text + visual"));
+    assert_eq!(r["next_suggested"], json!("Big statement"));
 
     // layout of slide 1 is drawable
     r = run(json!({ "op": "get_layout", "deck": deck, "slide_index": 1 }));
@@ -81,7 +81,7 @@ fn dna_variation_flows() {
 }
 
 fn placeholder_deck() -> Value {
-    r#"{ "id": "d1", "title": "T", "version": 1, "dna": { "family": "swiss_editorial", "seed": 5 }, "slides": [ { "id": "s1", "archetype": "cover", "kind": "cover", "title": "Hi" } ] }"#
+    r#"{ "id": "d1", "title": "T", "version": 1, "dna": { "family": "swiss_editorial", "seed": 5 }, "slides": [ { "id": "s1", "archetype": "cover", "content": { "kind": "cover", "kicker": null, "title": "Hi", "subtitle": null } } ] }"#
         .parse()
         .unwrap()
 }

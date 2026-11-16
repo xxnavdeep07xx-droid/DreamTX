@@ -1,3 +1,4 @@
+#![allow(clippy::needless_doctest_main)]
 //! Deck model. The single source of truth shared by the Flutter app (via FFI
 //! JSON), the Worker (via wasm JSON), and the MCP tool schema (worker/src/tools.ts).
 //!
@@ -22,7 +23,8 @@ pub struct Deck {
 pub struct Slide {
     pub id: String,
     pub archetype: Archetype,
-    #[serde(flatten)]
+    /// Nested (not flattened): serde-flatten + internally-tagged enums is a
+    /// known landmine; the explicit field keeps the protocol robust.
     pub content: SlideContent,
 }
 

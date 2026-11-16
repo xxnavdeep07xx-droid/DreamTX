@@ -71,13 +71,13 @@ pub fn layout_slide(dna: &Dna, slide: &Slide) -> Layout {
     let scale = r.scale;
     let mut b = Builder::new(&r, scale);
     match &slide.content {
-        SlideContent::Cover { kicker, title, subtitle } => b.cover(kicker, title, subtitle.as_deref()),
+        SlideContent::Cover { kicker, title, subtitle } => b.cover(kicker.as_deref(), title, subtitle.as_deref()),
         SlideContent::Agenda { title, items } => b.agenda(title, items),
         SlideContent::Section { index, title, blurb } => b.section(*index, title, blurb.as_deref()),
         SlideContent::Statement { text, attribution } => b.statement(text, attribution.as_deref()),
-        SlideContent::StatWall { title, stats } => b.stat_wall(title, stats),
+        SlideContent::StatWall { title, stats } => b.stat_wall(title.as_deref(), stats),
         SlideContent::Split { title, bullets, visual_label } => b.split(title, bullets, visual_label.as_deref()),
-        SlideContent::Comparison { title, left, right } => b.comparison(title, left, right),
+        SlideContent::Comparison { title, left, right } => b.comparison(title.as_deref(), left, right),
         SlideContent::ChartHero { title, chart, takeaway } => b.chart_hero(title, chart, takeaway.as_deref()),
         SlideContent::Closing { title, subtitle } => b.closing(title, subtitle.as_deref()),
     }
@@ -176,7 +176,7 @@ impl Builder {
 
     // ---- archetypes ------------------------------------------------------
 
-    fn cover(&mut self, kicker: Option<&String>, title: &str, subtitle: Option<&str>) {
+    fn cover(&mut self, kicker: Option<&str>, title: &str, subtitle: Option<&str>) {
         let p = self.r.palette.clone();
         let content_w = SLIDE_W - 2.0 * MARGIN;
         if let Some(k) = kicker {
@@ -246,7 +246,7 @@ impl Builder {
         }
     }
 
-    fn stat_wall(&mut self, title: Option<&String>, stats: &[Stat]) {
+    fn stat_wall(&mut self, title: Option<&str>, stats: &[Stat]) {
         let p = self.r.palette.clone();
         let content_w = SLIDE_W - 2.0 * MARGIN;
         let mut top = MARGIN;
@@ -307,7 +307,7 @@ impl Builder {
         }
     }
 
-    fn comparison(&mut self, title: Option<&String>, left: &CompareSide, right: &CompareSide) {
+    fn comparison(&mut self, title: Option<&str>, left: &CompareSide, right: &CompareSide) {
         let p = self.r.palette.clone();
         let content_w = SLIDE_W - 2.0 * MARGIN;
         let mut top = MARGIN;
@@ -438,7 +438,7 @@ mod tests {
     #[test]
     fn overflow_is_flagged_not_shrunk_forever() {
         let dna = Dna { family: DnaFamily::SwissEditorial, seed: 1 };
-        let long = "word ".repeat(120);
+        let long = "word ".repeat(400);
         let slide = Slide {
             id: "s".into(),
             archetype: Archetype::Statement,

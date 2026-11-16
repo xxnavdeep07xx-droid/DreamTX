@@ -69,7 +69,8 @@ class _EditorScreenState extends State<EditorScreen> {
 
   Future<void> _editText(String key) async {
     final slide = _slides[_index];
-    final current = _contentValue(slide, key)?.toString() ?? '';
+    final content = Map<String, dynamic>.from(slide['content'] ?? <String, dynamic>{});
+    final current = _resolveKey(content, key)?.toString() ?? '';
     final controller = TextEditingController(text: current);
     final changed = await showDialog<bool>(
       context: context,
@@ -83,27 +84,19 @@ class _EditorScreenState extends State<EditorScreen> {
       ),
     );
     if (changed != true) return;
-    // update content via the core: read-modify-write with apply_key semantics
-    final updated = _applyKey(slide, key, controller.text);
+    final updated = _applyKey(content, key, controller.text);
     final r = Bridge.command({
       'op': 'update_slide',
       'deck': _deck,
       'slide_id': slide['id'],
       'archetype': slide['archetype'],
-      'content': _contentOnly(updated),
+      'content': updated,
     });
     if (r['ok'] == true && r['deck'] is Map) _setDeck(r['deck'] as Map);
   }
 
-  Map<String, dynamic> _contentOnly(Map slide) {
-    final m = Map<String, dynamic>.from(slide);
-    m..remove('id')..remove('archetype');
-    return m;
-  }
-
-  dynamic _contentValue(Map slide, String key) => _resolveKey(slide, key);
-
-  dynamic _resolveKey(Map map, String path) {
+  /// Resolve a dotted path like `stats.0.value` inside the content map.
+  dynamic _resolveKey(Map<String, dynamic> map, String path) {
     dynamic cur = map;
     for (final part in path.split('.')) {
       if (cur is Map && cur.containsKey(part)) {
@@ -122,8 +115,9 @@ class _EditorScreenState extends State<EditorScreen> {
     return cur;
   }
 
-  Map<String, dynamic> _applyKey(Map slide, String key, String value) {
-    final updated = Map<String, dynamic>.from(slide);
+  /// Set a dotted path inside a copy of the content map, returning the copy.
+  Map<String, dynamic> _applyKey(Map<String, dynamic> content, String key, String value) {
+    final updated = Map<String, dynamic>.from(content);
     final parts = key.split('.');
     dynamic cur = updated;
     for (var i = 0; i < parts.length - 1; i++) {
@@ -437,9 +431,12 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   String _slideTitle(Map slide) {
-    for (final k in ['title', 'text', 'kicker']) {
-      final v = slide[k];
-      if (v is String && v.isNotEmpty) return v;
+    final content = slide['content'];
+    if (content is Map) {
+      for (final k in ['title', 'text', 'kicker']) {
+        final v = content[k];
+        if (v is String && v.isNotEmpty) return v;
+      }
     }
     return (slide['archetype'] ?? 'slide').toString();
   }

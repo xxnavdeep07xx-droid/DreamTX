@@ -175,7 +175,8 @@ mod tests {
 
     #[test]
     fn cjk_wraps_by_char() {
+        // 11 full-width chars at 24px in a 120px box -> 5 per line -> 3 lines.
         let lines = wrap("宏大的产品发布计划讨论", 120.0, 24.0, false, false);
-        assert!(lines.len() >= 5);
+        assert!(lines.len() >= 3);
     }
 }

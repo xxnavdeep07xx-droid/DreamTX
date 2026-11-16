@@ -96,7 +96,7 @@ function tsFallback(cmd: Record<string, Json>): EngineResult {
         version: 1,
         dna: { family, seed: Date.now() },
         slides: [
-          { id: slideId(id, 0), archetype: "cover", kind: "cover", title } as unknown as SlideLike,
+          { id: slideId(id, 0), archetype: "cover", content: { kind: "cover", kicker: null, title, subtitle: null } },
         ],
       };
       return { ok: true, data: { deck: deckOut } };
@@ -105,11 +105,11 @@ function tsFallback(cmd: Record<string, Json>): EngineResult {
       if (!deck) return { ok: false, error: "invalid deck" };
       const archetype = String(cmd.archetype ?? "");
       if (!ARCHETYPES.has(archetype)) return { ok: false, error: `unknown archetype '${archetype}'` };
-      const content = cmd.content ?? null;
+      const content = cmd.content ?? { kind: archetype };
       const slide: SlideLike = {
         id: slideId(deck.id, deck.slides.length),
         archetype,
-        ...(typeof content === "object" && content !== null ? (content as Record<string, Json>) : {}),
+        content: typeof content === "object" && content !== null ? content : { kind: archetype },
       };
       deck.slides = [...deck.slides, slide];
       deck.version += 1;
@@ -122,7 +122,7 @@ function tsFallback(cmd: Record<string, Json>): EngineResult {
       const archetype = String(cmd.archetype ?? deck.slides[idx].archetype ?? "");
       const content = cmd.content;
       if (typeof content !== "object" || content === null) return { ok: false, error: "content required" };
-      deck.slides[idx] = { id: String(cmd.slide_id), archetype, ...(content as Record<string, Json>) };
+      deck.slides[idx] = { id: String(cmd.slide_id), archetype, content: content as Record<string, Json> };
       deck.version += 1;
       return { ok: true, data: { deck } };
     }

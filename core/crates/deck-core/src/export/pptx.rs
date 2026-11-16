@@ -6,7 +6,7 @@
 use crate::dna::resolve;
 use crate::layout::{layout_slide, Element};
 use crate::model::{Deck, SLIDE_H, SLIDE_W};
-use std::io::{Seek, Write};
+use std::io::Write;
 
 const EMU: f64 = 9525.0; // 1280x720 px -> 12192000x6858000 EMU
 
@@ -103,7 +103,7 @@ pub fn to_pptx(deck: &Deck) -> Vec<u8> {
 
     macro_rules! put {
         ($path:expr, $data:expr) => {
-            zip.start_file($path, opts).ok();
+            zip.start_file($path.to_string(), opts.clone()).ok();
             zip.write_all($data.as_bytes()).ok();
         };
     }
@@ -195,9 +195,11 @@ pub fn to_pptx(deck: &Deck) -> Vec<u8> {
         );
     }
 
-    let _ = SLIDE_W * SLIDE_H; // scale is handled by EMU constant
-    zip.finish().ok();
-    zip.into_inner().ok().map(|c| c.into_inner()).unwrap_or_default()
+    let _ = SLIDE_W * SLIDE_H; // scale is handled by the EMU constant
+    match zip.finish() {
+        Ok(cursor) => cursor.into_inner(),
+        Err(_) => Vec::new(),
+    }
 }
 
 #[cfg(test)]
