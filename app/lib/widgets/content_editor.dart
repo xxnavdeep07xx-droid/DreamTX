@@ -641,6 +641,7 @@ class _ContentSheetState extends State<_ContentSheet> {
                     for (final s in fieldSpecs[_archetype] ?? const <_Spec>[]) _fieldFor(s),
                   ],
                 ),
+              ),
             ),
             // ---- actions --------------------------------------------------
             const Divider(height: 1),

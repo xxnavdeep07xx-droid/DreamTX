@@ -105,7 +105,7 @@ class _DecksScreenState extends State<DecksScreen> {
               onTap: () => Navigator.pop(context, 'rename'),
             ),
             ListTile(
-              leading: const Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
+              leading: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
               title: const Text('Delete'),
               onTap: () => Navigator.pop(context, 'delete'),
             ),

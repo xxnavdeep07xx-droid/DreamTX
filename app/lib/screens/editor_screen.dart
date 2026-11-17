@@ -350,7 +350,7 @@ class _EditorScreenState extends State<EditorScreen> {
               onTap: () => Navigator.pop(context, 'right'),
             ),
             ListTile(
-              leading: const Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
+              leading: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
               title: const Text('Delete'),
               onTap: () => Navigator.pop(context, 'del'),
             ),
