@@ -13,6 +13,7 @@ use crate::export::pptx::to_pptx;
 use crate::layout::layout_slide;
 use crate::model::*;
 use crate::pacing;
+use crate::shapes;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -51,6 +52,72 @@ pub enum Command {
         deck: Deck,
         /// "next_variant" | "next_family" | a family name.
         change: String,
+    },
+    // ---- vector overlay layer (manual studio tools) ----------------------
+    AddObject {
+        deck: Deck,
+        slide_id: String,
+        shape: Value,
+    },
+    UpdateObject {
+        deck: Deck,
+        slide_id: String,
+        object_id: String,
+        shape: Value,
+    },
+    DeleteObject {
+        deck: Deck,
+        slide_id: String,
+        object_id: String,
+    },
+    MoveObjectZ {
+        deck: Deck,
+        slide_id: String,
+        object_id: String,
+        to_index: usize,
+    },
+    BooleanOp {
+        deck: Deck,
+        slide_id: String,
+        a: String,
+        b: String,
+        /// "union" | "subtract" (a−b) | "intersect"
+        mode: String,
+    },
+    GroupObjects {
+        deck: Deck,
+        slide_id: String,
+        ids: Vec<String>,
+    },
+    UngroupObjects {
+        deck: Deck,
+        slide_id: String,
+        ids: Vec<String>,
+    },
+    AlignObjects {
+        deck: Deck,
+        slide_id: String,
+        ids: Vec<String>,
+        /// left|center|right|top|middle|bottom (to slide)
+        mode: String,
+    },
+    SaveComponent {
+        deck: Deck,
+        slide_id: String,
+        ids: Vec<String>,
+        name: String,
+    },
+    PlaceComponent {
+        deck: Deck,
+        slide_id: String,
+        component_id: String,
+    },
+    /// Push the geometry of one instance (the object's slide + component)
+    /// to every other instance and the registry — global component update.
+    UpdateComponent {
+        deck: Deck,
+        slide_id: String,
+        object_id: String,
     },
     GetLayout {
         deck: Deck,
@@ -145,6 +212,29 @@ fn next_slide_id(deck: &Deck) -> String {
     format!("s_{}_{n}", deck.id.chars().filter(|c| c.is_ascii_alphanumeric()).take(6).collect::<String>())
 }
 
+fn next_object_id(deck: &Deck) -> String {
+    let n = object_id_counter(deck) + 1;
+    format!("o{}_{}", deck_id_prefix(deck), n)
+}
+
+fn object_id_counter(deck: &Deck) -> usize {
+    deck.slides.iter().map(|s| s.objects.len()).sum::<usize>()
+        + deck.components.iter().map(|c| c.objects.len()).sum::<usize>()
+}
+
+fn deck_id_prefix(deck: &Deck) -> String {
+    deck.id.chars().filter(|c| c.is_ascii_alphanumeric()).take(4).collect::<String>()
+}
+
+/// Absolute-space polygon for a shape (preset geometry or freeform points).
+/// Also used by the exporters to build custGeom/polygon paths.
+pub fn object_polygon(o: &Shape) -> Vec<(f64, f64)> {
+    if let Some(pts) = &o.points {
+        return pts.iter().map(|p| (o.x + p.x * o.w, o.y + p.y * o.h)).collect();
+    }
+    shapes::preset_polygon(&o.preset, o.w, o.h).into_iter().map(|(px, py)| (o.x + px, o.y + py)).collect()
+}
+
 /// Execute one JSON command, returning a JSON response object.
 pub fn execute(req: &str) -> Value {
     let cmd: Command = match serde_json::from_str(req) {
@@ -156,6 +246,12 @@ pub fn execute(req: &str) -> Value {
             "ok": true,
             "archetypes": Archetype::all().iter().map(|a| a.label()).collect::<Vec<_>>(),
             "families": ["swiss_editorial", "cinematic", "magazine_serif"],
+            "object_presets": shapes::presets().iter().map(|p| json!({
+                "name": p.name,
+                "label": p.label,
+                "convex": p.convex,
+                "open": p.open,
+            })).collect::<Vec<_>>(),
         }),
         Command::NewDeck { title, family } => {
             let fam = parse_family(&family).unwrap_or(DnaFamily::SwissEditorial);
@@ -170,11 +266,13 @@ pub fn execute(req: &str) -> Value {
                 version: 1,
                 dna: Dna { family: fam, seed },
                 slides: Vec::new(),
+                components: Vec::new(),
             };
             let cover = Slide {
                 id: next_slide_id(&deck),
                 archetype: Archetype::Cover,
                 content: default_content(Archetype::Cover, &deck),
+                objects: Vec::new(),
             };
             deck.slides.push(cover);
             json!({ "ok": true, "deck": deck })
@@ -184,7 +282,7 @@ pub fn execute(req: &str) -> Value {
                 Some(a) => a,
                 None => return json!({ "ok": false, "error": format!("unknown archetype '{archetype}'") }),
             };
-            let mut slide = Slide { id: next_slide_id(&deck), archetype: a, content: default_content(a, &deck) };
+            let mut slide = Slide { id: next_slide_id(&deck), archetype: a, content: default_content(a, &deck), objects: Vec::new() };
             if let Some(c) = content {
                 slide.content = match serde_json::from_value(c) {
                     Ok(c) => c,
@@ -208,7 +306,8 @@ pub fn execute(req: &str) -> Value {
                 Ok(c) => c,
                 Err(e) => return json!({ "ok": false, "error": format!("content mismatch: {e}") }),
             };
-            deck.slides[idx] = Slide { id: slide_id, archetype: a, content };
+            let old_objects = deck.slides[idx].objects.clone();
+            deck.slides[idx] = Slide { id: slide_id, archetype: a, content, objects: old_objects };
             deck.version += 1;
             json!({ "ok": true, "deck": deck })
         }
@@ -244,6 +343,292 @@ pub fn execute(req: &str) -> Value {
             };
             deck.version += 1;
             json!({ "ok": true, "deck": deck, "dna": resolve(&deck.dna) })
+        }
+        // ---- vector overlay ops --------------------------------------------------
+        Command::AddObject { mut deck, slide_id, shape } => {
+            let mut obj: Shape = match serde_json::from_value(shape) {
+                Ok(s) => s,
+                Err(e) => return json!({ "ok": false, "error": format!("bad shape: {e}") }),
+            };
+            if obj.id.is_empty() {
+                obj.id = next_object_id(&deck);
+            }
+            let Some(slide) = deck.slides.iter_mut().find(|s| s.id == slide_id) else {
+                return json!({ "ok": false, "error": "slide not found" });
+            };
+            slide.objects.push(obj);
+            deck.version += 1;
+            json!({ "ok": true, "deck": deck })
+        }
+        Command::UpdateObject { mut deck, slide_id, object_id, shape } => {
+            let mut obj: Shape = match serde_json::from_value(shape) {
+                Ok(s) => s,
+                Err(e) => return json!({ "ok": false, "error": format!("bad shape: {e}") }),
+            };
+            obj.id = object_id;
+            let Some(slide) = deck.slides.iter_mut().find(|s| s.id == slide_id) else {
+                return json!({ "ok": false, "error": "slide not found" });
+            };
+            let Some(slot) = slide.objects.iter_mut().find(|o| o.id == obj.id) else {
+                return json!({ "ok": false, "error": "object not found" });
+            };
+            *slot = obj;
+            deck.version += 1;
+            json!({ "ok": true, "deck": deck })
+        }
+        Command::DeleteObject { mut deck, slide_id, object_id } => {
+            let Some(slide) = deck.slides.iter_mut().find(|s| s.id == slide_id) else {
+                return json!({ "ok": false, "error": "slide not found" });
+            };
+            let before = slide.objects.len();
+            slide.objects.retain(|o| o.id != object_id);
+            if slide.objects.len() == before {
+                return json!({ "ok": false, "error": "object not found" });
+            }
+            deck.version += 1;
+            json!({ "ok": true, "deck": deck })
+        }
+        Command::MoveObjectZ { mut deck, slide_id, object_id, to_index } => {
+            let Some(slide) = deck.slides.iter_mut().find(|s| s.id == slide_id) else {
+                return json!({ "ok": false, "error": "slide not found" });
+            };
+            let Some(idx) = slide.objects.iter().position(|o| o.id == object_id) else {
+                return json!({ "ok": false, "error": "object not found" });
+            };
+            if to_index >= slide.objects.len() {
+                return json!({ "ok": false, "error": "to_index out of range" });
+            }
+            let obj = slide.objects.remove(idx);
+            slide.objects.insert(to_index, obj);
+            deck.version += 1;
+            json!({ "ok": true, "deck": deck })
+        }
+        Command::BooleanOp { mut deck, slide_id, a, b, mode } => {
+            let Some(slide) = deck.slides.iter().find(|s| s.id == slide_id) else {
+                return json!({ "ok": false, "error": "slide not found" });
+            };
+            let (Some(sa), Some(sb)) = (slide.objects.iter().find(|o| o.id == a), slide.objects.iter().find(|o| o.id == b)) else {
+                return json!({ "ok": false, "error": "object not found" });
+            };
+            let pa = object_polygon(sa);
+            let pb = object_polygon(sb);
+            let m = match mode.as_str() {
+                "union" => shapes::BooleanMode::Union,
+                "subtract" => shapes::BooleanMode::Subtract,
+                "intersect" => shapes::BooleanMode::Intersect,
+                other => return json!({ "ok": false, "error": format!("unknown boolean mode '{other}'") }),
+            };
+            let poly = match shapes::boolean(pa, pb, m) {
+                Ok(p) => p,
+                Err(e) => return json!({ "ok": false, "error": e }),
+            };
+            if poly.len() < 3 {
+                return json!({ "ok": false, "error": "shapes do not overlap — nothing to combine" });
+            }
+            let (bx, by, bw, bh) = shapes::bbox(&poly);
+            let (bw, bh) = (bw.max(1.0), bh.max(1.0));
+            let pts = poly.iter().map(|&(x, y)| Pt { x: ((x - bx) / bw).clamp(0.0, 1.0), y: ((y - by) / bh).clamp(0.0, 1.0) }).collect::<Vec<_>>();
+            let result = Shape {
+                id: next_object_id(&deck),
+                preset: "path".into(),
+                x: bx, y: by, w: bw, h: bh,
+                rotation: 0.0,
+                opacity: sa.opacity,
+                locked: false,
+                group: None,
+                component: None,
+                fill: sa.fill.clone(),
+                stroke: sa.stroke.clone(),
+                effects: sa.effects.clone(),
+                points: Some(pts),
+                closed: true,
+            };
+            let Some(slide) = deck.slides.iter_mut().find(|s| s.id == slide_id) else {
+                return json!({ "ok": false, "error": "slide not found" });
+            };
+            let ai = slide.objects.iter().position(|o| o.id == a);
+            let bi = slide.objects.iter().position(|o| o.id == b);
+            let insert_at = ai.unwrap_or(0).min(bi.unwrap_or(usize::MAX));
+            slide.objects.retain(|o| o.id != a && o.id != b);
+            let at = insert_at.min(slide.objects.len());
+            slide.objects.insert(at, result);
+            deck.version += 1;
+            json!({ "ok": true, "deck": deck, "note": "union is the convex hull of the two shapes" })
+        }
+        Command::GroupObjects { mut deck, slide_id, ids } => {
+            let gid = format!("g{}", deck.version);
+            let Some(slide) = deck.slides.iter_mut().find(|s| s.id == slide_id) else {
+                return json!({ "ok": false, "error": "slide not found" });
+            };
+            let mut n = 0;
+            for o in slide.objects.iter_mut() {
+                if ids.contains(&o.id) {
+                    o.group = Some(gid.clone());
+                    n += 1;
+                }
+            }
+            if n == 0 {
+                return json!({ "ok": false, "error": "no objects to group" });
+            }
+            deck.version += 1;
+            json!({ "ok": true, "deck": deck })
+        }
+        Command::UngroupObjects { mut deck, slide_id, ids } => {
+            let Some(slide) = deck.slides.iter_mut().find(|s| s.id == slide_id) else {
+                return json!({ "ok": false, "error": "slide not found" });
+            };
+            for o in slide.objects.iter_mut() {
+                if ids.contains(&o.id) {
+                    o.group = None;
+                    o.component = None;
+                }
+            }
+            deck.version += 1;
+            json!({ "ok": true, "deck": deck })
+        }
+        Command::AlignObjects { mut deck, slide_id, ids, mode } => {
+            let Some(slide) = deck.slides.iter_mut().find(|s| s.id == slide_id) else {
+                return json!({ "ok": false, "error": "slide not found" });
+            };
+            for o in slide.objects.iter_mut() {
+                if !ids.contains(&o.id) {
+                    continue;
+                }
+                match mode.as_str() {
+                    "left" => o.x = 0.0,
+                    "center" => o.x = (SLIDE_W - o.w) / 2.0,
+                    "right" => o.x = SLIDE_W - o.w,
+                    "top" => o.y = 0.0,
+                    "middle" => o.y = (SLIDE_H - o.h) / 2.0,
+                    "bottom" => o.y = SLIDE_H - o.h,
+                    other => return json!({ "ok": false, "error": format!("unknown align mode '{other}'") }),
+                }
+            }
+            deck.version += 1;
+            json!({ "ok": true, "deck": deck })
+        }
+        Command::SaveComponent { mut deck, slide_id, ids, name } => {
+            let Some(slide) = deck.slides.iter().find(|s| s.id == slide_id) else {
+                return json!({ "ok": false, "error": "slide not found" });
+            };
+            let picked: Vec<Shape> = slide.objects.iter().filter(|o| ids.contains(&o.id)).cloned().collect();
+            if picked.is_empty() {
+                return json!({ "ok": false, "error": "no objects selected" });
+            }
+            let cid = format!("c{}", deck.version);
+            for o in slide.objects.iter_mut() {
+                if ids.contains(&o.id) {
+                    o.component = Some(cid.clone());
+                }
+            }
+            deck.components.push(Component { id: cid.clone(), name, objects: picked });
+            deck.version += 1;
+            json!({ "ok": true, "deck": deck, "component_id": cid })
+        }
+        Command::PlaceComponent { mut deck, slide_id, component_id } => {
+            let Some(comp) = deck.components.iter().find(|c| c.id == component_id).cloned() else {
+                return json!({ "ok": false, "error": "component not found" });
+            };
+            if comp.objects.is_empty() {
+                return json!({ "ok": false, "error": "component is empty" });
+            }
+            // center the copy on the slide
+            let (mut minx, mut miny, mut maxx, mut maxy) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+            for o in &comp.objects {
+                minx = minx.min(o.x);
+                miny = miny.min(o.y);
+                maxx = maxx.max(o.x + o.w);
+                maxy = maxy.max(o.y + o.h);
+            }
+            let dx = (SLIDE_W - (maxx - minx)) / 2.0 - minx;
+            let dy = (SLIDE_H - (maxy - miny)) / 2.0 - miny;
+            // pre-generate ids before the mutable slide borrow
+            let base = object_id_counter(&deck);
+            let prefix = deck_id_prefix(&deck);
+            let mut counter = base;
+            let mut placed: Vec<Shape> = Vec::with_capacity(comp.objects.len());
+            for mut o in comp.objects {
+                counter += 1;
+                o.id = format!("o{prefix}_{counter}");
+                o.x += dx;
+                o.y += dy;
+                o.group = None;
+                o.component = Some(component_id.clone());
+                placed.push(o);
+            }
+            let Some(slide) = deck.slides.iter_mut().find(|s| s.id == slide_id) else {
+                return json!({ "ok": false, "error": "slide not found" });
+            };
+            slide.objects.extend(placed);
+            deck.version += 1;
+            json!({ "ok": true, "deck": deck })
+        }
+        Command::UpdateComponent { mut deck, slide_id, object_id } => {
+            let Some(slide) = deck.slides.iter().find(|s| s.id == slide_id) else {
+                return json!({ "ok": false, "error": "slide not found" });
+            };
+            let Some(ref_obj) = slide.objects.iter().find(|o| o.id == object_id) else {
+                return json!({ "ok": false, "error": "object not found" });
+            };
+            let Some(cid) = ref_obj.component.clone() else {
+                return json!({ "ok": false, "error": "object is not a component instance" });
+            };
+            // canonical geometry = the reference instance's member objects
+            let canonical: Vec<Shape> = slide
+                .objects
+                .iter()
+                .filter(|o| o.component.as_deref() == Some(cid.as_str()))
+                .cloned()
+                .collect();
+            if canonical.is_empty() {
+                return json!({ "ok": false, "error": "component instance has no objects" });
+            }
+            let (mut minx, mut miny) = (f64::MAX, f64::MAX);
+            for o in &canonical {
+                minx = minx.min(o.x);
+                miny = miny.min(o.y);
+            }
+            // registry
+            if let Some(comp) = deck.components.iter_mut().find(|c| c.id == cid) {
+                comp.objects = canonical.clone();
+            }
+            // one instance per slide per component in v0.2: replace every
+            // slide's instance objects with the canonical geometry, keeping
+            // each slide's instance anchor (its top-left member position).
+            let base = object_id_counter(&deck);
+            let prefix = deck_id_prefix(&deck);
+            let mut counter = base;
+            let cid_ref = cid.as_str();
+            for slide in deck.slides.iter_mut() {
+                let has = slide.objects.iter().any(|o| o.component.as_deref() == Some(cid_ref));
+                if !has {
+                    continue;
+                }
+                let (ax, ay) = slide
+                    .objects
+                    .iter()
+                    .filter(|o| o.component.as_deref() == Some(cid_ref))
+                    .fold((f64::MAX, f64::MAX), |(mx, my), o| (mx.min(o.x), my.min(o.y)));
+                let idx = slide
+                    .objects
+                    .iter()
+                    .position(|o| o.component.as_deref() == Some(cid_ref))
+                    .unwrap_or(0);
+                slide.objects.retain(|o| o.component.as_deref() != Some(cid_ref));
+                let at = idx.min(slide.objects.len());
+                for (k, o) in canonical.iter().enumerate() {
+                    counter += 1;
+                    let mut c = o.clone();
+                    c.id = format!("o{prefix}_{counter}");
+                    c.x += ax - minx;
+                    c.y += ay - miny;
+                    c.group = None;
+                    c.component = Some(cid.clone());
+                    slide.objects.insert(at + k, c);
+                }
+            }
+            deck.version += 1;
+            json!({ "ok": true, "deck": deck })
         }
         Command::GetLayout { deck, slide_index } => {
             let Some(slide) = deck.slides.get(slide_index) else {

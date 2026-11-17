@@ -5,7 +5,8 @@
 
 use crate::dna::resolve;
 use crate::layout::{layout_slide, Element};
-use crate::model::{Deck, SLIDE_H, SLIDE_W};
+use crate::model::{ArrowHead, DashStyle, Deck, Fill, Shape, SLIDE_H, SLIDE_W};
+use crate::shapes;
 use std::io::Write;
 
 const EMU: f64 = 9525.0; // 1280x720 px -> 12192000x6858000 EMU
@@ -52,6 +53,135 @@ fn rect_sp(x: f64, y: f64, w: f64, h: f64, color: &str, radius: f64, id: u32) ->
         a = round,
         fill = format!(r#"<a:solidFill><a:srgbClr val="{}"/></a:solidFill>"#, esc(color)),
         id = id
+    )
+}
+
+fn pptx_color(color: &str, alpha: f64) -> String {
+    if alpha < 0.999 {
+        format!(
+            r#"<a:srgbClr val="{}"><a:alpha val="{}"/></a:srgbClr>"#,
+            esc(color),
+            (alpha * 100000.0).round().clamp(0.0, 100000.0) as u32
+        )
+    } else {
+        format!(r#"<a:srgbClr val="{}"/></a:srgbClr>"#, esc(color))
+    }
+}
+
+fn pptx_fill(fill: &Fill, alpha: f64) -> String {
+    match fill {
+        Fill::None => "<a:noFill/>".into(),
+        Fill::Solid { color } => format!("<a:solidFill>{}</a:solidFill>", pptx_color(color, alpha)),
+        Fill::LinearGradient { angle, from, to } => format!(
+            r#"<a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0">{}</a:gs><a:gs pos="100000">{}</a:gs></a:gsLst><a:lin ang="{}" scaled="0"/></a:gradFill>"#,
+            pptx_color(from, alpha),
+            pptx_color(to, alpha),
+            ((angle.rem_euclid(360.0)) * 60000.0).round() as i64
+        ),
+        Fill::RadialGradient { from, to } => format!(
+            r#"<a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0">{}</a:gs><a:gs pos="100000">{}</a:gs></a:gsLst><a:path path="circle"><a:fillToRect l="50000" t="50000" r="50000" b="50000"/></a:path></a:gradFill>"#,
+            pptx_color(from, alpha),
+            pptx_color(to, alpha)
+        ),
+    }
+}
+
+fn pptx_dash(d: &DashStyle) -> &'static str {
+    match d {
+        DashStyle::Solid => "solid",
+        DashStyle::Dash => "dash",
+        DashStyle::Dot => "sysDot",
+        DashStyle::DashDot => "dashDot",
+    }
+}
+
+fn pptx_arrow(a: &ArrowHead) -> &'static str {
+    match a {
+        ArrowHead::None => "none",
+        ArrowHead::Arrow => "arrow",
+        ArrowHead::Triangle => "triangle",
+    }
+}
+
+/// A manual vector object (overlay layer) as an OOXML shape.
+fn shape_sp(o: &Shape, id: u32) -> String {
+    // geometry: preset name when mapped, else custGeom from points/polygon
+    let has_points = o.points.as_ref().is_some_and(|p| !p.is_empty());
+    let mapped = shapes::preset_info(&o.preset).filter(|i| !i.pptx.is_empty());
+    let geom = match (&mapped, has_points) {
+        (Some(info), false) => format!(r#"<a:prstGeom prst="{}"><a:avLst/></a:prstGeom>"#, info.pptx),
+        _ => {
+            // normalized (0..1000) path space
+            let poly = crate::command::object_polygon(o);
+            let (bx, by, bw, bh) = shapes::bbox(&poly);
+            let (bw, bh) = (bw.max(1.0), bh.max(1.0));
+            let mut pts = String::new();
+            for (k, &(x, y)) in poly.iter().enumerate() {
+                let px = (((x - bx) / bw).clamp(0.0, 1.0) * 1000.0).round() as i64;
+                let py = (((y - by) / bh).clamp(0.0, 1.0) * 1000.0).round() as i64;
+                if k == 0 {
+                    pts.push_str(&format!("<a:moveTo><a:pt x=\"{px}\" y=\"{py}\"/></a:moveTo>"));
+                } else {
+                    pts.push_str(&format!("<a:lnTo><a:pt x=\"{px}\" y=\"{py}\"/></a:lnTo>"));
+                }
+            }
+            let close = if o.closed { "<a:close/>" } else { "" };
+            format!(r#"<a:custGeom><a:avLst/><a:gdLst/><a:ahLst/><a:rectLst/><a:pathLst><a:path w="1000" h="1000">{pts}{close}</a:path></a:pathLst></a:custGeom>"#)
+        }
+    };
+
+    let rot = ((o.rotation.rem_euclid(360.0)) * 60000.0).round() as i64;
+    let rot_attr = if rot != 0 { format!(" rot=\"{rot}\"") } else { String::new() };
+
+    // stroke / line
+    let ln = if o.stroke.width > 0.0 {
+        let w_emu = (o.stroke.width * EMU).round() as i64;
+        let heads = if o.stroke.start_arrow != ArrowHead::None {
+            format!(r#"<a:headEnd type="{}" w="med" len="med"/>"#, pptx_arrow(&o.stroke.start_arrow))
+        } else {
+            String::new()
+        };
+        let tails = if o.stroke.end_arrow != ArrowHead::None {
+            format!(r#"<a:tailEnd type="{}" w="med" len="med"/>"#, pptx_arrow(&o.stroke.end_arrow))
+        } else {
+            String::new()
+        };
+        let stroke_fill = pptx_color(&o.stroke.color, o.opacity);
+        let dashv = pptx_dash(&o.stroke.dash);
+        format!(r#"<a:ln w="{w_emu}" cap="rnd"><a:solidFill>{stroke_fill}</a:solidFill><a:prstDash val="{dashv}"/>{heads}{tails}</a:ln>"#)
+    } else {
+        "<a:ln><a:noFill/></a:ln>".into()
+    };
+
+    // effects
+    let mut eff = String::new();
+    if let Some(sh) = &o.effects.shadow {
+        let dist = (sh.dx.hypot(sh.dy) * EMU).round() as i64;
+        let dir = (sh.dx.atan2(sh.dy).to_degrees().rem_euclid(360.0) * 60000.0).round() as i64;
+        let blur_rad = (sh.blur * EMU).round() as i64;
+        let sh_color = pptx_color(&sh.color, sh.opacity);
+        eff.push_str(&format!(
+            r#"<a:outerShdw blurRad="{blur_rad}" dist="{dist}" dir="{dir}" rotWithShape="0">{sh_color}</a:outerShdw>"#
+        ));
+    }
+    if let Some(gl) = &o.effects.glow {
+        let glow_rad = (gl.blur * EMU).round() as i64;
+        let gl_color = pptx_color(&gl.color, 0.6 * o.opacity.max(0.0));
+        eff.push_str(&format!(r#"<a:glow rad="{glow_rad}">{gl_color}</a:glow>"#));
+    }
+    let effects = if eff.is_empty() {
+        String::new()
+    } else {
+        format!("<a:effectLst>{eff}</a:effectLst>")
+    };
+
+    let x_emu = (o.x * EMU).round() as i64;
+    let y_emu = (o.y * EMU).round() as i64;
+    let cx_emu = (o.w * EMU).round() as i64;
+    let cy_emu = (o.h * EMU).round() as i64;
+    let fillxml = pptx_fill(&o.fill, o.opacity);
+    format!(
+        r#"<p:sp><p:nvSpPr><p:cNvPr id="{id}" name="shape{id}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm{rot_attr}><a:off x="{x_emu}" y="{y_emu}"/><a:ext cx="{cx_emu}" cy="{cy_emu}"/></a:xfrm>{geom}{fillxml}{ln}{effects}</p:spPr><p:txBody><a:bodyPr/><a:p/></p:txBody></p:sp>"#
     )
 }
 
@@ -187,6 +317,11 @@ pub fn to_pptx(deck: &Deck) -> Vec<u8> {
             }
             id += 1;
         }
+        // manual vector overlay sits on top of the archetype layout
+        for obj in &slide.objects {
+            shapes.push_str(&shape_sp(obj, id));
+            id += 1;
+        }
         let xml = format!(
             r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>{shapes}</p:spTree></p:cSld></p:sld>"#
         );
@@ -219,7 +354,26 @@ mod tests {
                 id: "s1".into(),
                 archetype: Archetype::Cover,
                 content: SlideContent::Cover { kicker: None, title: "Hello".into(), subtitle: None },
+                objects: vec![Shape {
+                    id: "o1".into(),
+                    preset: "rectangle".into(),
+                    x: 100.0,
+                    y: 100.0,
+                    w: 240.0,
+                    h: 120.0,
+                    rotation: 15.0,
+                    opacity: 1.0,
+                    locked: false,
+                    group: None,
+                    component: None,
+                    fill: Fill::LinearGradient { angle: 90.0, from: "D03028".into(), to: "F7F6F3".into() },
+                    stroke: Stroke::default(),
+                    effects: Effects::default(),
+                    points: None,
+                    closed: true,
+                }],
             }],
+            components: Vec::new(),
         }
     }
 
@@ -228,5 +382,15 @@ mod tests {
         let b = to_pptx(&deck());
         assert!(b.starts_with(b"PK"), "not a zip");
         assert!(b.len() > 800);
+    }
+
+    #[test]
+    fn shapes_export_with_geometry_and_gradient() {
+        // unzip-free smoke: search the raw zip bytes for the markers
+        let b = to_pptx(&deck());
+        let s = String::from_utf8_lossy(&b);
+        assert!(s.contains("gradFill"), "gradient fill missing");
+        assert!(s.contains("rot=\"900000\""), "rotation missing");
+        assert!(s.contains("prst=\"rect\""), "preset geometry missing");
     }
 }

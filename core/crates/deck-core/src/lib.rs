@@ -12,6 +12,7 @@ pub mod fonts;
 pub mod layout;
 pub mod model;
 pub mod pacing;
+pub mod shapes;
 
 use std::ffi::{c_char, CStr, CString};
 

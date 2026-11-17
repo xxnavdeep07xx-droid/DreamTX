@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
@@ -8,6 +9,8 @@ import 'package:share_plus/share_plus.dart';
 import '../core/bridge.dart';
 import '../core/store.dart';
 import '../widgets/content_editor.dart';
+import '../widgets/design_sheets.dart';
+import '../widgets/shape_canvas.dart';
 import '../widgets/slide_canvas.dart';
 import 'pair_sheet.dart';
 
@@ -33,10 +36,22 @@ class _EditorScreenState extends State<EditorScreen> {
   final List<Map<String, dynamic>> _undo = [];
   final List<Map<String, dynamic>> _redo = [];
 
+  // ---- design (vector overlay) state -------------------------------------------
+  bool _designMode = false;
+  bool _scribbleMode = false;
+  String? _selectedObjectId;
+  List<Map<String, dynamic>> _objectPresets = const [];
+  int _oidSeq = 0;
+
   @override
   void initState() {
     super.initState();
     _deck = Map<String, dynamic>.from(widget.deck);
+    final meta = Bridge.command({'op': 'meta'});
+    _objectPresets = ((meta['object_presets'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((m) => Map<String, dynamic>.from(m))
+        .toList();
     _refreshLayout();
   }
 
@@ -103,6 +118,317 @@ class _EditorScreenState extends State<EditorScreen> {
         _warnings = ['layout error: ${r['error']}'];
       }
     });
+  }
+
+  // ---- vector overlay layer (studio tools) -------------------------------------
+
+  String? get _slideId => _slides.isEmpty ? null : _slides[_index]['id'] as String?;
+
+  List<Map<String, dynamic>> get _objects {
+    if (_slides.isEmpty) return const [];
+    return ((_slides[_index]['objects'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((m) => Map<String, dynamic>.from(m))
+        .toList();
+  }
+
+  Map<String, dynamic>? get _selectedObject {
+    final id = _selectedObjectId;
+    if (id == null) return null;
+    for (final o in _objects) {
+      if (o['id'] == id) return o;
+    }
+    return null;
+  }
+
+  String _newObjectId() {
+    _oidSeq += 1;
+    return 'o${DateTime.now().millisecondsSinceEpoch}_$_oidSeq';
+  }
+
+  void _toggleDesignMode() {
+    setState(() {
+      _designMode = !_designMode;
+      if (!_designMode) {
+        _scribbleMode = false;
+        _selectedObjectId = null;
+      }
+    });
+  }
+
+  void _showLibrary() {
+    if (_slides.isEmpty) return;
+    showShapeLibrary(context, presets: _objectPresets, onPick: _addObject);
+  }
+
+  void _addObject(String preset) {
+    final slideId = _slideId;
+    if (slideId == null) return;
+    final open = preset == 'line' || preset == 'wave' || preset == 'zigzag';
+    var w = 240.0;
+    var h = 140.0;
+    if (open) {
+      w = 320.0;
+      h = preset == 'line' ? 0.0 : (preset == 'wave' ? 80.0 : 60.0);
+    }
+    final n = _objects.length;
+    final shape = <String, dynamic>{
+      'id': _newObjectId(),
+      'preset': preset,
+      'x': (1280.0 - w) / 2 + (n % 5) * 24.0,
+      'y': (720.0 - h) / 2 + (n % 5) * 16.0,
+      'w': w,
+      'h': h,
+      'rotation': 0.0,
+      'opacity': 1.0,
+      'locked': false,
+      'fill': open ? {'type': 'none'} : {'type': 'solid', 'color': 'FFFFFF'},
+      'stroke': open
+          ? {'color': 'D03028', 'width': 3.0, 'dash': 'solid', 'start_arrow': 'none', 'end_arrow': 'none'}
+          : {'color': '17181A', 'width': 1.5, 'dash': 'solid', 'start_arrow': 'none', 'end_arrow': 'none'},
+      'effects': {},
+      'closed': true,
+    };
+    final r = Bridge.command({'op': 'add_object', 'deck': _deck, 'slide_id': slideId, 'shape': shape});
+    if (r['ok'] == true && r['deck'] is Map) {
+      _mutate(r['deck'] as Map);
+      setState(() => _selectedObjectId = shape['id'] as String?);
+    } else {
+      _toast('Could not add shape: ${r['error']}');
+    }
+  }
+
+  void _onScribbleDone(List<Offset> pts) {
+    final slideId = _slideId;
+    if (slideId == null || pts.length < 2) return;
+    var minx = pts.first.dx;
+    var miny = pts.first.dy;
+    var maxx = minx;
+    var maxy = miny;
+    for (final p in pts) {
+      minx = math.min(minx, p.dx);
+      miny = math.min(miny, p.dy);
+      maxx = math.max(maxx, p.dx);
+      maxy = math.max(maxy, p.dy);
+    }
+    final w = math.max(maxx - minx, 1.0);
+    final h = math.max(maxy - miny, 1.0);
+    final norm = [
+      for (final p in pts)
+        {'x': ((p.dx - minx) / w).clamp(0.0, 1.0).toDouble(), 'y': ((p.dy - miny) / h).clamp(0.0, 1.0).toDouble()},
+    ];
+    final shape = <String, dynamic>{
+      'id': _newObjectId(),
+      'preset': 'path',
+      'x': minx,
+      'y': miny,
+      'w': w,
+      'h': h,
+      'rotation': 0.0,
+      'opacity': 1.0,
+      'locked': false,
+      'fill': {'type': 'none'},
+      'stroke': {'color': 'D03028', 'width': 3.0, 'dash': 'solid', 'start_arrow': 'none', 'end_arrow': 'none'},
+      'effects': {},
+      'points': norm,
+      'closed': false,
+    };
+    final r = Bridge.command({'op': 'add_object', 'deck': _deck, 'slide_id': slideId, 'shape': shape});
+    if (r['ok'] == true && r['deck'] is Map) {
+      _mutate(r['deck'] as Map);
+      setState(() => _selectedObjectId = shape['id'] as String?);
+    }
+  }
+
+  void _objectGestureStart() {
+    _undo.add(_copy());
+    if (_undo.length > 60) _undo.removeAt(0);
+    _redo.clear();
+  }
+
+  void _liveObject(Map obj) {
+    setState(() => _replaceObjectLocal(obj));
+  }
+
+  void _replaceObjectLocal(Map obj) {
+    final slideId = _slideId;
+    if (slideId == null) return;
+    for (final s in (_deck['slides'] as List? ?? const []).whereType<Map>()) {
+      if (s['id'] != slideId) continue;
+      final objs = s['objects'] as List?;
+      if (objs == null) return;
+      for (var i = 0; i < objs.length; i++) {
+        if (objs[i] is Map && objs[i]['id'] == obj['id']) {
+          objs[i] = obj;
+          return;
+        }
+      }
+    }
+  }
+
+  /// Gesture commit: undo was already pushed at gesture start.
+  void _commitObject(Map obj) {
+    final slideId = _slideId;
+    if (slideId == null) return;
+    final r = Bridge.command({'op': 'update_object', 'deck': _deck, 'slide_id': slideId, 'object_id': obj['id'], 'shape': obj});
+    if (r['ok'] == true && r['deck'] is Map) {
+      _setDeck(r['deck'] as Map);
+    } else {
+      _toast('Could not save: ${r['error']}');
+    }
+  }
+
+  /// Style change from the inspector: full mutate (own undo step).
+  void _styleChanged(Map obj) {
+    final slideId = _slideId;
+    if (slideId == null) return;
+    final r = Bridge.command({'op': 'update_object', 'deck': _deck, 'slide_id': slideId, 'object_id': obj['id'], 'shape': obj});
+    if (r['ok'] == true && r['deck'] is Map) {
+      _mutate(r['deck'] as Map);
+    } else {
+      _toast('Could not apply style: ${r['error']}');
+    }
+  }
+
+  void _objOp(Map req) {
+    final r = Bridge.command(req);
+    if (r['ok'] == true && r['deck'] is Map) {
+      _mutate(r['deck'] as Map);
+    } else {
+      _toast('${r['error'] ?? 'operation failed'}');
+    }
+  }
+
+  void _groupObjects(List<String> ids) => _objOp({'op': 'group_objects', 'deck': _deck, 'slide_id': _slideId, 'ids': ids});
+
+  void _ungroupObjects(List<String> ids) => _objOp({'op': 'ungroup_objects', 'deck': _deck, 'slide_id': _slideId, 'ids': ids});
+
+  void _alignObjects(String mode, List<String> ids) => _objOp({'op': 'align_objects', 'deck': _deck, 'slide_id': _slideId, 'ids': ids, 'mode': mode});
+
+  void _booleanObjects(String mode, List<String> ids) {
+    if (ids.length != 2) return;
+    _objOp({'op': 'boolean_op', 'deck': _deck, 'slide_id': _slideId, 'a': ids[0], 'b': ids[1], 'mode': mode});
+  }
+
+  void _saveComponent(List<String> ids, String name) =>
+      _objOp({'op': 'save_component', 'deck': _deck, 'slide_id': _slideId, 'ids': ids, 'name': name});
+
+  void _placeComponent(String componentId) =>
+      _objOp({'op': 'place_component', 'deck': _deck, 'slide_id': _slideId, 'component_id': componentId});
+
+  void _syncComponent(String objectId) {
+    if (objectId.isEmpty) return;
+    _objOp({'op': 'update_component', 'deck': _deck, 'slide_id': _slideId, 'object_id': objectId});
+  }
+
+  void _reorderObject(String id, int dir) {
+    final objs = _objects;
+    final idx = objs.indexWhere((o) => o['id'] == id);
+    if (idx < 0) return;
+    final to = (idx + dir).clamp(0, objs.length - 1);
+    _objOp({'op': 'move_object_z', 'deck': _deck, 'slide_id': _slideId, 'object_id': id, 'to_index': to});
+  }
+
+  void _toggleObjectLock(String id) {
+    for (final o in _objects) {
+      if (o['id'] == id) {
+        final updated = Map<String, dynamic>.from(o);
+        updated['locked'] = !(updated['locked'] == true);
+        _styleChanged(updated);
+        return;
+      }
+    }
+  }
+
+  void _deleteObject(String id) =>
+      _objOp({'op': 'delete_object', 'deck': _deck, 'slide_id': _slideId, 'object_id': id});
+
+  void _editStyleOf(String id) {
+    for (final o in _objects) {
+      if (o['id'] == id) {
+        showInspector(context, object: o, onChange: _styleChanged);
+        return;
+      }
+    }
+  }
+
+  void _duplicateObject(String id) {
+    final objs = _objects;
+    final idx = objs.indexWhere((o) => o['id'] == id);
+    if (idx < 0) return;
+    final copy = Map<String, dynamic>.from(objs[idx]);
+    final newId = _newObjectId();
+    copy['id'] = newId;
+    copy['x'] = ((objs[idx]['x'] as num?)?.toDouble() ?? 0) + 24;
+    copy['y'] = ((objs[idx]['y'] as num?)?.toDouble() ?? 0) + 24;
+    final r = Bridge.command({'op': 'add_object', 'deck': _deck, 'slide_id': _slideId, 'shape': copy});
+    if (r['ok'] != true || r['deck'] is! Map) {
+      _toast('Could not duplicate: ${r['error']}');
+      return;
+    }
+    final r2 = Bridge.command({
+      'op': 'move_object_z',
+      'deck': r['deck'],
+      'slide_id': _slideId,
+      'object_id': newId,
+      'to_index': (idx + 1).clamp(0, objs.length),
+    });
+    if (r2['ok'] == true && r2['deck'] is Map) {
+      _mutate(r2['deck'] as Map);
+    } else {
+      _mutate(r['deck'] as Map);
+    }
+    setState(() => _selectedObjectId = newId);
+  }
+
+  void _reflectObject(String id) {
+    for (final o in _objects) {
+      if (o['id'] != id) continue;
+      final copy = Map<String, dynamic>.from(o);
+      final y = (o['y'] as num?)?.toDouble() ?? 0;
+      final h = (o['h'] as num?)?.toDouble() ?? 0;
+      final op = (o['opacity'] as num?)?.toDouble() ?? 1;
+      final newId = _newObjectId();
+      copy['id'] = newId;
+      copy['y'] = y + h + 10 + h;
+      copy['opacity'] = (op * 0.35).clamp(0.05, 0.6);
+      copy['effects'] = {};
+      final r = Bridge.command({'op': 'add_object', 'deck': _deck, 'slide_id': _slideId, 'shape': copy});
+      if (r['ok'] != true || r['deck'] is! Map) {
+        _toast('Could not add reflection: ${r['error']}');
+        return;
+      }
+      final r2 = Bridge.command({'op': 'group_objects', 'deck': r['deck'], 'slide_id': _slideId, 'ids': [id, newId]});
+      if (r2['ok'] == true && r2['deck'] is Map) {
+        _mutate(r2['deck'] as Map);
+      } else {
+        _mutate(r['deck'] as Map);
+      }
+      return;
+    }
+  }
+
+  void _showLayers() {
+    if (_slides.isEmpty) return;
+    showLayersSheet(
+      context,
+      objects: _objects,
+      presets: _objectPresets,
+      deck: _deck,
+      onGroup: _groupObjects,
+      onUngroup: _ungroupObjects,
+      onAlign: _alignObjects,
+      onBoolean: _booleanObjects,
+      onSaveComponent: _saveComponent,
+      onPlaceComponent: _placeComponent,
+      onSyncComponent: _syncComponent,
+      onReorder: _reorderObject,
+      onToggleLock: _toggleObjectLock,
+      onEditStyle: _editStyleOf,
+      onDelete: _deleteObject,
+      onDuplicate: _duplicateObject,
+      onReflect: _reflectObject,
+    );
   }
 
   // ---- quick single-field edit (tap text on the canvas) ----------------------
@@ -488,6 +814,11 @@ class _EditorScreenState extends State<EditorScreen> {
         ),
         actions: [
           IconButton(
+            tooltip: _designMode ? 'Leave design mode' : 'Design mode — shapes, drawing, layers',
+            icon: Icon(_designMode ? Icons.category : Icons.category_outlined),
+            onPressed: _toggleDesignMode,
+          ),
+          IconButton(
             tooltip: 'Undo',
             icon: const Icon(Icons.undo),
             onPressed: _undo.isEmpty ? null : _undoStep,
@@ -524,7 +855,22 @@ class _EditorScreenState extends State<EditorScreen> {
                             aspectRatio: 16 / 9,
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(12),
-                              child: SlideCanvas(layout: _layout!, onTextTap: _editText),
+                              child: Stack(
+                                children: [
+                                  SlideCanvas(layout: _layout!, onTextTap: _designMode ? null : _editText),
+                                  ShapesLayer(
+                                    objects: _objects,
+                                    selectedId: _selectedObjectId,
+                                    interactive: _designMode,
+                                    scribbleMode: _scribbleMode,
+                                    onSelect: (id) => setState(() => _selectedObjectId = id),
+                                    onLive: _liveObject,
+                                    onCommit: _commitObject,
+                                    onGestureStart: _objectGestureStart,
+                                    onScribble: _onScribbleDone,
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -541,6 +887,46 @@ class _EditorScreenState extends State<EditorScreen> {
                     ),
                   ),
           ),
+          // ---- design toolbar (overlay layer) -------------------------------
+          if (_designMode)
+            Container(
+              decoration: const BoxDecoration(
+                border: Border(top: BorderSide(color: Color(0x1F17181A))),
+              ),
+              height: 46,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Row(
+                children: [
+                  IconButton(tooltip: 'Add shape', icon: const Icon(Icons.category_outlined), onPressed: _showLibrary),
+                  IconButton(
+                    tooltip: 'Freehand draw',
+                    icon: Icon(Icons.gesture, color: _scribbleMode ? Theme.of(context).colorScheme.primary : null),
+                    onPressed: () => setState(() => _scribbleMode = !_scribbleMode),
+                  ),
+                  IconButton(
+                    tooltip: 'Style the selected object',
+                    icon: const Icon(Icons.format_paint_outlined),
+                    onPressed: _selectedObjectId == null
+                        ? null
+                        : () {
+                            final obj = _selectedObject;
+                            if (obj != null) showInspector(context, object: obj, onChange: _styleChanged);
+                          },
+                  ),
+                  IconButton(tooltip: 'Layers, groups, components', icon: const Icon(Icons.layers_outlined), onPressed: _showLayers),
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        _scribbleMode ? 'draw on the slide' : 'drag to move · corners resize · top circle rotates',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 10.5, color: Color(0xFF6B6B70)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           // ---- slide toolbar ----------------------------------------------------
           Container(
             decoration: const BoxDecoration(
