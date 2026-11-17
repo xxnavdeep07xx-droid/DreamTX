@@ -33,26 +33,62 @@ and color. Three curated deck DNAs ship in v1 — **Swiss editorial** (default),
 pacing governor (no same archetype twice in a row, density rhythm, whitespace
 budget) so decks never look template-stamped.
 
-## State of this scaffold (M0)
+## What's in the app (v0.2.1)
+
+**Decks home** — editorial deck grid; New deck button in the masthead;
+long-press a deck card for open / rename / delete; immersive full-screen
+mode (system bars hidden, edge-swipe to reveal).
+
+**Editor (per deck)** — canvas + filmstrip; add / duplicate / reorder /
+delete slides (long-press a thumbnail); full per-slide content forms for
+all 9 archetypes (cover, agenda, section, statement, stat wall, split,
+comparison, chart hero, closing); design family (DNA) switcher; undo/redo
+(60 steps); deck rename.
+
+**Design mode** (v0.2, editor toolbar) — 36 preset shapes + freeform
+scribble; move / resize / rotate handles with 15-degree snap and smart
+guides (snap to slide edges, centers, other objects); fills: solid,
+linear + radial gradient; stroke: width, dash styles, start/end
+arrowheads; effects: shadow, glow, opacity; boolean ops (union /
+subtract / intersect — convex shapes); group / ungroup, lock, 6-way align,
+layers panel (reorder / lock / delete); components: save a selection as a
+reusable component, place it on any slide, update it globally. Objects
+export 1:1 into PPTX and PDF.
+
+**Export** — .pptx and .pdf via the share sheet.
+
+**AI via MCP** — pairing sheet ready; goes live when the Worker deploys (M2).
+
+Release APKs are signed with a release keystore (stored as GitHub Actions
+secrets). Installs from releases before v0.2.1 were debug-signed — uninstall
+those before installing v0.2.1+ (Android refuses updates across signers).
+
+## State of this scaffold (M1 done)
 
 - Rust core: real model, 3 DNAs + variation, pacing, layout solver, pptx +
   pdf exporters, JSON command protocol, FFI + wasm exports, smoke tests.
 - Worker: full MCP (initialize/tools list/call) over Streamable HTTP + SSE,
   pairing Registry DO (code+secret, TTL, attempt limiting), Deck DO with
   hibernating WebSocket broadcast and version log. Not yet deployed.
-- Flutter: decks list, editor (canvas + filmstrip, text edit, archetype
-  swap), DNA variant cycling, export via share sheet, pair sheet.
-- CI: cargo test (native + wasm32), worker typecheck, APK build + Release.
+- Flutter: decks list, editor (canvas + filmstrip, full content editing,
+  design mode with the vector layer above), DNA variant cycling, export via
+  share sheet, pair sheet.
+- CI: cargo test (native + wasm32), worker typecheck, APK build + Release
+  (release-signed since v0.2.1).
 
-Known v0.1 limits: PDF export is Latin-first (base-14 fonts, non-Latin is
+Known v0.2 limits: PDF export is Latin-first (base-14 fonts, non-Latin is
 transliterated; full font embedding/subsetting lands with CJK metrics in M2),
 CJK glyph widths are approximated (metrics font is DejaVu), android platform
-folders are generated in CI, APK is debug-signed.
+folders are generated in CI, boolean ops support convex shapes (union of
+concave shapes uses the convex hull), picture/pattern fills and image
+placeholders are not in v1, components are one instance per slide, layout
+assistance is smart guides (no auto-layout collision avoidance yet).
 
 ## Milestones
 
-- **M0** scaffold + green CI (this push)
-- **M1** installable APK from GitHub Releases (editor + export, offline)
+- **M0** scaffold + green CI
+- **M1** installable APK from GitHub Releases — done (v0.1.0 → v0.2.1;
+  releases are release-signed from v0.2.1)
 - **M2** Worker deployed (needs Cloudflare token) + MCP end-to-end = **v1**
 
 ## Local dev
