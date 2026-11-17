@@ -98,6 +98,12 @@ class _KeyboardStablePaddingState extends State<_KeyboardStablePadding> {
   /// The padding as it was the last time no keyboard was on screen. Captured
   /// before the keyboard can churn it, replayed while it is open.
   EdgeInsets _stablePadding = EdgeInsets.zero;
+  /// The steady viewport height, used to detect window-resize keyboards —
+  /// devices in classic adjustResize mode shrink the window and deliver NO
+  /// viewInsets, so the only reliable signal is the viewport shrinking at
+  /// an unchanged width.
+  double? _steadyHeight;
+  double? _steadyWidth;
 
   bool _wasKeyboardOpen = false;
   bool _holding = false;
@@ -114,7 +120,22 @@ class _KeyboardStablePaddingState extends State<_KeyboardStablePadding> {
   @override
   Widget build(BuildContext context) {
     final mq = MediaQuery.of(context);
-    final keyboardOpen = mq.viewInsets.bottom > 0;
+
+    // First frame: just record the steady state.
+    if (_steadyHeight == null) {
+      _steadyHeight = mq.size.height;
+      _steadyWidth = mq.size.width;
+      _stablePadding = mq.padding;
+      return MediaQuery(data: mq, child: _child);
+    }
+
+    // Keyboard signal: delivered insets, OR the viewport shrinking at an
+    // unchanged width (window-resize mode delivers no insets). Rotation and
+    // split-screen change the width, so they refresh the steady state
+    // instead of freezing.
+    final sizeShrunk = (mq.size.width - _steadyWidth!).abs() < 0.5 &&
+        mq.size.height < _steadyHeight! - 0.5;
+    final keyboardOpen = mq.viewInsets.bottom > 0 || sizeShrunk;
 
     if (keyboardOpen) {
       _wasKeyboardOpen = true;
@@ -144,7 +165,9 @@ class _KeyboardStablePaddingState extends State<_KeyboardStablePadding> {
 
     if (_holding) return _frozen(mq);
 
-    // No keyboard around: record the steady padding and pass it through.
+    // No keyboard around: record the steady metrics and pass them through.
+    _steadyHeight = mq.size.height;
+    _steadyWidth = mq.size.width;
     _stablePadding = mq.padding;
     return MediaQuery(data: mq, child: _child);
   }

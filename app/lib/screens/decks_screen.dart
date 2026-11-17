@@ -151,14 +151,15 @@ class _DecksScreenState extends State<DecksScreen> {
   @override
   Widget build(BuildContext context) {
     final count = _decks.length;
-    return Scaffold(
-      backgroundColor: kBg,
-      // The only input on this screen lives inside the dialog's overlay
-      // route, which handles the keyboard itself — so the page body must
-      // NOT resize: the centered "No decks yet" card (and masthead) stay
-      // perfectly still while the keyboard opens and closes.
-      resizeToAvoidBottomInset: false,
-      body: SafeArea(
+    return KeyboardStableMetrics(
+      child: Scaffold(
+        backgroundColor: kBg,
+        // The only input on this screen lives inside the dialog's overlay
+        // route, which handles the keyboard itself — so the page body must
+        // NOT resize: the centered "No decks yet" card (and masthead) stay
+        // perfectly still while the keyboard opens and closes.
+        resizeToAvoidBottomInset: false,
+        body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -223,6 +224,7 @@ class _DecksScreenState extends State<DecksScreen> {
                         ),
             ),
           ],
+        ),
         ),
       ),
     );

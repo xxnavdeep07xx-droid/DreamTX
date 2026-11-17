@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 /// Dark studio theme (from the user's Vibezy reference): pure-black app
@@ -227,3 +229,123 @@ OutlineInputBorder _inputBorder(Color color, [double width = 1]) => OutlineInput
       borderRadius: BorderRadius.circular(12),
       borderSide: BorderSide(color: color, width: width),
     );
+
+// ---- keyboard-stable screen wrapper -------------------------------------------
+
+/// Keeps a screen's layout laid out at its steady (keyboard-free) metrics for
+/// the whole duration of a keyboard session — the shared fix for layout
+/// "lift"/"shake" while the keyboard opens.
+///
+/// Two ways a keyboard can reach a Flutter layout, and a screen must survive
+/// both:
+///
+///  * Inset-delivery mode (edge-to-edge): the window keeps its size and
+///    `MediaQuery.viewInsets.bottom` animates up.
+///  * Window-resize mode (classic adjustResize — common on many devices):
+///    the OS geometrically shrinks the window, and `viewInsets` stays ZERO
+///    because the resize already consumed the inset. A viewInsets-gated
+///    freeze never engages; the Scaffold body region shrinks; centered
+///    content re-centers in the smaller region and visibly lifts.
+///
+/// So this wrapper detects the keyboard by EITHER signal — viewInsets > 0 OR
+/// the viewport height shrinking at an unchanged width — and then feeds the
+/// subtree the steady size, the steady padding and zeroed viewInsets for the
+/// whole session (plus a short hold after the keyboard closes, so bar churn
+/// on close also lands off-screen). The screen simply keeps drawing at its
+/// full steady size; the surplus flows away behind the keyboard. Nothing in
+/// the layout can move.
+///
+/// Wrap the screen's Scaffold. Bottom-sheet routes and dialogs live in the
+/// Overlay OUTSIDE the wrapped subtree, so they still see the real viewport
+/// and real viewInsets — sheets that pad themselves above the keyboard keep
+/// working untouched.
+class KeyboardStableMetrics extends StatefulWidget {
+  const KeyboardStableMetrics({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<KeyboardStableMetrics> createState() => _KeyboardStableMetricsState();
+}
+
+class _KeyboardStableMetricsState extends State<KeyboardStableMetrics> {
+  Size? _steadySize;
+  EdgeInsets _stablePadding = EdgeInsets.zero;
+
+  bool _wasKeyboardish = false;
+  bool _holding = false;
+  Timer? _holdTimer;
+
+  static const _holdAfterClose = Duration(milliseconds: 900);
+
+  @override
+  void dispose() {
+    _holdTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    final steady = _steadySize;
+
+    // First frame (or metrics not yet seen): just record the steady state.
+    if (steady == null) {
+      _steadySize = mq.size;
+      _stablePadding = mq.padding;
+      return MediaQuery(data: mq, child: widget.child);
+    }
+
+    // Keyboard signal: delivered insets, OR the viewport shrinking at an
+    // unchanged width (window-resize mode delivers no insets). A rotation or
+    // split-screen change alters the width too, so it falls through to the
+    // steady-refresh path instead of freezing.
+    final sizeShrunk =
+        (mq.size.width - steady.width).abs() < 0.5 && mq.size.height < steady.height - 0.5;
+    final keyboardish = mq.viewInsets.bottom > 0 || sizeShrunk;
+
+    if (keyboardish) {
+      _wasKeyboardish = true;
+      // A new keyboard session cancels any pending release from the previous
+      // one — the freeze simply continues.
+      _holdTimer?.cancel();
+      _holdTimer = null;
+      _holding = false;
+      return _frozen(mq);
+    }
+
+    if (_wasKeyboardish && !_holding) {
+      // Keyboard just closed: hold the frozen metrics a moment longer so the
+      // debounced immersive re-entry (400ms) plus the resize/bar animation
+      // (~300ms) finish inside the hold, not on screen.
+      _holding = true;
+      _holdTimer = Timer(_holdAfterClose, () {
+        _holdTimer = null;
+        if (!mounted) return;
+        setState(() {
+          _holding = false;
+          _wasKeyboardish = false;
+        });
+      });
+      return _frozen(mq);
+    }
+
+    if (_holding) return _frozen(mq);
+
+    // No keyboard around: record the steady metrics and pass through.
+    _steadySize = mq.size;
+    _stablePadding = mq.padding;
+    return MediaQuery(data: mq, child: widget.child);
+  }
+
+  Widget _frozen(MediaQueryData mq) {
+    return MediaQuery(
+      data: mq.copyWith(
+        size: _steadySize ?? mq.size,
+        padding: _stablePadding,
+        viewInsets: EdgeInsets.zero,
+      ),
+      child: widget.child,
+    );
+  }
+}

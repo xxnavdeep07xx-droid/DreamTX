@@ -785,7 +785,13 @@ class _EditorScreenState extends State<EditorScreen> {
     final title = (_deck['title'] ?? 'Deck').toString();
     final family = ((_deck['dna'] ?? const {})['family'] ?? '').toString().replaceAll('_', ' ');
     final n = _slides.length;
-    return Scaffold(
+    // KeyboardStableMetrics: all text entry on this screen happens in
+    // bottom-sheet routes (content editor, inspector, pair sheet) that sit
+    // OUTSIDE this Scaffold and track the keyboard themselves — so the
+    // canvas, dock and filmstrip below keep their steady layout while the
+    // keyboard is open, in both inset-delivery and window-resize mode.
+    return KeyboardStableMetrics(
+      child: Scaffold(
       appBar: AppBar(
         title: Tooltip(
           message: '$family — tap to rename deck',
@@ -1077,6 +1083,7 @@ class _EditorScreenState extends State<EditorScreen> {
             ),
           ),
         ],
+      ),
       ),
     );
   }
