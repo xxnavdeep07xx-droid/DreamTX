@@ -438,20 +438,15 @@ class _EditorScreenState extends State<EditorScreen> {
     final slide = _slides[_index];
     final content = Map<String, dynamic>.from(slide['content'] ?? <String, dynamic>{});
     final current = _resolveKey(content, key)?.toString() ?? '';
-    final controller = TextEditingController(text: current);
-    final changed = await showDialog<bool>(
-      context: context,
-      builder: (context) => dreamDialog(
-        title: Text('Edit — ${key.replaceAll('.', ' ')}'),
-        content: darkTextField(controller: controller, autofocus: true, maxLines: 3),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Save')),
-        ],
-      ),
+    final text = await dreamInputDialog(
+      context,
+      title: 'Edit — ${key.replaceAll('.', ' ')}',
+      initial: current,
+      confirmLabel: 'Save',
+      multiline: true,
     );
-    if (changed != true) return;
-    final updated = _applyKey(content, key, controller.text);
+    if (text == null) return;
+    final updated = _applyKey(content, key, text);
     _updateSlide(slide, slide['archetype'].toString(), updated);
   }
 
@@ -703,17 +698,11 @@ class _EditorScreenState extends State<EditorScreen> {
   // ---- deck-level ops ----------------------------------------------------------
 
   Future<void> _renameDeck() async {
-    final controller = TextEditingController(text: (_deck['title'] ?? '').toString());
-    final title = await showDialog<String>(
-      context: context,
-      builder: (context) => dreamDialog(
-        title: const Text('Rename deck'),
-        content: darkTextField(controller: controller, autofocus: true),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, controller.text), child: const Text('Rename')),
-        ],
-      ),
+    final title = await dreamInputDialog(
+      context,
+      title: 'Rename deck',
+      initial: (_deck['title'] ?? '').toString(),
+      confirmLabel: 'Rename',
     );
     if (title == null || title.trim().isEmpty) return;
     final updated = _copy();

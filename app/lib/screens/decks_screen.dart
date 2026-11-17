@@ -58,17 +58,11 @@ class _DecksScreenState extends State<DecksScreen> {
   }
 
   Future<void> _rename(Map<String, dynamic> deck) async {
-    final controller = TextEditingController(text: (deck['title'] ?? '').toString());
-    final title = await showDialog<String>(
-      context: context,
-      builder: (context) => dreamDialog(
-        title: const Text('Rename deck'),
-        content: darkTextField(controller: controller, autofocus: true),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, controller.text), child: const Text('Rename')),
-        ],
-      ),
+    final title = await dreamInputDialog(
+      context,
+      title: 'Rename deck',
+      initial: (deck['title'] ?? '').toString(),
+      confirmLabel: 'Rename',
     );
     if (title == null || title.trim().isEmpty) return;
     final updated = Map<String, dynamic>.from(deck);
@@ -120,17 +114,11 @@ class _DecksScreenState extends State<DecksScreen> {
   }
 
   Future<String?> _askTitle() {
-    final controller = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (context) => dreamDialog(
-        title: const Text('New deck'),
-        content: darkTextField(controller: controller, autofocus: true, hint: 'e.g. Q3 launch review'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, controller.text), child: const Text('Create')),
-        ],
-      ),
+    return dreamInputDialog(
+      context,
+      title: 'New deck',
+      hint: 'e.g. Q3 launch review',
+      confirmLabel: 'Create',
     );
   }
 

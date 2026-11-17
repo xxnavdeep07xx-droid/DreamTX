@@ -93,6 +93,76 @@ ThemeData buildDreamTheme() {
 
 // ---- shared dark widgets ------------------------------------------------------
 
+/// Input dialog pinned to ONE comfortable place. The card anchors to the top
+/// of the screen with a fixed pixel offset instead of vertically centering,
+/// so the opening keyboard never lifts it and never covers the field — the
+/// window resizes from the bottom, the card's top edge never moves.
+Future<String?> dreamInputDialog(
+  BuildContext context, {
+  required String title,
+  String? hint,
+  String initial = '',
+  String confirmLabel = 'Create',
+  bool multiline = false,
+}) {
+  final controller = TextEditingController(text: initial);
+  return showDialog<String>(
+    context: context,
+    useSafeArea: false,
+    builder: (context) => MediaQuery(
+      // Belt and braces: even on insets-delivered (non-resizing) keyboards
+      // the subtree sees none, so nothing re-centers or jumps.
+      data: MediaQuery.of(context).copyWith(viewInsets: EdgeInsets.zero),
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 96, 24, 0),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Material(
+              color: kSurface,
+              surfaceTintColor: Colors.transparent,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: const BorderSide(color: kHairline),
+              ),
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 14, 12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: kText)),
+                      const SizedBox(height: 14),
+                      darkTextField(
+                        controller: controller,
+                        hint: hint,
+                        autofocus: true,
+                        maxLines: multiline ? 4 : 1,
+                        onSubmitted: multiline ? null : (_) => Navigator.pop(context, controller.text),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+                          const SizedBox(width: 8),
+                          FilledButton(onPressed: () => Navigator.pop(context, controller.text), child: Text(confirmLabel)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 /// Neutral dark dialog. The seeded dialog surface carries a warm tint and its
 /// TextFields default to light-theme styling, so dialogs are styled here once.
 AlertDialog dreamDialog({required Widget title, Widget? content, List<Widget>? actions}) {

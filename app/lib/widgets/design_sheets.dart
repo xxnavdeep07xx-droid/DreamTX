@@ -700,17 +700,11 @@ class _LayersSheetState extends State<_LayersSheet> {
   void _pop() => Navigator.pop(context);
 
   Future<void> _askComponentName() async {
-    final controller = TextEditingController();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (context) => dreamDialog(
-        title: const Text('Save as component'),
-        content: darkTextField(controller: controller, autofocus: true, hint: 'e.g. Brand badge'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, controller.text), child: const Text('Save')),
-        ],
-      ),
+    final name = await dreamInputDialog(
+      context,
+      title: 'Save as component',
+      hint: 'e.g. Brand badge',
+      confirmLabel: 'Save',
     );
     if (name == null || name.trim().isEmpty) return;
     widget.onSaveComponent(_sel.toList(), name.trim());
