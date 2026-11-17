@@ -313,11 +313,9 @@ class _ContentSheetState extends State<ContentSheet> {
         controller: _for(path, ''),
         maxLines: maxLines,
         keyboardType: kb,
-        decoration: InputDecoration(
-          labelText: label,
-          border: const OutlineInputBorder(),
-          isDense: true,
-        ),
+        style: const TextStyle(color: kText, fontSize: 14),
+        cursorColor: kPurple,
+        decoration: darkInput(label: label),
       ),
     );
   }

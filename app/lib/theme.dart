@@ -90,3 +90,65 @@ ThemeData buildDreamTheme() {
     ),
   );
 }
+
+// ---- shared dark widgets ------------------------------------------------------
+
+/// Neutral dark dialog. The seeded dialog surface carries a warm tint and its
+/// TextFields default to light-theme styling, so dialogs are styled here once.
+AlertDialog dreamDialog({required Widget title, Widget? content, List<Widget>? actions}) {
+  return AlertDialog(
+    title: title,
+    content: content,
+    actions: actions,
+    backgroundColor: kSurface,
+    surfaceTintColor: Colors.transparent,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+    titleTextStyle: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: kText),
+    contentTextStyle: const TextStyle(fontSize: 13.5, color: kText2),
+  );
+}
+
+/// Dark TextField for dialogs and sheets: inset black fill, hairline border,
+/// purple focus ring.
+TextField darkTextField({
+  required TextEditingController controller,
+  String? hint,
+  String? label,
+  bool autofocus = false,
+  int maxLines = 1,
+  void Function(String)? onChanged,
+  void Function(String)? onSubmitted,
+}) {
+  return TextField(
+    controller: controller,
+    autofocus: autofocus,
+    maxLines: maxLines,
+    onChanged: onChanged,
+    onSubmitted: onSubmitted,
+    style: const TextStyle(color: kText, fontSize: 14),
+    cursorColor: kPurple,
+    decoration: darkInput(hint: hint, label: label),
+  );
+}
+
+/// Dark input decoration — also used by form fields on sheets.
+InputDecoration darkInput({String? hint, String? label}) {
+  return InputDecoration(
+    hintText: hint,
+    labelText: label,
+    isDense: true,
+    filled: true,
+    fillColor: kBg,
+    hintStyle: const TextStyle(color: kText3, fontSize: 13),
+    labelStyle: const TextStyle(color: kText2, fontSize: 13),
+    floatingLabelStyle: const TextStyle(color: kPurple, fontSize: 13),
+    border: _inputBorder(kHairline),
+    enabledBorder: _inputBorder(kHairline),
+    focusedBorder: _inputBorder(kPurple, 1.6),
+  );
+}
+
+OutlineInputBorder _inputBorder(Color color, [double width = 1]) => OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(color: color, width: width),
+    );

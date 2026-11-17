@@ -544,11 +544,9 @@ class _ColorFieldState extends State<_ColorField> {
               Expanded(
                 child: TextField(
                   controller: _controller,
-                  decoration: const InputDecoration(
-                    hintText: 'RRGGBB',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
+                  style: const TextStyle(color: kText, fontSize: 13),
+                  cursorColor: kPurple,
+                  decoration: darkInput(hint: 'RRGGBB'),
                   onChanged: _commit,
                 ),
               ),
@@ -705,9 +703,9 @@ class _LayersSheetState extends State<_LayersSheet> {
     final controller = TextEditingController();
     final name = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => dreamDialog(
         title: const Text('Save as component'),
-        content: TextField(controller: controller, autofocus: true, decoration: const InputDecoration(hintText: 'e.g. Brand badge')),
+        content: darkTextField(controller: controller, autofocus: true, hint: 'e.g. Brand badge'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           FilledButton(onPressed: () => Navigator.pop(context, controller.text), child: const Text('Save')),

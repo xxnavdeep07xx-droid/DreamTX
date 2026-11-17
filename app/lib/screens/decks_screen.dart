@@ -61,9 +61,9 @@ class _DecksScreenState extends State<DecksScreen> {
     final controller = TextEditingController(text: (deck['title'] ?? '').toString());
     final title = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => dreamDialog(
         title: const Text('Rename deck'),
-        content: TextField(controller: controller, autofocus: true),
+        content: darkTextField(controller: controller, autofocus: true),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           FilledButton(onPressed: () => Navigator.pop(context, controller.text), child: const Text('Rename')),
@@ -123,13 +123,9 @@ class _DecksScreenState extends State<DecksScreen> {
     final controller = TextEditingController();
     return showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => dreamDialog(
         title: const Text('New deck'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'e.g. Q3 launch review'),
-        ),
+        content: darkTextField(controller: controller, autofocus: true, hint: 'e.g. Q3 launch review'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           FilledButton(onPressed: () => Navigator.pop(context, controller.text), child: const Text('Create')),
@@ -141,12 +137,16 @@ class _DecksScreenState extends State<DecksScreen> {
   Future<void> _delete(Map<String, dynamic> deck) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => dreamDialog(
         title: Text("Delete '${deck['title']}'?"),
         content: const Text('The deck file is removed from this device.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Keep')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: kAccent, foregroundColor: Colors.white),
+            child: const Text('Delete'),
+          ),
         ],
       ),
     );

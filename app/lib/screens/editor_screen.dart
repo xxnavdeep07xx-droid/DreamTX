@@ -441,9 +441,9 @@ class _EditorScreenState extends State<EditorScreen> {
     final controller = TextEditingController(text: current);
     final changed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => dreamDialog(
         title: Text('Edit — ${key.replaceAll('.', ' ')}'),
-        content: TextField(controller: controller, autofocus: true, maxLines: 3),
+        content: darkTextField(controller: controller, autofocus: true, maxLines: 3),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
           FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Save')),
@@ -706,9 +706,9 @@ class _EditorScreenState extends State<EditorScreen> {
     final controller = TextEditingController(text: (_deck['title'] ?? '').toString());
     final title = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => dreamDialog(
         title: const Text('Rename deck'),
-        content: TextField(controller: controller, autofocus: true),
+        content: darkTextField(controller: controller, autofocus: true),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           FilledButton(onPressed: () => Navigator.pop(context, controller.text), child: const Text('Rename')),

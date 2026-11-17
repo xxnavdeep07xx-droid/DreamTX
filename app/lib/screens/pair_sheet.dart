@@ -5,6 +5,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../theme.dart';
+
 /// Pair sheet — "use your own AI" UX: ask the server for a 15-minute pairing
 /// code + URL, paste it into ChatGPT/Claude/any MCP client, then watch the
 /// deck update live over the deck DO WebSocket (with version catch-up).
@@ -144,10 +146,11 @@ class _PairSheetState extends State<PairSheet> {
           ),
           const SizedBox(height: 16),
           TextField(
-            decoration: const InputDecoration(
-              labelText: 'DreamTX server URL',
-              hintText: 'https://dreamtx.your-name.workers.dev',
-              border: OutlineInputBorder(),
+            style: const TextStyle(color: kText, fontSize: 14),
+            cursorColor: kPurple,
+            decoration: darkInput(
+              label: 'DreamTX server URL',
+              hint: 'https://dreamtx.your-name.workers.dev',
             ),
             controller: TextEditingController(text: _serverUrl ?? ''),
             onChanged: (v) => _serverUrl = v,
