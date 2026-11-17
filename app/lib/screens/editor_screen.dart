@@ -1027,7 +1027,7 @@ class _EditorScreenState extends State<EditorScreen> {
               icon: const Icon(Icons.arrow_forward),
               onPressed: _index >= n - 1 ? null : () => _moveAt(_index, 1),
             ),
-            Expanded(
+            const Expanded(
               child: Center(
                 child: Text(
                   'long-press a thumbnail for more',
@@ -1055,7 +1055,7 @@ class _EditorScreenState extends State<EditorScreen> {
                 label: const Text('Edit slide content'),
               ),
             ),
-            Expanded(
+            const Expanded(
               child: Center(
                 child: Text(
                   'or tap any text directly on the slide',
@@ -1114,7 +1114,7 @@ class _EditorScreenState extends State<EditorScreen> {
               icon: const Icon(Icons.shuffle),
               onPressed: () => _applyDesign('next_variant'),
             ),
-            Expanded(
+            const Expanded(
               child: Center(
                 child: Text(
                   'design DNA — whole deck',
@@ -1147,7 +1147,7 @@ class _EditorScreenState extends State<EditorScreen> {
                 child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.2)),
               )
             else
-              Expanded(
+              const Expanded(
                 child: Center(
                   child: Text(
                     'files are share-ready',
