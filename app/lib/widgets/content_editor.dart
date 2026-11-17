@@ -70,23 +70,23 @@ Map<String, dynamic> defaultContentFor(String archetype, String deckTitle) {
   }
 }
 
-class _Spec {
-  const _Spec(this.key, this.label, this.type);
+class FieldSpec {
+  const FieldSpec(this.key, this.label, this.type);
   final String key;
   final String label;
   final String type; // text | multiline | opt | number | list | stats | side | chart
 }
 
-const Map<String, List<_Spec>> fieldSpecs = {
-  'cover': [_Spec('kicker', 'Kicker', 'opt'), _Spec('title', 'Title', 'text'), _Spec('subtitle', 'Subtitle', 'opt')],
-  'agenda': [_Spec('title', 'Title', 'text'), _Spec('items', 'Agenda items', 'list')],
-  'section': [_Spec('index', 'Section number', 'number'), _Spec('title', 'Title', 'text'), _Spec('blurb', 'Blurb', 'opt')],
-  'statement': [_Spec('text', 'Statement', 'multiline'), _Spec('attribution', 'Attribution', 'opt')],
-  'stat_wall': [_Spec('title', 'Title', 'opt'), _Spec('stats', 'Stats', 'stats')],
-  'split': [_Spec('title', 'Title', 'text'), _Spec('bullets', 'Bullets', 'list'), _Spec('visual_label', 'Visual label', 'opt')],
-  'comparison': [_Spec('title', 'Title', 'opt'), _Spec('left', 'Left column', 'side'), _Spec('right', 'Right column', 'side')],
-  'chart_hero': [_Spec('title', 'Title', 'text'), _Spec('chart', 'Chart', 'chart'), _Spec('takeaway', 'Takeaway', 'opt')],
-  'closing': [_Spec('title', 'Title', 'text'), _Spec('subtitle', 'Subtitle', 'opt')],
+const Map<String, List<FieldSpec>> fieldSpecs = {
+  'cover': [FieldSpec('kicker', 'Kicker', 'opt'), FieldSpec('title', 'Title', 'text'), FieldSpec('subtitle', 'Subtitle', 'opt')],
+  'agenda': [FieldSpec('title', 'Title', 'text'), FieldSpec('items', 'Agenda items', 'list')],
+  'section': [FieldSpec('index', 'Section number', 'number'), FieldSpec('title', 'Title', 'text'), FieldSpec('blurb', 'Blurb', 'opt')],
+  'statement': [FieldSpec('text', 'Statement', 'multiline'), FieldSpec('attribution', 'Attribution', 'opt')],
+  'stat_wall': [FieldSpec('title', 'Title', 'opt'), FieldSpec('stats', 'Stats', 'stats')],
+  'split': [FieldSpec('title', 'Title', 'text'), FieldSpec('bullets', 'Bullets', 'list'), FieldSpec('visual_label', 'Visual label', 'opt')],
+  'comparison': [FieldSpec('title', 'Title', 'opt'), FieldSpec('left', 'Left column', 'side'), FieldSpec('right', 'Right column', 'side')],
+  'chart_hero': [FieldSpec('title', 'Title', 'text'), FieldSpec('chart', 'Chart', 'chart'), FieldSpec('takeaway', 'Takeaway', 'opt')],
+  'closing': [FieldSpec('title', 'Title', 'text'), FieldSpec('subtitle', 'Subtitle', 'opt')],
 };
 
 Future<ContentEdit?> showContentEditor(
@@ -102,7 +102,7 @@ Future<ContentEdit?> showContentEditor(
 }
 
 class ContentSheet extends StatefulWidget {
-  const ContentSheet({required this.slide, required this.deckTitle});
+  const ContentSheet({super.key, required this.slide, required this.deckTitle});
 
   final Map slide;
   final String deckTitle;
@@ -147,7 +147,7 @@ class _ContentSheetState extends State<ContentSheet> {
     _ctrl.clear();
     _present.clear();
     _listLens.clear();
-    final specs = fieldSpecs[_archetype] ?? const <_Spec>[];
+    final specs = fieldSpecs[_archetype] ?? const <FieldSpec>[];
     for (final s in specs) {
       final v = content[s.key];
       switch (s.type) {
@@ -201,7 +201,7 @@ class _ContentSheetState extends State<ContentSheet> {
 
   Map<String, dynamic> _compose() {
     final out = <String, dynamic>{'kind': _archetype};
-    for (final s in fieldSpecs[_archetype] ?? const <_Spec>[]) {
+    for (final s in fieldSpecs[_archetype] ?? const <FieldSpec>[]) {
       switch (s.type) {
         case 'text':
         case 'multiline':
@@ -558,7 +558,7 @@ class _ContentSheetState extends State<ContentSheet> {
     );
   }
 
-  Widget _fieldFor(_Spec s) {
+  Widget _fieldFor(FieldSpec s) {
     switch (s.type) {
       case 'text':
         return _field(s.key, s.label);
@@ -638,7 +638,7 @@ class _ContentSheetState extends State<ContentSheet> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    for (final s in fieldSpecs[_archetype] ?? const <_Spec>[]) _fieldFor(s),
+                    for (final s in fieldSpecs[_archetype] ?? const <FieldSpec>[]) _fieldFor(s),
                   ],
                 ),
               ),
