@@ -146,10 +146,14 @@ class _KeyboardStablePaddingState extends State<_KeyboardStablePadding> {
 
     // No keyboard around: record the steady padding and pass it through.
     _stablePadding = mq.padding;
-    return MediaQuery(data: mq, child: widget.child);
+    return MediaQuery(data: mq, child: _child);
   }
 
   Widget _frozen(MediaQueryData mq) {
-    return MediaQuery(data: mq.copyWith(padding: _stablePadding), child: widget.child);
+    return MediaQuery(data: mq.copyWith(padding: _stablePadding), child: _child);
   }
+
+  /// Flutter 3.50+ requires a non-null child for MediaQuery. MaterialApp
+  /// always passes its Navigator subtree, but stay defensive anyway.
+  Widget get _child => widget.child ?? const SizedBox.shrink();
 }
