@@ -93,10 +93,12 @@ ThemeData buildDreamTheme() {
 
 // ---- shared dark widgets ------------------------------------------------------
 
-/// Input dialog pinned to ONE comfortable place. The card anchors to the top
-/// of the screen with a fixed pixel offset instead of vertically centering,
-/// so the opening keyboard never lifts it and never covers the field — the
-/// window resizes from the bottom, the card's top edge never moves.
+/// Input dialog pinned to ONE comfortable place: the middle of the band that
+/// stays visible above the keyboard. The card is centered around a third of
+/// the screen height (fractional, so it adapts to any device) — below the
+/// masthead, well clear of the tallest keyboards — and the subtree is fed
+/// zeroed viewInsets, so the opening keyboard never lifts the card, the
+/// field is never covered, and nothing re-centers or jumps.
 Future<String?> dreamInputDialog(
   BuildContext context, {
   required String title,
@@ -114,9 +116,12 @@ Future<String?> dreamInputDialog(
       // the subtree sees none, so nothing re-centers or jumps.
       data: MediaQuery.of(context).copyWith(viewInsets: EdgeInsets.zero),
       child: Align(
-        alignment: Alignment.topCenter,
+        // y = -0.34 puts the card's vertical center at ~33% of the screen —
+        // mid-flight between the masthead and the keyboard, not hugging the
+        // top edge.
+        alignment: const Alignment(0, -0.34),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 96, 24, 0),
+          padding: const EdgeInsets.symmetric(horizontal: 24),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 420),
             child: Material(
