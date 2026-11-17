@@ -127,7 +127,7 @@ fn gs_for(alpha: f64, set: &mut Vec<(f64, String)>) -> String {
         }
     }
     let name = format!("gs{}", set.len());
-    set.push((a, name));
+    set.push((a, name.clone()));
     name
 }
 

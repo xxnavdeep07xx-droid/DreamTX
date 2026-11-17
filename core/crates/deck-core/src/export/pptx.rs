@@ -196,7 +196,6 @@ fn text_sp(el: &Element, id: u32) -> String {
         crate::layout::Align::Center => "ctr",
         crate::layout::Align::Right => "r",
     };
-    let face = typeface(serif, bold);
     let mut paras = String::new();
     for line in lines {
         paras.push_str(&format!(

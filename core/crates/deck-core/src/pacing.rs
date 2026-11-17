@@ -125,7 +125,7 @@ mod tests {
             },
             _ => SlideContent::Statement { text: "x".into(), attribution: None },
         };
-        Slide { id: "s".into(), archetype: a, content }
+        Slide { id: "s".into(), archetype: a, content, objects: Vec::new() }
     }
 
     #[test]
@@ -136,6 +136,7 @@ mod tests {
             version: 1,
             dna: Dna { family: DnaFamily::SwissEditorial, seed: 1 },
             slides: vec![slide(Archetype::Statement), slide(Archetype::Statement)],
+            components: Vec::new(),
         };
         assert!(audit(&deck).contains(&PacingIssue::RepeatedArchetype { slide_index: 1 }));
     }

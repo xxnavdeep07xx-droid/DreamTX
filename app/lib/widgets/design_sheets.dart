@@ -188,23 +188,26 @@ class _InspectorSheetState extends State<_InspectorSheet> {
 
   Map<String, dynamic> get _fill {
     final f = _obj['fill'];
-    if (f is Map) return f;
-    _obj['fill'] = {'type': 'none'};
-    return _obj['fill'] as Map<String, dynamic>;
+    if (f is Map<String, dynamic>) return f;
+    final created = <String, dynamic>{'type': 'none'};
+    _obj['fill'] = created;
+    return created;
   }
 
   Map<String, dynamic> get _stroke {
     final s = _obj['stroke'];
-    if (s is Map) return s;
-    _obj['stroke'] = {'color': '17181A', 'width': 0, 'dash': 'solid', 'start_arrow': 'none', 'end_arrow': 'none'};
-    return _obj['stroke'] as Map<String, dynamic>;
+    if (s is Map<String, dynamic>) return s;
+    final created = <String, dynamic>{'color': '17181A', 'width': 0, 'dash': 'solid', 'start_arrow': 'none', 'end_arrow': 'none'};
+    _obj['stroke'] = created;
+    return created;
   }
 
   Map<String, dynamic> get _effects {
     final e = _obj['effects'];
-    if (e is Map) return e;
-    _obj['effects'] = {};
-    return _obj['effects'] as Map<String, dynamic>;
+    if (e is Map<String, dynamic>) return e;
+    final created = <String, dynamic>{};
+    _obj['effects'] = created;
+    return created;
   }
 
   void _setFillType(String t) {
@@ -417,7 +420,7 @@ class _InspectorSheetState extends State<_InspectorSheet> {
                     child: FilledButton(
                       onPressed: () {
                         Navigator.pop(context);
-                        onChange(_obj);
+                        widget.onChange(_obj);
                       },
                       child: const Text('Apply style'),
                     ),
@@ -845,7 +848,7 @@ class _LayersSheetState extends State<_LayersSheet> {
               preset,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
           ),
           if (isComp) const Padding(padding: EdgeInsets.only(left: 4), child: Icon(Icons.extension_outlined, size: 14, color: Color(0xFF6B6B70))),
@@ -875,26 +878,8 @@ class _LayersSheetState extends State<_LayersSheet> {
             onPressed: () => widget.onToggleLock(id),
           ),
           IconButton(
-            tooltip: 'Style',
-            icon: const Icon(Icons.format_paint_outlined, size: 20),
-            onPressed: () {
-              Navigator.pop(context);
-              widget.onEditStyle(id);
-            },
-          ),
-          IconButton(
-            tooltip: 'Duplicate',
-            icon: const Icon(Icons.content_copy, size: 20),
-            onPressed: () => widget.onDuplicate(id),
-          ),
-          IconButton(
-            tooltip: 'Add reflection',
-            icon: const Icon(Icons.flip, size: 20),
-            onPressed: () => widget.onReflect(id),
-          ),
-          IconButton(
             tooltip: 'Delete',
-            icon: const Icon(Icons.delete_outline, size: 20, color: Theme.of(context).colorScheme.error),
+            icon: Icon(Icons.delete_outline, size: 20, color: Theme.of(context).colorScheme.error),
             onPressed: () {
               Navigator.pop(context);
               widget.onDelete(id);
@@ -953,6 +938,21 @@ class _LayersSheetState extends State<_LayersSheet> {
           avatar: const Icon(Icons.extension_outlined, size: 16),
           label: const Text('Save as component'),
           onPressed: _sel.isNotEmpty ? _askComponentName : null,
+        ),
+        ActionChip(
+          avatar: const Icon(Icons.format_paint_outlined, size: 16),
+          label: const Text('Style'),
+          onPressed: _sel.length == 1 ? () { widget.onEditStyle(_sel.first); _pop(); } : null,
+        ),
+        ActionChip(
+          avatar: const Icon(Icons.content_copy, size: 16),
+          label: const Text('Duplicate'),
+          onPressed: _sel.length == 1 ? () { widget.onDuplicate(_sel.first); _pop(); } : null,
+        ),
+        ActionChip(
+          avatar: const Icon(Icons.flip, size: 16),
+          label: const Text('Reflection'),
+          onPressed: _sel.length == 1 ? () { widget.onReflect(_sel.first); _pop(); } : null,
         ),
       ],
     );

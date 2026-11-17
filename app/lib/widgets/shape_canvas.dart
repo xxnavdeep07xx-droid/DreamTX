@@ -1,6 +1,6 @@
 import 'dart:math' as math;
+import 'dart:ui' show PathMetric;
 
-import 'package:flutter/painting.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// Interactive vector overlay layer: paints every object (fills, gradients,
@@ -111,9 +111,11 @@ class _ShapesLayerState extends State<ShapesLayer> {
 
   Offset _rotateAround(Offset p, Offset c, double deg) {
     final r = deg * math.pi / 180.0;
+    final cosv = math.cos(r);
+    final sinv = math.sin(r);
     final dx = p.dx - c.dx;
     final dy = p.dy - c.dy;
-    return Offset(c.dx + dx * r.cos() - dy * r.sin(), c.dy + dx * r.sin() + dy * r.cos());
+    return Offset(c.dx + dx * cosv - dy * sinv, c.dy + dx * sinv + dy * cosv);
   }
 
   // ---- handle geometry -------------------------------------------------------
@@ -270,7 +272,7 @@ class _ShapesLayerState extends State<ShapesLayer> {
         var deg = _angleBetween(design - c) - _angleBetween(grab.start - c) + ((o['rotation'] ?? 0) as num).toDouble();
         deg = deg % 360;
         // snap to 15° increments when close
-        final step = 15.0;
+        const step = 15.0;
         final near = (deg / step).round() * step;
         if ((deg - near).abs() < 4.0) deg = near.toDouble();
         final updated = _copyObj(live);
@@ -572,8 +574,8 @@ class _ShapesPainter extends CustomPainter {
 
   void _drawArrowheads(Canvas canvas, Map obj, Path path, double opacity) {
     final stroke = obj['stroke'] as Map;
-    final width = ((stroke['width'] ?? 2) as num).toDouble().clamp(2, 40);
-    final size = (width * 3).clamp(10.0, 60.0);
+    final width = ((stroke['width'] ?? 2) as num).toDouble().clamp(2.0, 40.0);
+    final size = (width * 3).clamp(10.0, 60.0).toDouble();
     final color = _color((stroke['color'] ?? '17181A').toString(), opacity);
     final metrics = path.computeMetrics().toList();
     if (metrics.isEmpty) return;
@@ -711,7 +713,8 @@ Path? objectPath(Map obj) {
       return Path()..addOval(rect);
     case 'donut':
       final inner = Rect.fromCenter(center: rect.center, width: w * 0.45, height: h * 0.45);
-      return Path(PathFillType.evenOdd)
+      return Path()
+        ..fillType = PathFillType.evenOdd
         ..addOval(rect)
         ..addOval(inner);
     case 'line':
@@ -813,7 +816,7 @@ List<Offset> presetPolygon(String name, double w, double h) {
       }
     case 'cross':
       {
-        final t = 0.34;
+        const t = 0.34;
         return [
           p(wv * (1 - t) / 2, 0),
           p(wv * (1 + t) / 2, 0),
@@ -928,7 +931,7 @@ List<Offset> moon(double w, double h) {
 List<Offset> ribbon(double w, double h) {
   final t = h * 0.45;
   return [
-    Offset(0, 0),
+    const Offset(0, 0),
     Offset(w, 0),
     Offset(w, t),
     Offset(w * 0.75, t),
@@ -943,7 +946,7 @@ List<Offset> ribbon(double w, double h) {
 List<Offset> bubble(double w, double h) {
   final hb = h * 0.75;
   return [
-    Offset(0, 0),
+    const Offset(0, 0),
     Offset(w, 0),
     Offset(w, hb),
     Offset(w * 0.3, hb),

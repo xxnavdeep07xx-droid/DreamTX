@@ -508,18 +508,19 @@ pub fn execute(req: &str) -> Value {
             json!({ "ok": true, "deck": deck })
         }
         Command::SaveComponent { mut deck, slide_id, ids, name } => {
-            let Some(slide) = deck.slides.iter().find(|s| s.id == slide_id) else {
+            let cid = format!("c{}", deck.version);
+            let Some(slide) = deck.slides.iter_mut().find(|s| s.id == slide_id) else {
                 return json!({ "ok": false, "error": "slide not found" });
             };
-            let picked: Vec<Shape> = slide.objects.iter().filter(|o| ids.contains(&o.id)).cloned().collect();
-            if picked.is_empty() {
-                return json!({ "ok": false, "error": "no objects selected" });
-            }
-            let cid = format!("c{}", deck.version);
+            let mut picked: Vec<Shape> = Vec::new();
             for o in slide.objects.iter_mut() {
                 if ids.contains(&o.id) {
                     o.component = Some(cid.clone());
+                    picked.push(o.clone());
                 }
+            }
+            if picked.is_empty() {
+                return json!({ "ok": false, "error": "no objects selected" });
             }
             deck.components.push(Component { id: cid.clone(), name, objects: picked });
             deck.version += 1;

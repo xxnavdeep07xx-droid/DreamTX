@@ -290,7 +290,7 @@ class _EditorScreenState extends State<EditorScreen> {
     }
   }
 
-  void _objOp(Map req) {
+  void _objOp(Map<String, dynamic> req) {
     final r = Bridge.command(req);
     if (r['ok'] == true && r['deck'] is Map) {
       _mutate(r['deck'] as Map);

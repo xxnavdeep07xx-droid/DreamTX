@@ -422,6 +422,7 @@ mod tests {
             id: "s1".into(),
             archetype: Archetype::Cover,
             content: SlideContent::Cover { kicker: Some("Q3 review".into()), title: "Revenue up".into(), subtitle: Some("FY26".into()) },
+            objects: Vec::new(),
         };
         let l = layout_slide(&dna, &slide);
         assert_eq!(l.w, SLIDE_W);
@@ -438,6 +439,7 @@ mod tests {
             id: "s".into(),
             archetype: Archetype::Statement,
             content: SlideContent::Statement { text: long, attribution: None },
+            objects: Vec::new(),
         };
         let l = layout_slide(&dna, &slide);
         let mut min_size = f64::MAX;
