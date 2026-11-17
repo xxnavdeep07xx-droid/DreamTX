@@ -309,53 +309,85 @@ class _DeckCard extends StatelessWidget {
   }
 }
 
-class _EmptyState extends StatelessWidget {
+/// The empty-state card anchors to the steady (keyboard-free) height of the
+/// body region rather than to whatever the region measures right now. If the
+/// region momentarily shrinks — cold-start keyboard quirks, transient
+/// system-bar churn — the surplus just flows away behind the keyboard and
+/// the card keeps its exact screen position instead of shaking.
+class _EmptyState extends StatefulWidget {
   const _EmptyState({required this.onCreate});
 
   final VoidCallback onCreate;
 
   @override
+  State<_EmptyState> createState() => _EmptyScreenState();
+}
+
+class _EmptyScreenState extends State<_EmptyState> {
+  double? _steadyHeight;
+
+  @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 340),
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 36),
-            decoration: BoxDecoration(
-              color: kSurface,
-              border: Border.all(color: kHairline, width: 1),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.layers_outlined, size: 44, color: kText2),
-                const SizedBox(height: 14),
-                const Text(
-                  'No decks yet',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: kText),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Create one — then pair it with your AI.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 13.5, color: kText2),
-                ),
-                const SizedBox(height: 20),
-                _GradientButton(
-                  icon: Icons.add,
-                  label: 'Create your first deck',
-                  onPressed: onCreate,
-                  height: 46,
-                ),
-              ],
-            ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Refresh the anchor only while the region is at its full size —
+        // never mid-keyboard, when the region may be transiently shrunken.
+        final keyboardClosed = MediaQuery.viewInsetsOf(context).bottom == 0;
+        if (keyboardClosed && constraints.maxHeight > 0) {
+          _steadyHeight = constraints.maxHeight;
+        }
+        final h = _steadyHeight;
+        if (h == null) return Center(child: _card());
+        // Top-anchored box of the steady height: the card centers at h/2 from
+        // the region's top edge, so a shrink of the region only moves the
+        // empty space that already sits behind the keyboard.
+        return Align(
+          alignment: Alignment.topCenter,
+          child: SizedBox(
+            height: h,
+            child: Center(child: _card()),
           ),
+        );
+      },
+    );
+  }
+
+  Widget _card() {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 340),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 36),
+        decoration: BoxDecoration(
+          color: kSurface,
+          border: Border.all(color: kHairline, width: 1),
+          borderRadius: BorderRadius.circular(20),
         ),
-      ],
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.layers_outlined, size: 44, color: kText2),
+            const SizedBox(height: 14),
+            const Text(
+              'No decks yet',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: kText),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Create one — then pair it with your AI.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13.5, color: kText2),
+            ),
+            const SizedBox(height: 20),
+            _GradientButton(
+              icon: Icons.add,
+              label: 'Create your first deck',
+              onPressed: widget.onCreate,
+              height: 46,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
