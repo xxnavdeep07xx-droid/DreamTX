@@ -7,11 +7,14 @@ import 'package:share_plus/share_plus.dart';
 
 import '../core/bridge.dart';
 import '../core/store.dart';
+import '../widgets/content_editor.dart';
 import '../widgets/slide_canvas.dart';
 import 'pair_sheet.dart';
 
-/// Screen 2 — Editor. Canvas + filmstrip; tap text to edit; swap archetype;
-/// cycle DNA variant; export. Deliberately nothing more in v1.
+/// Screen 2 — Editor. Canvas + filmstrip + full manual toolkit: edit every
+/// content field, add / duplicate / reorder / delete slides, undo & redo,
+/// pick the design family, rename the deck, export. And the AI can still
+/// drive the same ops over MCP.
 class EditorScreen extends StatefulWidget {
   const EditorScreen({super.key, required this.deck});
 
@@ -27,6 +30,8 @@ class _EditorScreenState extends State<EditorScreen> {
   Map<String, dynamic>? _layout;
   List<String> _warnings = [];
   bool _busy = false;
+  final List<Map<String, dynamic>> _undo = [];
+  final List<Map<String, dynamic>> _redo = [];
 
   @override
   void initState() {
@@ -38,13 +43,48 @@ class _EditorScreenState extends State<EditorScreen> {
   List<Map<String, dynamic>> get _slides =>
       (_deck['slides'] as List? ?? []).whereType<Map<String, dynamic>>().toList();
 
+  // ---- deck state + undo/redo ------------------------------------------------
+
+  Map<String, dynamic> _copy() => jsonDecode(jsonEncode(_deck)) as Map<String, dynamic>;
+
+  /// Apply a new deck produced by the engine (or a local edit): push undo,
+  /// wipe redo, persist, refresh.
+  void _mutate(Map? newDeck) {
+    if (newDeck == null) return;
+    _undo.add(_copy());
+    if (_undo.length > 60) _undo.removeAt(0);
+    _redo.clear();
+    _setDeck(newDeck);
+  }
+
   void _setDeck(Map newDeck) {
     _deck = Map<String, dynamic>.from(newDeck);
     DeckStore.open().then((s) => s.save(_deck));
     _refreshLayout();
   }
 
+  void _undoStep() {
+    if (_undo.isEmpty) return;
+    setState(() {
+      _redo.add(_copy());
+      _deck = _undo.removeLast();
+      DeckStore.open().then((s) => s.save(_deck));
+      _refreshLayout();
+    });
+  }
+
+  void _redoStep() {
+    if (_redo.isEmpty) return;
+    setState(() {
+      _undo.add(_copy());
+      _deck = _redo.removeLast();
+      DeckStore.open().then((s) => s.save(_deck));
+      _refreshLayout();
+    });
+  }
+
   void _refreshLayout() {
+    if (!mounted) return;
     if (_slides.isEmpty) {
       setState(() {
         _layout = null;
@@ -65,7 +105,7 @@ class _EditorScreenState extends State<EditorScreen> {
     });
   }
 
-  // ---- editing actions ------------------------------------------------------
+  // ---- quick single-field edit (tap text on the canvas) ----------------------
 
   Future<void> _editText(String key) async {
     final slide = _slides[_index];
@@ -85,14 +125,7 @@ class _EditorScreenState extends State<EditorScreen> {
     );
     if (changed != true) return;
     final updated = _applyKey(content, key, controller.text);
-    final r = Bridge.command({
-      'op': 'update_slide',
-      'deck': _deck,
-      'slide_id': slide['id'],
-      'archetype': slide['archetype'],
-      'content': updated,
-    });
-    if (r['ok'] == true && r['deck'] is Map) _setDeck(r['deck'] as Map);
+    _updateSlide(slide, slide['archetype'].toString(), updated);
   }
 
   /// Resolve a dotted path like `stats.0.value` inside the content map.
@@ -145,6 +178,23 @@ class _EditorScreenState extends State<EditorScreen> {
     return updated;
   }
 
+  // ---- slide ops --------------------------------------------------------------
+
+  void _updateSlide(Map slide, String archetype, Map content) {
+    final r = Bridge.command({
+      'op': 'update_slide',
+      'deck': _deck,
+      'slide_id': slide['id'],
+      'archetype': archetype,
+      'content': content,
+    });
+    if (r['ok'] == true && r['deck'] is Map) {
+      _mutate(r['deck'] as Map);
+    } else {
+      _toast('Could not save: ${r['error']}');
+    }
+  }
+
   Future<void> _addSlide() async {
     final meta = Bridge.command({'op': 'meta'});
     final r = Bridge.command({'op': 'pacing', 'deck': _deck});
@@ -174,7 +224,7 @@ class _EditorScreenState extends State<EditorScreen> {
     if (choice == null) return;
     final add = Bridge.command({'op': 'add_slide', 'deck': _deck, 'archetype': _archetypeOf(choice)});
     if (add['ok'] == true && add['deck'] is Map) {
-      _setDeck(add['deck'] as Map);
+      _mutate(add['deck'] as Map);
       setState(() => _index = _slides.length - 1);
       _refreshLayout();
     } else {
@@ -197,104 +247,193 @@ class _EditorScreenState extends State<EditorScreen> {
     return map[label] ?? 'statement';
   }
 
-  Future<void> _swapArchetype() async {
+  Future<void> _editContent() async {
     if (_slides.isEmpty) return;
     final slide = _slides[_index];
-    const choices = [
-      ('Cover', 'cover'),
-      ('Section break', 'section'),
-      ('Big statement', 'statement'),
-      ('Stat wall', 'stat_wall'),
-      ('Split text + visual', 'split'),
-      ('Comparison', 'comparison'),
-      ('Chart hero', 'chart_hero'),
-      ('Closing', 'closing'),
-    ];
-    final choice = await showModalBottomSheet<String>(
+    final result = await showContentEditor(
+      context,
+      slide: slide,
+      deckTitle: (_deck['title'] ?? 'Deck').toString(),
+    );
+    if (result == null) return;
+    _updateSlide(slide, result.archetype, result.content);
+  }
+
+  void _duplicateAt(int i) {
+    if (i < 0 || i >= _slides.length) return;
+    final slide = _slides[i];
+    final add = Bridge.command({
+      'op': 'add_slide',
+      'deck': _deck,
+      'archetype': slide['archetype'],
+      'content': slide['content'],
+    });
+    if (add['ok'] != true || add['deck'] is! Map) {
+      _toast('Could not duplicate: ${add['error']}');
+      return;
+    }
+    var deck = add['deck'] as Map;
+    // add_slide appends; move the copy right behind the original.
+    if (_slides.length > 1) {
+      final newId = (((deck['slides'] as List?) ?? []).whereType<Map>().last)['id'];
+      final move = Bridge.command({'op': 'move_slide', 'deck': deck, 'slide_id': newId, 'to_index': i + 1});
+      if (move['ok'] == true && move['deck'] is Map) deck = move['deck'] as Map;
+    }
+    _mutate(deck);
+    setState(() => _index = (i + 1).clamp(0, _slides.length - 1));
+    _refreshLayout();
+  }
+
+  void _moveAt(int i, int delta) {
+    if (_slides.isEmpty) return;
+    final slide = _slides[i.clamp(0, _slides.length - 1)];
+    final target = i + delta;
+    if (target < 0 || target >= _slides.length) return;
+    final r = Bridge.command({
+      'op': 'move_slide',
+      'deck': _deck,
+      'slide_id': slide['id'],
+      'to_index': target,
+    });
+    if (r['ok'] == true && r['deck'] is Map) {
+      _mutate(r['deck'] as Map);
+      setState(() => _index = target);
+      _refreshLayout();
+    }
+  }
+
+  void _deleteAt(int i) {
+    if (i < 0 || i >= _slides.length) return;
+    final slide = _slides[i];
+    final r = Bridge.command({'op': 'delete_slide', 'deck': _deck, 'slide_id': slide['id']});
+    if (r['ok'] == true && r['deck'] is Map) {
+      _mutate(r['deck'] as Map);
+      _refreshLayout(); // clamps _index
+    } else {
+      _toast('Could not delete: ${r['error']}');
+    }
+  }
+
+  /// Long-press menu for a filmstrip thumbnail.
+  Future<void> _slideActions(int i) async {
+    if (i < 0 || i >= _slides.length) return;
+    final action = await showModalBottomSheet<String>(
       context: context,
       builder: (context) => SafeArea(
         child: ListView(
+          shrinkWrap: true,
           children: [
-            const ListTile(title: Text("Swapping replaces this slide's content with the archetype default.")),
-            ...choices.map((c) => ListTile(
-              leading: const Icon(Icons.dashboard_outlined),
-              title: Text(c.$1),
-              onTap: () => Navigator.pop(context, c.$2),
-            )),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+              child: Text('Slide ${i + 1} of ${_slides.length}', style: Theme.of(context).textTheme.titleMedium),
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Edit content'),
+              onTap: () => Navigator.pop(context, 'edit'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.content_copy),
+              title: const Text('Duplicate'),
+              onTap: () => Navigator.pop(context, 'dup'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.arrow_upward),
+              title: const Text('Move left'),
+              enabled: i > 0,
+              onTap: () => Navigator.pop(context, 'left'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.arrow_downward),
+              title: const Text('Move right'),
+              enabled: i < _slides.length - 1,
+              onTap: () => Navigator.pop(context, 'right'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
+              title: const Text('Delete'),
+              onTap: () => Navigator.pop(context, 'del'),
+            ),
           ],
         ),
       ),
     );
-    if (choice == null) return;
-    final r = Bridge.command({
-      'op': 'update_slide',
-      'deck': _deck,
-      'slide_id': slide['id'],
-      'archetype': choice,
-      'content': _defaultContent(choice, slide),
-    });
-    if (r['ok'] == true && r['deck'] is Map) _setDeck(r['deck'] as Map);
-  }
-
-  Map<String, dynamic> _defaultContent(String archetype, Map slide) {
-    switch (archetype) {
-      case 'cover':
-        return {'kind': 'cover', 'kicker': null, 'title': (slide['title'] ?? _deck['title'] ?? 'Title').toString(), 'subtitle': null};
-      case 'section':
-        return {'kind': 'section', 'index': _index + 1, 'title': 'Section', 'blurb': null};
-      case 'statement':
-        return {'kind': 'statement', 'text': 'One idea per slide.', 'attribution': null};
-      case 'stat_wall':
-        return {
-          'kind': 'stat_wall',
-          'title': null,
-          'stats': [
-            {'value': '42%', 'label': 'of something that matters'}
-          ]
-        };
-      case 'split':
-        return {
-          'kind': 'split',
-          'title': 'Title',
-          'bullets': ['Point one', 'Point two'],
-          'visual_label': 'visual'
-        };
-      case 'comparison':
-        return {
-          'kind': 'comparison',
-          'title': null,
-          'left': {'title': 'Option A', 'points': ['pro']},
-          'right': {'title': 'Option B', 'points': ['pro']}
-        };
-      case 'chart_hero':
-        return {
-          'kind': 'chart_hero',
-          'title': 'Trend',
-          'chart': {
-            'type': 'bar',
-            'categories': ['Q1', 'Q2', 'Q3'],
-            'series': [
-              {'name': 'value', 'values': [1.0, 2.0, 3.0]}
-            ]
-          },
-          'takeaway': null
-        };
-      case 'closing':
-        return {'kind': 'closing', 'title': 'Thank you', 'subtitle': null};
-      default:
-        return {'kind': 'agenda', 'title': 'Agenda', 'items': ['First topic', 'Second topic']};
+    switch (action) {
+      case 'edit':
+        setState(() => _index = i);
+        _editContent();
+      case 'dup':
+        _duplicateAt(i);
+      case 'left':
+        _moveAt(i, -1);
+      case 'right':
+        _moveAt(i, 1);
+      case 'del':
+        _deleteAt(i);
     }
   }
 
-  void _cycleVariant() {
-    final r = Bridge.command({'op': 'apply_dna', 'deck': _deck, 'change': 'next_variant'});
-    if (r['ok'] == true && r['deck'] is Map) _setDeck(r['deck'] as Map);
+  // ---- deck-level ops ----------------------------------------------------------
+
+  Future<void> _renameDeck() async {
+    final controller = TextEditingController(text: (_deck['title'] ?? '').toString());
+    final title = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Rename deck'),
+        content: TextField(controller: controller, autofocus: true),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, controller.text), child: const Text('Rename')),
+        ],
+      ),
+    );
+    if (title == null || title.trim().isEmpty) return;
+    final updated = _copy();
+    updated['title'] = title.trim();
+    _mutate(updated);
   }
 
-  void _cycleFamily() {
-    final r = Bridge.command({'op': 'apply_dna', 'deck': _deck, 'change': 'next_family'});
-    if (r['ok'] == true && r['deck'] is Map) _setDeck(r['deck'] as Map);
+  /// Design family picker — explicit choice instead of blind cycling.
+  Future<void> _designSheet() async {
+    final current = ((_deck['dna'] ?? const {})['family'] ?? '').toString();
+    const families = [('swiss_editorial', 'Swiss editorial'), ('cinematic', 'Cinematic'), ('magazine_serif', 'Magazine serif')];
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('Deck design'),
+            ),
+            for (final (id, label) in families)
+              ListTile(
+                leading: Icon(
+                  id == current ? Icons.radio_button_checked : Icons.radio_button_off,
+                  color: id == current ? Theme.of(context).colorScheme.primary : null,
+                ),
+                title: Text(label),
+                onTap: () => Navigator.pop(context, id),
+              ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.shuffle),
+              title: const Text('New variant of this design'),
+              subtitle: const Text('Another curated look inside the family'),
+              onTap: () => Navigator.pop(context, 'next_variant'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || choice == current) return;
+    final r = Bridge.command({'op': 'apply_dna', 'deck': _deck, 'change': choice});
+    if (r['ok'] == true && r['deck'] is Map) _mutate(r['deck'] as Map);
   }
+
+  // ---- export -------------------------------------------------------------------
 
   Future<void> _export(String op) async {
     setState(() => _busy = true);
@@ -323,23 +462,42 @@ class _EditorScreenState extends State<EditorScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  // ---- build ------------------------------------------------------------------
+  // ---- build ----------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
     final title = (_deck['title'] ?? 'Deck').toString();
     final family = ((_deck['dna'] ?? const {})['family'] ?? '').toString().replaceAll('_', ' ');
+    final n = _slides.length;
     return Scaffold(
       appBar: AppBar(
-        title: Tooltip(message: family, child: Text(title)),
+        title: Tooltip(
+          message: '$family — tap to rename deck',
+          child: InkWell(
+            onTap: _renameDeck,
+            borderRadius: BorderRadius.circular(6),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+              child: Text(title, overflow: TextOverflow.ellipsis),
+            ),
+          ),
+        ),
         bottom: const PreferredSize(
           preferredSize: Size.fromHeight(2),
           child: ColoredBox(color: Color(0xFF17181A)),
         ),
         actions: [
-          IconButton(tooltip: 'New variant of this design', icon: const Icon(Icons.shuffle), onPressed: _cycleVariant),
-          IconButton(tooltip: 'Switch design family', icon: const Icon(Icons.palette_outlined), onPressed: _cycleFamily),
-          IconButton(tooltip: 'Swap archetype', icon: const Icon(Icons.swap_horiz), onPressed: _swapArchetype),
+          IconButton(
+            tooltip: 'Undo',
+            icon: const Icon(Icons.undo),
+            onPressed: _undo.isEmpty ? null : _undoStep,
+          ),
+          IconButton(
+            tooltip: 'Redo',
+            icon: const Icon(Icons.redo),
+            onPressed: _redo.isEmpty ? null : _redoStep,
+          ),
+          IconButton(tooltip: 'Deck design', icon: const Icon(Icons.palette_outlined), onPressed: _designSheet),
           IconButton(tooltip: 'Pair with your AI', icon: const Icon(Icons.link), onPressed: _showPairSheet),
           PopupMenuButton<String>(
             enabled: !_busy,
@@ -353,6 +511,7 @@ class _EditorScreenState extends State<EditorScreen> {
       ),
       body: Column(
         children: [
+          // ---- canvas ----------------------------------------------------------
           Expanded(
             child: _layout == null
                 ? const Center(child: Text('No slide here yet — add one below.'))
@@ -382,6 +541,57 @@ class _EditorScreenState extends State<EditorScreen> {
                     ),
                   ),
           ),
+          // ---- slide toolbar ----------------------------------------------------
+          Container(
+            decoration: const BoxDecoration(
+              border: Border(top: BorderSide(color: Color(0x1F17181A))),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            height: 48,
+            child: Row(
+              children: [
+                IconButton(
+                  tooltip: 'Edit slide content',
+                  icon: const Icon(Icons.edit_outlined),
+                  onPressed: n == 0 ? null : _editContent,
+                ),
+                IconButton(
+                  tooltip: 'Add slide',
+                  icon: const Icon(Icons.add_circle_outline),
+                  onPressed: _addSlide,
+                ),
+                IconButton(
+                  tooltip: 'Duplicate slide',
+                  icon: const Icon(Icons.content_copy),
+                  onPressed: n == 0 ? null : () => _duplicateAt(_index),
+                ),
+                IconButton(
+                  tooltip: 'Move slide left',
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: _index <= 0 ? null : () => _moveAt(_index, -1),
+                ),
+                IconButton(
+                  tooltip: 'Move slide right',
+                  icon: const Icon(Icons.arrow_forward),
+                  onPressed: _index >= n - 1 ? null : () => _moveAt(_index, 1),
+                ),
+                Expanded(
+                  child: Center(
+                    child: Text(
+                      n == 0 ? 'no slides' : 'Slide ${_index + 1} / $n',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF6B6B70)),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Delete slide',
+                  icon: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
+                  onPressed: n == 0 ? null : () => _deleteAt(_index),
+                ),
+              ],
+            ),
+          ),
+          // ---- filmstrip ---------------------------------------------------------
           SizedBox(
             height: 108,
             child: Row(
@@ -390,7 +600,7 @@ class _EditorScreenState extends State<EditorScreen> {
                 Expanded(
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
-                    itemCount: _slides.length,
+                    itemCount: n,
                     itemBuilder: (context, i) {
                       final selected = i == _index;
                       final label = _slideTitle(_slides[i]);
@@ -404,6 +614,7 @@ class _EditorScreenState extends State<EditorScreen> {
                               _refreshLayout();
                             });
                           },
+                          onLongPress: () => _slideActions(i),
                           child: Container(
                             width: 132,
                             decoration: BoxDecoration(

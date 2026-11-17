@@ -61,6 +61,68 @@ class _DecksScreenState extends State<DecksScreen> {
         .then((_) => _reload());
   }
 
+  Future<void> _rename(Map<String, dynamic> deck) async {
+    final controller = TextEditingController(text: (deck['title'] ?? '').toString());
+    final title = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Rename deck'),
+        content: TextField(controller: controller, autofocus: true),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, controller.text), child: const Text('Rename')),
+        ],
+      ),
+    );
+    if (title == null || title.trim().isEmpty) return;
+    final updated = Map<String, dynamic>.from(deck);
+    updated['title'] = title.trim();
+    final store = await DeckStore.open();
+    await store.save(updated);
+    _reload();
+  }
+
+  /// Long-press a deck card: open / rename / delete.
+  Future<void> _cardActions(Map<String, dynamic> deck) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+              child: Text((deck['title'] ?? 'Deck').toString(), style: Theme.of(context).textTheme.titleMedium),
+            ),
+            ListTile(
+              leading: const Icon(Icons.open_in_new),
+              title: const Text('Open'),
+              onTap: () => Navigator.pop(context, 'open'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Rename'),
+              onTap: () => Navigator.pop(context, 'rename'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
+              title: const Text('Delete'),
+              onTap: () => Navigator.pop(context, 'delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+    switch (action) {
+      case 'open':
+        _open(deck);
+      case 'rename':
+        _rename(deck);
+      case 'delete':
+        _delete(deck);
+    }
+  }
+
   Future<String?> _askTitle() {
     final controller = TextEditingController();
     return showDialog<String>(
@@ -177,6 +239,7 @@ class _DecksScreenState extends State<DecksScreen> {
                             deck: _decks[i],
                             onOpen: () => _open(_decks[i]),
                             onDelete: () => _delete(_decks[i]),
+                            onLongPress: () => _cardActions(_decks[i]),
                           ),
                         ),
             ),
@@ -194,12 +257,14 @@ class _DeckCard extends StatelessWidget {
     required this.deck,
     required this.onOpen,
     required this.onDelete,
+    required this.onLongPress,
   });
 
   final int index;
   final Map<String, dynamic> deck;
   final VoidCallback onOpen;
   final VoidCallback onDelete;
+  final VoidCallback onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -214,6 +279,7 @@ class _DeckCard extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(2),
         onTap: onOpen,
+        onLongPress: onLongPress,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
           child: Row(
