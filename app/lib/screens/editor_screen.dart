@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../core/bridge.dart';
 import '../core/store.dart';
+import '../theme.dart';
 import '../widgets/content_editor.dart';
 import '../widgets/design_sheets.dart';
 import '../widgets/shape_canvas.dart';
@@ -809,8 +810,8 @@ class _EditorScreenState extends State<EditorScreen> {
           ),
         ),
         bottom: const PreferredSize(
-          preferredSize: Size.fromHeight(2),
-          child: ColoredBox(color: Color(0xFF17181A)),
+          preferredSize: Size.fromHeight(1),
+          child: ColoredBox(color: kHairline),
         ),
         actions: [
           IconButton(
@@ -853,23 +854,35 @@ class _EditorScreenState extends State<EditorScreen> {
                         Center(
                           child: AspectRatio(
                             aspectRatio: 16 / 9,
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: Stack(
-                                children: [
-                                  SlideCanvas(layout: _layout!, onTextTap: _designMode ? null : _editText),
-                                  ShapesLayer(
-                                    objects: _objects,
-                                    selectedId: _selectedObjectId,
-                                    interactive: _designMode,
-                                    scribbleMode: _scribbleMode,
-                                    onSelect: (id) => setState(() => _selectedObjectId = id),
-                                    onLive: _liveObject,
-                                    onCommit: _commitObject,
-                                    onGestureStart: _objectGestureStart,
-                                    onScribble: _onScribbleDone,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.55),
+                                    blurRadius: 24,
+                                    offset: const Offset(0, 8),
                                   ),
                                 ],
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Stack(
+                                  children: [
+                                    SlideCanvas(layout: _layout!, onTextTap: _designMode ? null : _editText),
+                                    ShapesLayer(
+                                      objects: _objects,
+                                      selectedId: _selectedObjectId,
+                                      interactive: _designMode,
+                                      scribbleMode: _scribbleMode,
+                                      onSelect: (id) => setState(() => _selectedObjectId = id),
+                                      onLive: _liveObject,
+                                      onCommit: _commitObject,
+                                      onGestureStart: _objectGestureStart,
+                                      onScribble: _onScribbleDone,
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
@@ -887,50 +900,62 @@ class _EditorScreenState extends State<EditorScreen> {
                     ),
                   ),
           ),
-          // ---- design toolbar (overlay layer) -------------------------------
+          // ---- design dock (floating, design mode only) ------------------------
           if (_designMode)
-            Container(
-              decoration: const BoxDecoration(
-                border: Border(top: BorderSide(color: Color(0x1F17181A))),
-              ),
-              height: 46,
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Row(
-                children: [
-                  IconButton(tooltip: 'Add shape', icon: const Icon(Icons.category_outlined), onPressed: _showLibrary),
-                  IconButton(
-                    tooltip: 'Freehand draw',
-                    icon: Icon(Icons.gesture, color: _scribbleMode ? Theme.of(context).colorScheme.primary : null),
-                    onPressed: () => setState(() => _scribbleMode = !_scribbleMode),
-                  ),
-                  IconButton(
-                    tooltip: 'Style the selected object',
-                    icon: const Icon(Icons.format_paint_outlined),
-                    onPressed: _selectedObjectId == null
-                        ? null
-                        : () {
-                            final obj = _selectedObject;
-                            if (obj != null) showInspector(context, object: obj, onChange: _styleChanged);
-                          },
-                  ),
-                  IconButton(tooltip: 'Layers, groups, components', icon: const Icon(Icons.layers_outlined), onPressed: _showLayers),
-                  Expanded(
-                    child: Center(
-                      child: Text(
-                        _scribbleMode ? 'draw on the slide' : 'drag to move · corners resize · top circle rotates',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 10.5, color: Color(0xFF6B6B70)),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: Container(
+                height: 56,
+                decoration: BoxDecoration(
+                  color: kElevated,
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(color: kHairline),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.45),
+                      blurRadius: 18,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    IconButton(tooltip: 'Add shape', icon: const Icon(Icons.category_outlined), onPressed: _showLibrary),
+                    IconButton(
+                      tooltip: 'Freehand draw',
+                      icon: Icon(Icons.gesture, color: _scribbleMode ? kText : kText2),
+                      onPressed: () => setState(() => _scribbleMode = !_scribbleMode),
+                    ),
+                    IconButton(
+                      tooltip: 'Style the selected object',
+                      icon: const Icon(Icons.format_paint_outlined),
+                      onPressed: _selectedObjectId == null
+                          ? null
+                          : () {
+                              final obj = _selectedObject;
+                              if (obj != null) showInspector(context, object: obj, onChange: _styleChanged);
+                            },
+                    ),
+                    IconButton(tooltip: 'Layers, groups, components', icon: const Icon(Icons.layers_outlined), onPressed: _showLayers),
+                    Expanded(
+                      child: Center(
+                        child: Text(
+                          _scribbleMode ? 'draw on the slide' : 'drag to move · corners resize · top circle rotates',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 10.5, color: kText3),
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          // ---- slide toolbar ----------------------------------------------------
+          // ---- slide toolbar band ------------------------------------------------
           Container(
             decoration: const BoxDecoration(
-              border: Border(top: BorderSide(color: Color(0x1F17181A))),
+              color: kSurface,
+              border: Border(top: BorderSide(color: kHairline)),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
             height: 48,
@@ -965,27 +990,53 @@ class _EditorScreenState extends State<EditorScreen> {
                   child: Center(
                     child: Text(
                       n == 0 ? 'no slides' : 'Slide ${_index + 1} / $n',
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF6B6B70)),
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: kText2),
                     ),
                   ),
                 ),
                 IconButton(
                   tooltip: 'Delete slide',
-                  icon: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
+                  icon: const Icon(Icons.delete_outline, color: kAccent),
                   onPressed: n == 0 ? null : () => _deleteAt(_index),
                 ),
               ],
             ),
           ),
-          // ---- filmstrip ---------------------------------------------------------
+          // ---- filmstrip (stories-style, gradient ring on the live slide) ----
           SizedBox(
-            height: 108,
+            height: 104,
             child: Row(
               children: [
-                IconButton(onPressed: _addSlide, icon: const Icon(Icons.add_circle_outline), tooltip: 'Add slide'),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(22),
+                      onTap: _addSlide,
+                      child: Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          gradient: kInkGradient,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.4),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(Icons.add, color: Colors.white, size: 22),
+                      ),
+                    ),
+                  ),
+                ),
                 Expanded(
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
                     itemCount: n,
                     itemBuilder: (context, i) {
                       final selected = i == _index;
@@ -993,7 +1044,7 @@ class _EditorScreenState extends State<EditorScreen> {
                       return Padding(
                         padding: const EdgeInsets.all(6),
                         child: InkWell(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(10),
                           onTap: () {
                             setState(() {
                               _index = i;
@@ -1001,21 +1052,29 @@ class _EditorScreenState extends State<EditorScreen> {
                             });
                           },
                           onLongPress: () => _slideActions(i),
-                          child: Container(
-                            width: 132,
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            width: 124,
+                            padding: EdgeInsets.all(selected ? 2.5 : 1),
                             decoration: BoxDecoration(
-                              border: Border.all(color: selected ? Theme.of(context).colorScheme.primary : Colors.black12, width: selected ? 2 : 1),
-                              borderRadius: BorderRadius.circular(8),
-                              color: Colors.black.withValues(alpha: 0.02),
+                              gradient: selected ? kInkGradient : null,
+                              color: selected ? null : kHairline,
+                              borderRadius: BorderRadius.circular(10),
                             ),
-                            child: Center(
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 8),
-                                child: Text(
-                                  '${i + 1}. $label',
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontSize: 12),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                                  child: Text(
+                                    '${i + 1}. $label',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 11, color: Color(0xFF17181A), fontWeight: FontWeight.w500),
+                                  ),
                                 ),
                               ),
                             ),

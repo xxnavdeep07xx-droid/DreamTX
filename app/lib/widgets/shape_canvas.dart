@@ -420,7 +420,7 @@ class _ShapesPainter extends CustomPainter {
       canvas.drawPath(
         p,
         Paint()
-          ..color = const Color(0xFFD03028)
+          ..color = const Color(0xFFFF3B30)
           ..strokeWidth = 3
           ..style = PaintingStyle.stroke,
       );
@@ -461,7 +461,7 @@ class _ShapesPainter extends CustomPainter {
       (obj['h'] as num).toDouble(),
     );
     final outline = Paint()
-      ..color = const Color(0xFFD03028)
+      ..color = const Color(0xFFFF3B30)
       ..strokeWidth = 1.6
       ..style = PaintingStyle.stroke;
     canvas.drawRect(rect.deflate(1), outline);
@@ -470,7 +470,7 @@ class _ShapesPainter extends CustomPainter {
       ..strokeWidth = 1.5
       ..style = PaintingStyle.fill;
     final handleBorder = Paint()
-      ..color = const Color(0xFFD03028)
+      ..color = const Color(0xFFFF3B30)
       ..strokeWidth = 1.5
       ..style = PaintingStyle.stroke;
     const hs = 7.0;

@@ -2,12 +2,8 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/bridge.dart';
 import '../core/store.dart';
+import '../theme.dart';
 import 'editor_screen.dart';
-
-const Color _ink = Color(0xFF17181A);
-const Color _paper = Color(0xFFF7F6F3);
-const Color _accent = Color(0xFFD03028);
-const Color _muted = Color(0xFF6B6B70);
 
 /// Screen 1 — Decks. Editorial masthead on top, ruled index of deck cards
 /// below. Nothing else.
@@ -168,14 +164,14 @@ class _DecksScreenState extends State<DecksScreen> {
   Widget build(BuildContext context) {
     final count = _decks.length;
     return Scaffold(
-      backgroundColor: _paper,
+      backgroundColor: kBg,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // ---- Masthead: unambiguous "top" --------------------------------
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
@@ -190,7 +186,7 @@ class _DecksScreenState extends State<DecksScreen> {
                             fontWeight: FontWeight.w700,
                             letterSpacing: -0.5,
                             height: 1.1,
-                            color: _ink,
+                            color: kText,
                           ),
                         ),
                         const SizedBox(height: 5),
@@ -200,30 +196,20 @@ class _DecksScreenState extends State<DecksScreen> {
                             fontSize: 10.5,
                             fontWeight: FontWeight.w600,
                             letterSpacing: 1.8,
-                            color: _muted,
+                            color: kText2,
                           ),
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(width: 12),
-                  OutlinedButton.icon(
-                    onPressed: _newDeck,
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('New deck'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _ink,
-                      side: const BorderSide(color: _ink, width: 1.2),
-                      minimumSize: const Size(0, 42),
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      textStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
-                    ),
-                  ),
+                  _GradientButton(icon: Icons.add, label: 'New deck', onPressed: _newDeck),
                 ],
               ),
             ),
-            // The rule: hard separation between masthead and body.
-            Container(height: 2, color: _ink),
+            // The rule: hard separation between masthead and body, in the
+            // signature purple→pink→orange gradient.
+            Container(height: 2, decoration: const BoxDecoration(gradient: kInkGradient)),
             // ---- Body: ruled deck index ------------------------------------
             Expanded(
               child: _loading
@@ -250,7 +236,7 @@ class _DecksScreenState extends State<DecksScreen> {
   }
 }
 
-/// One deck = one hairline-bordered white tile with an indexed number.
+/// One deck = one charcoal tile with a hairline border and an indexed number.
 class _DeckCard extends StatelessWidget {
   const _DeckCard({
     required this.index,
@@ -272,16 +258,16 @@ class _DeckCard extends StatelessWidget {
     final family = ((deck['dna'] ?? const {})['family'] ?? '').toString().replaceAll('_', ' ');
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: _ink, width: 1),
-        borderRadius: BorderRadius.circular(2),
+        color: kSurface,
+        border: Border.all(color: kHairline, width: 1),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(2),
+        borderRadius: BorderRadius.circular(16),
         onTap: onOpen,
         onLongPress: onLongPress,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
+          padding: const EdgeInsets.fromLTRB(16, 12, 6, 12),
           child: Row(
             children: [
               SizedBox(
@@ -292,12 +278,12 @@ class _DeckCard extends StatelessWidget {
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 1,
-                    color: _accent,
+                    color: kAccent,
                   ),
                 ),
               ),
               const SizedBox(width: 10),
-              Container(width: 1, height: 38, color: const Color(0x3D17181A)),
+              Container(width: 1, height: 38, color: kHairline),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
@@ -307,18 +293,18 @@ class _DeckCard extends StatelessWidget {
                       (deck['title'] ?? 'Untitled').toString(),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: _ink),
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: kText),
                     ),
                     const SizedBox(height: 3),
                     Text(
                       '$slides slides · $family',
-                      style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500, color: _muted),
+                      style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500, color: kText2),
                     ),
                   ],
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.delete_outline),
+                icon: const Icon(Icons.delete_outline, color: kText2),
                 tooltip: 'Delete deck',
                 onPressed: onDelete,
               ),
@@ -346,42 +332,85 @@ class _EmptyState extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 36),
             decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: _ink, width: 1),
-              borderRadius: BorderRadius.circular(2),
+              color: kSurface,
+              border: Border.all(color: kHairline, width: 1),
+              borderRadius: BorderRadius.circular(20),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.layers_outlined, size: 44, color: _ink),
+                const Icon(Icons.layers_outlined, size: 44, color: kText2),
                 const SizedBox(height: 14),
                 const Text(
                   'No decks yet',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: _ink),
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: kText),
                 ),
                 const SizedBox(height: 4),
                 const Text(
                   'Create one — then pair it with your AI.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 13.5, color: _muted),
+                  style: TextStyle(fontSize: 13.5, color: kText2),
                 ),
                 const SizedBox(height: 20),
-                FilledButton.icon(
+                _GradientButton(
+                  icon: Icons.add,
+                  label: 'Create your first deck',
                   onPressed: onCreate,
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Create your first deck'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: _ink,
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size(0, 46),
-                    textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                  ),
+                  height: 46,
                 ),
               ],
             ),
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Signature gradient pill button (purple→pink→orange) for create actions —
+/// the reference app's "create" button style.
+class _GradientButton extends StatelessWidget {
+  const _GradientButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+    this.height = 42,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onPressed,
+        child: Ink(
+          height: height,
+          decoration: BoxDecoration(
+            gradient: kInkGradient,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 18, color: Colors.white),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Colors.white),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

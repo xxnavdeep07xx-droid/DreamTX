@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../theme.dart';
 import 'shape_canvas.dart';
 
 /// Shape library, style inspector, layers panel and components sheet —
@@ -48,16 +49,16 @@ Future<void> showShapeLibrary(
                 final p = presets[i];
                 final name = (p['name'] ?? '').toString();
                 return InkWell(
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.circular(10),
                   onTap: () {
                     Navigator.pop(context);
                     onPick(name);
                   },
                   child: Container(
                     decoration: BoxDecoration(
-                      border: Border.all(color: Colors.black12),
-                      borderRadius: BorderRadius.circular(6),
-                      color: Colors.white,
+                      border: Border.all(color: kHairline),
+                      borderRadius: BorderRadius.circular(10),
+                      color: kElevated,
                     ),
                     padding: const EdgeInsets.all(8),
                     child: Column(
@@ -118,7 +119,7 @@ class _PresetThumbPainter extends CustomPainter {
     }
     final open = preset == 'line' || preset == 'wave' || preset == 'zigzag';
     if (!open && poly.length > 2) path.close();
-    final ink = _hexColor('17181A');
+    final ink = _hexColor('F5F5F7');
     if (open) {
       canvas.drawPath(
         path,
@@ -256,7 +257,7 @@ class _InspectorSheetState extends State<_InspectorSheet> {
                   ),
                   Text(
                     (widget.object['preset'] ?? 'shape').toString().replaceAll('_', ' '),
-                    style: const TextStyle(fontSize: 12, color: Color(0xFF6B6B70)),
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF9E9EA6)),
                   ),
                 ],
               ),
@@ -458,7 +459,7 @@ class _InspectorSheetState extends State<_InspectorSheet> {
         padding: const EdgeInsets.only(top: 14, bottom: 6),
         child: Text(
           text.toUpperCase(),
-          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: Color(0xFF6B6B70)),
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: Color(0xFF9E9EA6)),
         ),
       );
 
@@ -738,7 +739,7 @@ class _LayersSheetState extends State<_LayersSheet> {
                     child: Text('Layers', style: Theme.of(context).textTheme.titleLarge),
                   ),
                   Text('${objects.length} objects · ${_sel.length} selected',
-                      style: const TextStyle(fontSize: 12, color: Color(0xFF6B6B70))),
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF9E9EA6))),
                 ],
               ),
             ),
@@ -819,7 +820,7 @@ class _LayersSheetState extends State<_LayersSheet> {
           alignment: Alignment.centerLeft,
           child: Text(
             text.toUpperCase(),
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: Color(0xFF6B6B70)),
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: Color(0xFF9E9EA6)),
           ),
         ),
       );
@@ -851,8 +852,8 @@ class _LayersSheetState extends State<_LayersSheet> {
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
           ),
-          if (isComp) const Padding(padding: EdgeInsets.only(left: 4), child: Icon(Icons.extension_outlined, size: 14, color: Color(0xFF6B6B70))),
-          if (locked) const Padding(padding: EdgeInsets.only(left: 4), child: Icon(Icons.lock_outline, size: 14, color: Color(0xFF6B6B70))),
+          if (isComp) const Padding(padding: EdgeInsets.only(left: 4), child: Icon(Icons.extension_outlined, size: 14, color: Color(0xFF9E9EA6))),
+          if (locked) const Padding(padding: EdgeInsets.only(left: 4), child: Icon(Icons.lock_outline, size: 14, color: Color(0xFF9E9EA6))),
         ],
       ),
       subtitle: Text(

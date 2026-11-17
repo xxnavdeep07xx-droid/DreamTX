@@ -1,5 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../theme.dart';
+
 /// Full manual slide editor. The user edits every content field by hand —
 /// same semantic model the AI speaks, no coordinates. Changing archetype
 /// resets the form to that archetype's defaults. Returns the new
@@ -433,7 +435,7 @@ class _ContentSheetState extends State<ContentSheet> {
             padding: const EdgeInsets.only(bottom: 10),
             child: Container(
               decoration: BoxDecoration(
-                border: Border.all(color: Colors.black12),
+                border: Border.all(color: kHairline),
                 borderRadius: BorderRadius.circular(4),
               ),
               padding: const EdgeInsets.fromLTRB(10, 4, 4, 8),
@@ -520,7 +522,7 @@ class _ContentSheetState extends State<ContentSheet> {
             padding: const EdgeInsets.only(bottom: 10),
             child: Container(
               decoration: BoxDecoration(
-                border: Border.all(color: Colors.black12),
+                border: Border.all(color: kHairline),
                 borderRadius: BorderRadius.circular(4),
               ),
               padding: const EdgeInsets.fromLTRB(10, 4, 4, 8),
@@ -604,7 +606,7 @@ class _ContentSheetState extends State<ContentSheet> {
                         const SizedBox(height: 2),
                         Text(
                           archetypeLabelOf(_archetype),
-                          style: const TextStyle(fontSize: 12, color: Color(0xFF6B6B70)),
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF9E9EA6)),
                         ),
                       ],
                     ),

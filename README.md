@@ -33,7 +33,11 @@ and color. Three curated deck DNAs ship in v1 — **Swiss editorial** (default),
 pacing governor (no same archetype twice in a row, density rhythm, whitespace
 budget) so decks never look template-stamped.
 
-## What's in the app (v0.2.1)
+## What's in the app (v0.2.2)
+
+**Look** — dark studio theme (black chrome, charcoal surfaces, red accents,
+one purple→pink→orange signature gradient on create actions and the live
+slide's filmstrip ring).
 
 **Decks home** — editorial deck grid; New deck button in the masthead;
 long-press a deck card for open / rename / delete; immersive full-screen
