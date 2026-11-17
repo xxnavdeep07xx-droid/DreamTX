@@ -97,21 +97,21 @@ Future<ContentEdit?> showContentEditor(
   return showModalBottomSheet<ContentEdit>(
     context: context,
     isScrollControlled: true,
-    builder: (_) => _ContentSheet(slide: slide, deckTitle: deckTitle),
+    builder: (_) => ContentSheet(slide: slide, deckTitle: deckTitle),
   );
 }
 
-class _ContentSheet extends StatefulWidget {
-  const _ContentSheet({required this.slide, required this.deckTitle});
+class ContentSheet extends StatefulWidget {
+  const ContentSheet({required this.slide, required this.deckTitle});
 
   final Map slide;
   final String deckTitle;
 
   @override
-  State<_ContentSheet> createState() => _ContentSheetState();
+  State<ContentSheet> createState() => _ContentSheetState();
 }
 
-class _ContentSheetState extends State<_ContentSheet> {
+class _ContentSheetState extends State<ContentSheet> {
   late String _archetype;
   String _chartType = 'bar';
   final Map<String, TextEditingController> _ctrl = {};
