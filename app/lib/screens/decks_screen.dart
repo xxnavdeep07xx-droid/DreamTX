@@ -18,6 +18,26 @@ class _DecksScreenState extends State<DecksScreen> {
   List<Map<String, dynamic>> _decks = [];
   bool _loading = true;
 
+  /// True while an input dialog (New deck / Rename) is on screen. The
+  /// empty-state card recedes (fades) while a dialog is open — see
+  /// _EmptyState. Measured reality on window-resize-free devices: the card
+  /// never moves when the keyboard opens, but the keyboard covers its whole
+  /// lower half and the dialog covers its top edge, leaving a middle sliver
+  /// that the eye misreads as a "lifted card". Fading the background card
+  /// removes that misread: it recedes politely instead of sitting there
+  /// half-consumed. No position ever changes.
+  bool _dialogOpen = false;
+
+  /// Runs [show] with the dialog-dim active, always restoring it after.
+  Future<T?> _dimDuring<T>(Future<T?> Function() show) async {
+    setState(() => _dialogOpen = true);
+    try {
+      return await show();
+    } finally {
+      if (mounted) setState(() => _dialogOpen = false);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -35,7 +55,7 @@ class _DecksScreenState extends State<DecksScreen> {
   }
 
   Future<void> _newDeck() async {
-    final title = await _askTitle();
+    final title = await _dimDuring(_askTitle);
     if (title == null || title.trim().isEmpty) return;
     final r = Bridge.command({'op': 'new_deck', 'title': title.trim(), 'family': 'swiss_editorial'});
     if (r['ok'] != true) {
@@ -58,12 +78,12 @@ class _DecksScreenState extends State<DecksScreen> {
   }
 
   Future<void> _rename(Map<String, dynamic> deck) async {
-    final title = await dreamInputDialog(
+    final title = await _dimDuring(() => dreamInputDialog(
       context,
       title: 'Rename deck',
       initial: (deck['title'] ?? '').toString(),
       confirmLabel: 'Rename',
-    );
+    ));
     if (title == null || title.trim().isEmpty) return;
     final updated = Map<String, dynamic>.from(deck);
     updated['title'] = title.trim();
@@ -209,7 +229,7 @@ class _DecksScreenState extends State<DecksScreen> {
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
                   : count == 0
-                      ? _EmptyState(onCreate: _newDeck)
+                      ? _EmptyState(onCreate: _newDeck, dimmed: _dialogOpen)
                       : ListView.separated(
                           padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
                           itemCount: count,
@@ -316,10 +336,18 @@ class _DeckCard extends StatelessWidget {
 /// region momentarily shrinks — cold-start keyboard quirks, transient
 /// system-bar churn — the surplus just flows away behind the keyboard and
 /// the card keeps its exact screen position instead of shaking.
+///
+/// While an input dialog is open ([dimmed] = true) the card recedes: it fades
+/// to 30% opacity over 250ms and comes back when the dialog closes. This is
+/// purely visual — the position NEVER changes. Rationale: with the keyboard
+/// open, the OS keyboard covers the card's lower half and the dialog covers
+/// its top edge, leaving a middle sliver that the eye misreads as a "lifted
+/// card". A faded, receded background gives the eye nothing to misread.
 class _EmptyState extends StatefulWidget {
-  const _EmptyState({required this.onCreate});
+  const _EmptyState({required this.onCreate, this.dimmed = false});
 
   final VoidCallback onCreate;
+  final bool dimmed;
 
   @override
   State<_EmptyState> createState() => _EmptyScreenState();
@@ -347,7 +375,15 @@ class _EmptyScreenState extends State<_EmptyState> {
           alignment: Alignment.topCenter,
           child: SizedBox(
             height: h,
-            child: Center(child: _card()),
+            child: Center(
+              // Recede while a dialog owns the screen: fade, never move.
+              child: AnimatedOpacity(
+                opacity: widget.dimmed ? 0.3 : 1.0,
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeOut,
+                child: _card(),
+              ),
+            ),
           ),
         );
       },
