@@ -410,6 +410,9 @@ pub fn execute(req: &str) -> Value {
             let (Some(sa), Some(sb)) = (slide.objects.iter().find(|o| o.id == a), slide.objects.iter().find(|o| o.id == b)) else {
                 return json!({ "ok": false, "error": "object not found" });
             };
+            if sa.holes.is_some() || sb.holes.is_some() {
+                return json!({ "ok": false, "error": "can't combine holed results — duplicate them first" });
+            }
             let pa = object_polygon(sa);
             let pb = object_polygon(sb);
             let m = match mode.as_str() {
@@ -418,16 +421,33 @@ pub fn execute(req: &str) -> Value {
                 "intersect" => shapes::BooleanMode::Intersect,
                 other => return json!({ "ok": false, "error": format!("unknown boolean mode '{other}'") }),
             };
-            let poly = match shapes::boolean(pa, pb, m) {
-                Ok(p) => p,
+            let outcome = match shapes::boolean(pa, pb, m) {
+                Ok(o) => o,
                 Err(e) => return json!({ "ok": false, "error": e }),
             };
-            if poly.len() < 3 {
+            if outcome.outline.len() < 3 {
+                if mode == "subtract" {
+                    // a − b removed everything → delete both inputs
+                    let Some(slide) = deck.slides.iter_mut().find(|s| s.id == slide_id) else {
+                        return json!({ "ok": false, "error": "slide not found" });
+                    };
+                    slide.objects.retain(|o| o.id != a && o.id != b);
+                    deck.version += 1;
+                    return json!({ "ok": true, "deck": deck, "note": "subtracted to nothing — both removed" });
+                }
                 return json!({ "ok": false, "error": "shapes do not overlap — nothing to combine" });
             }
-            let (bx, by, bw, bh) = shapes::bbox(&poly);
+            let (bx, by, bw, bh) = shapes::bbox(&outcome.outline);
             let (bw, bh) = (bw.max(1.0), bh.max(1.0));
-            let pts = poly.iter().map(|&(x, y)| Pt { x: ((x - bx) / bw).clamp(0.0, 1.0), y: ((y - by) / bh).clamp(0.0, 1.0) }).collect::<Vec<_>>();
+            let norm = |v: &[(f64, f64)]| -> Vec<Pt> {
+                v.iter().map(|&(x, y)| Pt { x: ((x - bx) / bw).clamp(0.0, 1.0), y: ((y - by) / bh).clamp(0.0, 1.0) }).collect()
+            };
+            let pts = norm(&outcome.outline);
+            let holes = if outcome.holes.is_empty() {
+                None
+            } else {
+                Some(outcome.holes.iter().map(|h| norm(h)).collect::<Vec<_>>())
+            };
             let result = Shape {
                 id: next_object_id(&deck),
                 preset: "path".into(),
@@ -441,6 +461,7 @@ pub fn execute(req: &str) -> Value {
                 stroke: sa.stroke.clone(),
                 effects: sa.effects.clone(),
                 points: Some(pts),
+                holes,
                 closed: true,
             };
             let Some(slide) = deck.slides.iter_mut().find(|s| s.id == slide_id) else {

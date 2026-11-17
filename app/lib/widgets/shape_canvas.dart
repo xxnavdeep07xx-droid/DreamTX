@@ -736,6 +736,25 @@ Path? objectPath(Map obj) {
           p.lineTo(px, py);
         }
       }
+      // boolean-subtract holes (even-odd)
+      final holes = obj['holes'];
+      if (holes is List && holes.isNotEmpty) {
+        p.fillType = PathFillType.evenOdd;
+        for (final hole in holes.whereType<List>()) {
+          var hFirst = true;
+          for (final pt in hole.whereType<Map>()) {
+            final px = x + ((pt['x'] ?? 0) as num).toDouble() * w;
+            final py = y + ((pt['y'] ?? 0) as num).toDouble() * h;
+            if (hFirst) {
+              p.moveTo(px, py);
+              hFirst = false;
+            } else {
+              p.lineTo(px, py);
+            }
+          }
+          if (hole.length > 2) p.close();
+        }
+      }
       if (obj['closed'] == true && pts.length > 2) p.close();
       return p;
     default:

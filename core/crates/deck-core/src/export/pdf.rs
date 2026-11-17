@@ -148,6 +148,7 @@ fn rot_points(poly: &[(f64, f64)], cx: f64, cy: f64, deg: f64) -> Vec<(f64, f64)
 fn object_pdf(o: &Shape, alphas: &mut Vec<(f64, String)>) -> String {
     let mut ops = String::new();
     let is_donut = o.preset == "donut" && o.points.is_none();
+    let has_holes = o.holes.as_ref().is_some_and(|h| !h.is_empty());
     let mut poly = object_polygon(o);
     if is_donut {
         // hole contour: inner ellipse at 45% radius
@@ -181,6 +182,26 @@ fn object_pdf(o: &Shape, alphas: &mut Vec<(f64, String)>) -> String {
     }
     let open = crate::shapes::preset_info(&o.preset).map(|i| i.open).unwrap_or(false) || !o.closed && o.points.is_some();
 
+    // absolute coords for hole contours (normalized like `points`)
+    let hole_paths: Vec<Vec<(f64, f64)>> = o
+        .holes
+        .as_deref()
+        .unwrap_or(&[])
+        .iter()
+        .map(|h| {
+            h.iter()
+                .map(|p| {
+                    let mut pt = (o.x + p.x * o.w, o.y + p.y * o.h);
+                    if o.rotation != 0.0 {
+                        let r = rot_points(&[pt], cx, cy, o.rotation);
+                        pt = r[0];
+                    }
+                    pt
+                })
+                .collect()
+        })
+        .collect();
+
     // ---- shadow (offset translucent copy) ------------------------------------
     if let Some(sh) = &o.effects.shadow {
         let shifted: Vec<(f64, f64)> = poly.iter().map(|&(px, py)| (px + sh.dx, py + sh.dy)).collect();
@@ -202,7 +223,28 @@ fn object_pdf(o: &Shape, alphas: &mut Vec<(f64, String)>) -> String {
 
     // ---- fill -----------------------------------------------------------------
     if !open {
-        match &o.fill {
+        if has_holes {
+            // even-odd fill: outer + holes in one path
+            let color = match &o.fill {
+                Fill::Solid { color } => color.clone(),
+                Fill::LinearGradient { from, .. } => from.clone(),
+                Fill::RadialGradient { from, .. } => from.clone(),
+                Fill::None => String::new(),
+            };
+            if !color.is_empty() {
+                let mut combined = path_ops(&poly, true);
+                for h in &hole_paths {
+                    combined.push_str(&path_ops(h, true));
+                }
+                if o.opacity < 0.999 {
+                    let gs = gs_for(o.opacity, alphas);
+                    ops.push_str(&format!("\nq /{gs} gs {} {combined} f* Q", set_fill(&color)));
+                } else {
+                    ops.push_str(&format!("\n{} {combined} f*", set_fill(&color)));
+                }
+            }
+        } else {
+            match &o.fill {
             Fill::None => {}
             Fill::Solid { color } => {
                 let body = format!("{} {} h f", set_fill(color), path_ops(&poly, false));
@@ -253,6 +295,7 @@ fn object_pdf(o: &Shape, alphas: &mut Vec<(f64, String)>) -> String {
                     ops.push_str(&format!("\n{} {} h f", lerp_color(fa, fb, t), path_ops(&ring, true)));
                 }
                 ops.push_str("\nQ");
+            }
             }
         }
     }
@@ -497,7 +540,7 @@ mod tests {
                         fill: Fill::Solid { color: "D03028".into() },
                         stroke: crate::model::Stroke::default(),
                         effects: crate::model::Effects::default(),
-                        points: None, closed: true,
+                        points: None, holes: None, closed: true,
                     },
                     Shape {
                         id: "o2".into(),
@@ -508,7 +551,7 @@ mod tests {
                         fill: Fill::None,
                         stroke: crate::model::Stroke { color: "17181A".into(), width: 3.0, ..Default::default() },
                         effects: crate::model::Effects::default(),
-                        points: None, closed: false,
+                        points: None, holes: None, closed: false,
                     },
                 ],
             }],

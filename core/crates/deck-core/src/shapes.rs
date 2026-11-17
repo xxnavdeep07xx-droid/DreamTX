@@ -453,10 +453,20 @@ pub enum BooleanMode {
     Intersect,
 }
 
-/// Compute a boolean op on two polygons (absolute coords). Both inputs must
-/// be convex; result is one polygon (possibly empty for disjoint subtract /
-/// intersect — caller gets an empty vec and may treat as delete).
-pub fn boolean(a: Vec<(f64, f64)>, b: Vec<(f64, f64)>, mode: BooleanMode) -> Result<Vec<(f64, f64)>, String> {
+/// Result of a boolean op (absolute coords). `outline` empty means the result
+/// region is empty; `holes` carries cut-outs for the contained case.
+pub struct BooleanOutcome {
+    pub outline: Vec<(f64, f64)>,
+    pub holes: Vec<Vec<(f64, f64)>>,
+}
+
+/// Compute a boolean op on two convex polygons.
+///
+/// - union: convex hull of both (fills concave notches; the UI says so)
+/// - intersect: exact (Sutherland–Hodgman)
+/// - subtract: exact boundary trace for partial overlap; donut when the
+///   cutter sits fully inside; empty when a ⊆ b; unchanged when disjoint.
+pub fn boolean(a: Vec<(f64, f64)>, b: Vec<(f64, f64)>, mode: BooleanMode) -> Result<BooleanOutcome, String> {
     if a.len() < 3 || b.len() < 3 {
         return Err("boolean needs two closed shapes".into());
     }
@@ -469,53 +479,145 @@ pub fn boolean(a: Vec<(f64, f64)>, b: Vec<(f64, f64)>, mode: BooleanMode) -> Res
         BooleanMode::Union => {
             let mut all = a.clone();
             all.extend(b.iter().copied());
-            Ok(convex_hull(all))
+            Ok(BooleanOutcome { outline: convex_hull(all), holes: Vec::new() })
         }
-        BooleanMode::Intersect => Ok(sh_clip(&a, &b)),
-        BooleanMode::Subtract => {
-            // A − B = A ∩ complement(B); complement of convex B is the
-            // intersection of its edges' outside half-planes.
-            let mut cur = a;
-            let n = b.len();
-            for i in 0..n {
-                if cur.is_empty() {
-                    break;
-                }
-                let p1 = b[i];
-                let p2 = b[(i + 1) % n];
-                cur = clip_outside_halfplane(&cur, p1, p2);
-            }
-            Ok(cur)
-        }
+        BooleanMode::Intersect => Ok(BooleanOutcome { outline: sh_clip(&a, &b), holes: Vec::new() }),
+        BooleanMode::Subtract => subtract_convex(a, b),
     }
 }
 
-/// Keep the part of `poly` on the right side of edge a→b (outside of a CCW
-/// polygon whose edge is a→b). Half-plane clip via SH with a 4-point window.
-fn clip_outside_halfplane(poly: &[(f64, f64)], a: (f64, f64), b: (f64, f64)) -> Vec<(f64, f64)> {
-    // Build a large CW window whose edge a→b appears in CCW direction as b→a
-    // … simpler: clip with keep-right semantics directly.
-    let mut out: Vec<(f64, f64)> = Vec::with_capacity(poly.len());
+/// Point strictly-ish inside a positive-shoelace convex polygon.
+fn inside_convex(poly: &[(f64, f64)], p: (f64, f64)) -> bool {
     let n = poly.len();
-    if n == 0 {
-        return out;
-    }
-    let inside = |p: (f64, f64)| cross(a, b, p) < 0.0; // right side = outside of CCW b
-    for j in 0..n {
-        let cur = poly[j];
-        let prev = poly[(j + n - 1) % n];
-        let cur_in = inside(cur);
-        let prev_in = inside(prev);
-        if cur_in {
-            if !prev_in {
-                out.push(intersect(prev, cur, a, b));
-            }
-            out.push(cur);
-        } else if prev_in {
-            out.push(intersect(prev, cur, a, b));
+    for i in 0..n {
+        if cross(poly[i], poly[(i + 1) % n], p) < 1e-9 {
+            return false;
         }
     }
-    out
+    true
+}
+
+struct Crossing {
+    pt: (f64, f64),
+    ae: usize, // index of the a-edge containing the crossing
+    ta: f64,   // param along that a-edge
+    be: usize, // index of the b-edge containing the crossing
+    tb: f64,
+}
+
+/// Proper (non-degenerate) segment intersection.
+fn seg_cross(p: (f64, f64), q: (f64, f64), r: (f64, f64), s: (f64, f64)) -> Option<((f64, f64), f64, f64)> {
+    let d1 = (q.0 - p.0, q.1 - p.1);
+    let d2 = (s.0 - r.0, s.1 - r.1);
+    let den = d1.0 * d2.1 - d1.1 * d2.0;
+    if den.abs() < 1e-12 {
+        return None;
+    }
+    let t = ((r.0 - p.0) * d2.1 - (r.1 - p.1) * d2.0) / den;
+    let u = ((r.0 - p.0) * d1.1 - (r.1 - p.1) * d1.0) / den;
+    if t > 1e-9 && t < 1.0 - 1e-9 && u > 1e-9 && u < 1.0 - 1e-9 {
+        Some(((p.0 + t * d1.0, p.1 + t * d1.1), t, u))
+    } else {
+        None
+    }
+}
+
+fn subtract_convex(a: Vec<(f64, f64)>, b: Vec<(f64, f64)>) -> Result<BooleanOutcome, String> {
+    let n = a.len();
+    let m = b.len();
+
+    let mut crossings: Vec<Crossing> = Vec::new();
+    for i in 0..n {
+        let p = a[i];
+        let q = a[(i + 1) % n];
+        for j in 0..m {
+            let r = b[j];
+            let s = b[(j + 1) % m];
+            if let Some((pt, ta, tb)) = seg_cross(p, q, r, s) {
+                crossings.push(Crossing { pt, ae: i, ta, be: j, tb });
+            }
+        }
+    }
+
+    let a_in_b = a.iter().filter(|p| inside_convex(&b, **p)).count();
+    let b_in_a = b.iter().filter(|p| inside_convex(&a, **p)).count();
+
+    if crossings.is_empty() {
+        if a_in_b == n {
+            return Ok(BooleanOutcome { outline: Vec::new(), holes: Vec::new() }); // a ⊆ b → empty
+        }
+        if b_in_a == m {
+            return Ok(BooleanOutcome { outline: a, holes: vec![b] }); // donut
+        }
+        return Ok(BooleanOutcome { outline: a, holes: Vec::new() }); // disjoint → a unchanged
+    }
+    if crossings.len() > 2 {
+        return Err("these shapes overlap too intricately for subtract — rotate or nudge them apart".into());
+    }
+
+    let (c1, c2) = (&crossings[0], &crossings[1]);
+    // Classify enter/exit along a's boundary direction.
+    let (enter, exit) = if c1.ae == c2.ae {
+        // one a-edge slices through b: the earlier crossing enters
+        if c1.ta < c2.ta { (c1, c2) } else { (c2, c1) }
+    } else {
+        let mid1 = lerp2(a[c1.ae], a[(c1.ae + 1) % n], c1.ta * 0.5);
+        let mid2 = lerp2(a[c1.ae], a[(c1.ae + 1) % n], (c1.ta + 1.0) / 2.0);
+        let in1 = inside_convex(&b, mid1);
+        let in2 = inside_convex(&b, mid2);
+        if !in1 && in2 {
+            (c1, c2) // c1 enters b
+        } else if in1 && !in2 {
+            (c2, c1) // c1 exits b
+        } else {
+            return Err("subtract hit a degenerate edge case — nudge the shapes".into());
+        }
+    };
+
+    // Walk a FORWARD from the exit crossing to the enter crossing (the part of
+    // a's boundary outside b), then walk b BACKWARD through the enter→exit
+    // edges (the part of b's boundary inside a). Closed result = one contour.
+    let mut out: Vec<(f64, f64)> = vec![exit.pt];
+    let mut edge = exit.ae;
+    let mut t = exit.ta;
+    let mut guard = n + 2;
+    loop {
+        if edge == enter.ae && enter.ta >= t - 1e-12 {
+            out.push(enter.pt);
+            break;
+        }
+        guard -= 1;
+        if guard <= 0 {
+            return Err("subtract trace failed (a)".into());
+        }
+        out.push(a[(edge + 1) % n]);
+        edge = (edge + 1) % n;
+        t = 0.0;
+    }
+
+    let mut outb: Vec<(f64, f64)> = Vec::new();
+    let mut edge = enter.be;
+    let mut t = enter.tb;
+    let mut guard = m + 2;
+    loop {
+        if edge == exit.be && exit.tb <= t + 1e-12 {
+            outb.push(exit.pt);
+            break;
+        }
+        guard -= 1;
+        if guard <= 0 {
+            return Err("subtract trace failed (b)".into());
+        }
+        outb.push(b[edge]);
+        edge = (edge + m - 1) % m;
+        t = 1.0;
+    }
+    out.extend(outb);
+    Ok(BooleanOutcome { outline: out, holes: Vec::new() })
+}
+
+fn lerp2(p: (f64, f64), q: (f64, f64), t: f64) -> (f64, f64) {
+    (p.0 + (q.0 - p.0) * t, p.1 + (q.1 - p.1) * t)
 }
 
 /// Bounding box of a polygon.
@@ -573,7 +675,7 @@ mod tests {
     fn intersect_exact() {
         let a = rect(0.0, 0.0, 10.0, 10.0);
         let b = rect(5.0, 5.0, 10.0, 10.0);
-        let r = boolean(a, b, BooleanMode::Intersect).unwrap();
+        let r = boolean(a, b, BooleanMode::Intersect).unwrap().outline;
         let (x, y, w, h) = bbox(&r);
         assert!((w - 5.0).abs() < 1e-6, "w={w}");
         assert!((h - 5.0).abs() < 1e-6, "h={h}");
@@ -584,18 +686,62 @@ mod tests {
     fn subtract_exact() {
         let a = rect(0.0, 0.0, 10.0, 10.0);
         let b = rect(5.0, 5.0, 10.0, 10.0);
-        let r = boolean(a, b, BooleanMode::Subtract).unwrap();
+        let r = boolean(a, b, BooleanMode::Subtract).unwrap().outline;
         // A − B leaves an L-shape: area 100 − 25 = 75
         let area = signed_area(&ccw(r.clone())).abs();
         assert!((area - 75.0).abs() < 1e-6, "area={area}");
     }
 
     #[test]
-    fn subtract_disjoint_is_empty() {
+    fn subtract_disjoint_keeps_a() {
         let a = rect(0.0, 0.0, 5.0, 5.0);
         let b = rect(20.0, 20.0, 5.0, 5.0);
-        let r = boolean(a, b, BooleanMode::Subtract).unwrap();
-        assert!(r.is_empty() || signed_area(&ccw(r)) < 1e-6);
+        let out = boolean(a.clone(), b, BooleanMode::Subtract).unwrap();
+        assert!(out.holes.is_empty());
+        assert_eq!(out.outline.len(), 4);
+        assert!((signed_area(&ccw(out.outline)) - 25.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn subtract_contained_makes_hole() {
+        let a = rect(0.0, 0.0, 10.0, 10.0);
+        let b = rect(3.0, 3.0, 3.0, 3.0);
+        let out = boolean(a, b, BooleanMode::Subtract).unwrap();
+        assert_eq!(out.holes.len(), 1, "expected one hole");
+        assert_eq!(out.outline.len(), 4, "outline stays the outer square");
+        assert!((signed_area(&ccw(out.holes[0].clone())) - 9.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn subtract_edge_notch() {
+        // b overlaps only the bottom edge strip of a → a gets a notch
+        let a = rect(0.0, 0.0, 10.0, 10.0);
+        let b = rect(3.0, -2.0, 3.0, 3.0); // y ∈ [-2,1]
+        let out = boolean(a, b, BooleanMode::Subtract).unwrap();
+        assert!(out.holes.is_empty());
+        // removed area = overlap 3×1 = 3 → 97
+        let area = signed_area(&ccw(out.outline)).abs();
+        assert!((area - 97.0).abs() < 1e-6, "area={area}");
+    }
+
+    #[test]
+    fn subtract_corner_notch() {
+        // b swallows a's corner → 4×4 removed
+        let a = rect(0.0, 0.0, 10.0, 10.0);
+        let b = rect(8.0, 8.0, 4.0, 4.0);
+        let out = boolean(a, b, BooleanMode::Subtract).unwrap();
+        assert!(out.holes.is_empty());
+        let area = signed_area(&ccw(out.outline)).abs();
+        assert!((area - 96.0).abs() < 1e-6, "area={area}");
+    }
+
+    #[test]
+    fn subtract_superset_is_empty() {
+        let a = rect(2.0, 2.0, 4.0, 4.0);
+        let b = rect(0.0, 0.0, 10.0, 10.0);
+        let out = boolean(a, b, BooleanMode::Subtract).unwrap();
+        assert!(out.outline.is_empty());
+        assert!(out.holes.is_empty());
     }
 
     #[test]

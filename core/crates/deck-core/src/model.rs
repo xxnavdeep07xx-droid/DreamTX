@@ -72,6 +72,10 @@ pub struct Shape {
     pub effects: Effects,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub points: Option<Vec<Pt>>,
+    /// Holes for boolean-subtract results where the cut shape sits fully
+    /// inside the outline (donut). Normalized like `points`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub holes: Option<Vec<Vec<Pt>>>,
     #[serde(default)]
     pub closed: bool,
 }

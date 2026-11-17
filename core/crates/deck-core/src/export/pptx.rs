@@ -115,6 +115,7 @@ fn shape_sp(o: &Shape, id: u32) -> String {
             let poly = crate::command::object_polygon(o);
             let (bx, by, bw, bh) = shapes::bbox(&poly);
             let (bw, bh) = (bw.max(1.0), bh.max(1.0));
+            let mut paths = String::new();
             let mut pts = String::new();
             for (k, &(x, y)) in poly.iter().enumerate() {
                 let px = (((x - bx) / bw).clamp(0.0, 1.0) * 1000.0).round() as i64;
@@ -126,7 +127,25 @@ fn shape_sp(o: &Shape, id: u32) -> String {
                 }
             }
             let close = if o.closed { "<a:close/>" } else { "" };
-            format!(r#"<a:custGeom><a:avLst/><a:gdLst/><a:ahLst/><a:rectLst/><a:pathLst><a:path w="1000" h="1000">{pts}{close}</a:path></a:pathLst></a:custGeom>"#)
+            paths.push_str(&format!("<a:path w=\"1000\" h=\"1000\">{pts}{close}</a:path>"));
+            // holes: reversed-winding subpaths (holes under the winding rule)
+            if let Some(holes) = &o.holes {
+                for h in holes {
+                    let mut hp = String::new();
+                    for (k, p) in h.iter().rev().enumerate() {
+                        let px = (p.x.clamp(0.0, 1.0) * 1000.0).round() as i64;
+                        let py = (p.y.clamp(0.0, 1.0) * 1000.0).round() as i64;
+                        if k == 0 {
+                            hp.push_str(&format!("<a:moveTo><a:pt x=\"{px}\" y=\"{py}\"/></a:moveTo>"));
+                        } else {
+                            hp.push_str(&format!("<a:lnTo><a:pt x=\"{px}\" y=\"{py}\"/></a:lnTo>"));
+                        }
+                    }
+                    hp.push_str("<a:close/>");
+                    paths.push_str(&format!("<a:path w=\"1000\" h=\"1000\">{hp}</a:path>"));
+                }
+            }
+            format!(r#"<a:custGeom><a:avLst/><a:gdLst/><a:ahLst/><a:rectLst/><a:pathLst>{paths}</a:pathLst></a:custGeom>"#)
         }
     };
 
@@ -369,6 +388,7 @@ mod tests {
                     stroke: Stroke::default(),
                     effects: Effects::default(),
                     points: None,
+                    holes: None,
                     closed: true,
                 }],
             }],
@@ -385,11 +405,13 @@ mod tests {
 
     #[test]
     fn shapes_export_with_geometry_and_gradient() {
-        // unzip-free smoke: search the raw zip bytes for the markers
+        use std::io::Read;
         let b = to_pptx(&deck());
-        let s = String::from_utf8_lossy(&b);
-        assert!(s.contains("gradFill"), "gradient fill missing");
-        assert!(s.contains("rot=\"900000\""), "rotation missing");
-        assert!(s.contains("prst=\"rect\""), "preset geometry missing");
+        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(b)).expect("zip readable");
+        let mut xml = String::new();
+        zip.by_name("ppt/slides/slide1.xml").expect("slide1 present").read_to_string(&mut xml).unwrap();
+        assert!(xml.contains("gradFill"), "gradient fill missing");
+        assert!(xml.contains("rot=\"900000\""), "rotation missing");
+        assert!(xml.contains("prst=\"rect\""), "preset geometry missing");
     }
 }
