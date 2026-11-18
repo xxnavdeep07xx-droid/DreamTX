@@ -15,13 +15,15 @@ import '../widgets/shape_canvas.dart';
 import '../widgets/slide_canvas.dart';
 import 'pair_sheet.dart';
 
-/// Screen 2 — Editor. Canvas + filmstrip + a CapCut-style bottom nav that
-/// carries the working toolkit: Slides, Text, Shapes, Theme and AI. Each tab
-/// opens a contextual action row right under the canvas (the Shapes tab
-/// doubles as design mode); the top bar keeps deck-level controls — rename,
-/// undo/redo and export. **+** adds a blank slide instantly (the curated
-/// layout list is a deliberate choice from the Slides row or a long-press
-/// on **+**). And the AI can still drive the same ops over MCP.
+/// Screen 2 — Editor. Canvas + filmstrip + a PowerPoint-style bottom ribbon —
+/// Files · Home · Insert · Draw · Design · Transitions · Animations ·
+/// Slide show · Review · View · Help — horizontally scrollable, each tab
+/// opening a contextual tool row under the canvas. The top bar keeps
+/// deck-level controls: rename (tap the title), undo/redo, comments, share,
+/// and the More menu with Editing / Viewing / Presenting modes and Export.
+/// **+** adds a blank slide instantly (the curated layout list is a
+/// deliberate choice from the Home row or a long-press on **+**). And the
+/// AI can still drive the same ops over MCP.
 class EditorScreen extends StatefulWidget {
   const EditorScreen({super.key, required this.deck});
 
@@ -47,10 +49,22 @@ class _EditorScreenState extends State<EditorScreen> {
   List<Map<String, dynamic>> _objectPresets = const [];
   int _oidSeq = 0;
 
-  // ---- CapCut-style bottom navigation -----------------------------------------
-  /// The active bottom-nav tab; its contextual action row renders between
+  // ---- PowerPoint-style bottom ribbon ------------------------------------------
+  /// The active ribbon tab; its contextual action row renders between
   /// the canvas and the filmstrip. Null = collapsed (canvas gets the space).
   _NavTab? _navTab;
+
+  /// Editor chrome mode (More menu): editing = the full toolkit, viewing =
+  /// a chrome-free read-only pass over the deck.
+  _Mode _mode = _Mode.editing;
+
+  /// Drives the horizontally scrollable ribbon bar; the freshly-lit tab
+  /// gets centered so it never hides off-screen.
+  final ScrollController _navScroll = ScrollController();
+
+  /// In-memory review comments (top-bar Comments / Review tab).
+  final List<Map<String, String>> _comments = [];
+  final TextEditingController _commentField = TextEditingController();
 
   @override
   void initState() {
@@ -62,6 +76,13 @@ class _EditorScreenState extends State<EditorScreen> {
         .map((m) => Map<String, dynamic>.from(m))
         .toList();
     _refreshLayout();
+  }
+
+  @override
+  void dispose() {
+    _commentField.dispose();
+    _navScroll.dispose();
+    super.dispose();
   }
 
   List<Map<String, dynamic>> get _slides =>
@@ -155,18 +176,33 @@ class _EditorScreenState extends State<EditorScreen> {
     return 'o${DateTime.now().millisecondsSinceEpoch}_$_oidSeq';
   }
 
-  /// Bottom-nav state machine: one contextual row at a time, tapped again to
-  /// collapse. The Shapes tab doubles as design mode (the canvas overlay
-  /// needs it), so leaving it clears scribble/selection like the old toggle.
+  /// Ribbon state machine: one contextual row at a time, tapped again to
+  /// collapse. Tabs that work on the canvas overlay (Insert, Draw) double
+  /// as design mode, so leaving them clears scribble/selection.
   void _setNavTab(_NavTab? tab) {
     setState(() {
       _navTab = tab;
-      _designMode = tab == _NavTab.shapes;
+      _designMode = tab == _NavTab.insert || tab == _NavTab.draw;
       if (!_designMode) {
         _scribbleMode = false;
         _selectedObjectId = null;
       }
     });
+    if (tab != null) {
+      // Keep the freshly-lit tab centered in the scrollable bar.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _centerNavTab(tab));
+    }
+  }
+
+  /// Centers the active ribbon tab in the bar's viewport.
+  void _centerNavTab(_NavTab tab) {
+    if (!_navScroll.hasClients) return;
+    final i = _NavTab.values.indexOf(tab);
+    final view = _navScroll.position.viewportDimension;
+    final maxExtent = _navScroll.position.maxScrollExtent;
+    final target =
+        (i * _navItemWidth + _navItemWidth / 2 - view / 2).clamp(0.0, maxExtent).toDouble();
+    _navScroll.animateTo(target, duration: const Duration(milliseconds: 240), curve: Curves.easeOutCubic);
   }
 
   void _showLibrary() {
@@ -790,7 +826,7 @@ class _EditorScreenState extends State<EditorScreen> {
     // OUTSIDE this Scaffold and track the keyboard themselves — so the
     // canvas, tool row and filmstrip below keep their steady layout while the
     // keyboard is open, in both inset-delivery and window-resize mode.
-    // (The bottom-nav bar and its contextual tool row sit inside this
+    // (The ribbon bar and its contextual tool row sit inside this
     // subtree too, so they stay put as well.)
     return KeyboardStableMetrics(
       child: Scaffold(
@@ -810,8 +846,9 @@ class _EditorScreenState extends State<EditorScreen> {
           preferredSize: Size.fromHeight(1),
           child: ColoredBox(color: kHairline),
         ),
-        // The whole toolkit lives in the bottom nav now — the top bar keeps
-        // deck-level controls: rename (tap the title), undo/redo and export.
+        // The toolkit lives in the bottom ribbon — the top bar keeps
+        // deck-level controls: rename (tap the title), undo/redo, comments,
+        // share, and the More menu (modes + export).
         actions: [
           IconButton(
             tooltip: 'Undo',
@@ -823,16 +860,28 @@ class _EditorScreenState extends State<EditorScreen> {
             icon: const Icon(Icons.redo),
             onPressed: _redo.isEmpty ? null : _redoStep,
           ),
+          IconButton(
+            tooltip: 'Comments',
+            icon: const Icon(Icons.chat_bubble_outline),
+            onPressed: _showComments,
+          ),
+          IconButton(
+            tooltip: 'Share',
+            icon: const Icon(Icons.ios_share),
+            onPressed: _showShareSheet,
+          ),
           PopupMenuButton<String>(
-            tooltip: 'Export deck',
+            tooltip: 'More',
             enabled: !_busy,
             icon: _busy
                 ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.2))
-                : const Icon(Icons.ios_share),
-            onSelected: _export,
+                : const Icon(Icons.more_vert),
+            onSelected: _onModeMenu,
             itemBuilder: (context) => const [
-              PopupMenuItem(value: 'export_pptx', child: Text('Export .pptx')),
-              PopupMenuItem(value: 'export_pdf', child: Text('Export .pdf')),
+              PopupMenuItem(value: 'editing', child: Text('Editing Mode')),
+              PopupMenuItem(value: 'viewing', child: Text('Viewing Mode')),
+              PopupMenuItem(value: 'presenting', child: Text('Presenting Mode')),
+              PopupMenuItem(value: 'export', child: Text('Export')),
             ],
           ),
           const SizedBox(width: 4),
@@ -866,7 +915,7 @@ class _EditorScreenState extends State<EditorScreen> {
                                 borderRadius: BorderRadius.circular(12),
                                 child: Stack(
                                   children: [
-                                    SlideCanvas(layout: _layout!, onTextTap: _designMode ? null : _editText),
+                                    SlideCanvas(layout: _layout!, onTextTap: _designMode || _mode == _Mode.viewing ? null : _editText),
                                     ShapesLayer(
                                       objects: _objects,
                                       selectedId: _selectedObjectId,
@@ -897,7 +946,11 @@ class _EditorScreenState extends State<EditorScreen> {
                               border: Border.all(color: kHairline),
                             ),
                             child: Text(
-                              n == 0 ? 'no slides' : 'Slide ${_index + 1} / $n',
+                              n == 0
+                                  ? 'no slides'
+                                  : _mode == _Mode.viewing
+                                      ? 'viewing · ${_index + 1} / $n'
+                                      : 'Slide ${_index + 1} / $n',
                               style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: kText2),
                             ),
                           ),
@@ -911,136 +964,190 @@ class _EditorScreenState extends State<EditorScreen> {
                               label: Text(_warnings.first, overflow: TextOverflow.ellipsis),
                             ),
                           ),
+                        // Viewing mode: edge chevrons replace the editing chrome.
+                        if (_mode == _Mode.viewing) ...[
+                          Positioned(
+                            left: 0,
+                            top: 0,
+                            bottom: 0,
+                            child: Center(
+                              child: IconButton(
+                                tooltip: 'Previous slide',
+                                icon: const Icon(Icons.chevron_left, size: 30, color: kText2),
+                                onPressed: _index > 0 ? () => _step(-1) : null,
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            right: 0,
+                            top: 0,
+                            bottom: 0,
+                            child: Center(
+                              child: IconButton(
+                                tooltip: 'Next slide',
+                                icon: const Icon(Icons.chevron_right, size: 30, color: kText2),
+                                onPressed: _index < n - 1 ? () => _step(1) : null,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
           ),
-          // ---- contextual tool row (per active bottom-nav tab) ----------------
-          if (_navTab != null)
-            Container(
-              decoration: const BoxDecoration(
-                color: kSurface,
-                border: Border(
-                  top: BorderSide(color: kHairline),
-                  bottom: BorderSide(color: kHairline),
+          // ---- editing chrome: tool row + filmstrip + ribbon nav ---------------
+          if (_mode == _Mode.editing) ...[
+            if (_navTab != null)
+              Container(
+                decoration: const BoxDecoration(
+                  color: kSurface,
+                  border: Border(
+                    top: BorderSide(color: kHairline),
+                    bottom: BorderSide(color: kHairline),
+                  ),
                 ),
+                height: 48,
+                child: _contextualRow(),
               ),
-              height: 48,
-              child: _contextualRow(),
-            ),
-          // ---- filmstrip (stories-style, gradient ring on the live slide) ----
-          SizedBox(
-            height: 104,
-            child: Row(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(22),
-                      onTap: _addSlide,
-                      onLongPress: _addLayoutSlide,
-                      child: Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          gradient: kInkGradient,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.4),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
+            // ---- filmstrip (stories-style, gradient ring on the live slide) --
+            SizedBox(
+              height: 104,
+              child: Row(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(22),
+                        onTap: _addSlide,
+                        onLongPress: _addLayoutSlide,
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            gradient: kInkGradient,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.4),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: const Icon(Icons.add, color: Colors.white, size: 22),
                         ),
-                        child: const Icon(Icons.add, color: Colors.white, size: 22),
                       ),
                     ),
                   ),
-                ),
-                Expanded(
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    itemCount: n,
-                    itemBuilder: (context, i) {
-                      final selected = i == _index;
-                      final label = _slideTitle(_slides[i]);
-                      return Padding(
-                        padding: const EdgeInsets.all(6),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(10),
-                          onTap: () {
-                            setState(() {
-                              _index = i;
-                              _refreshLayout();
-                            });
-                          },
-                          onLongPress: () => _slideActions(i),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 150),
-                            width: 124,
-                            padding: EdgeInsets.all(selected ? 2.5 : 1),
-                            decoration: BoxDecoration(
-                              gradient: selected ? kInkGradient : null,
-                              color: selected ? null : kHairline,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Container(
+                  Expanded(
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      itemCount: n,
+                      itemBuilder: (context, i) {
+                        final selected = i == _index;
+                        final label = _slideTitle(_slides[i]);
+                        return Padding(
+                          padding: const EdgeInsets.all(6),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(10),
+                            onTap: () {
+                              setState(() {
+                                _index = i;
+                                _refreshLayout();
+                              });
+                            },
+                            onLongPress: () => _slideActions(i),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 150),
+                              width: 124,
+                              padding: EdgeInsets.all(selected ? 2.5 : 1),
                               decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(8),
+                                gradient: selected ? kInkGradient : null,
+                                color: selected ? null : kHairline,
+                                borderRadius: BorderRadius.circular(10),
                               ),
-                              child: Center(
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                                  child: Text(
-                                    '${i + 1}. $label',
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontSize: 11, color: Color(0xFF17181A), fontWeight: FontWeight.w500),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                                    child: Text(
+                                      '${i + 1}. $label',
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontSize: 11, color: Color(0xFF17181A), fontWeight: FontWeight.w500),
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          // ---- CapCut-style bottom nav ------------------------------------------
-          _EditorNavBar(active: _navTab, onSelect: _onNavSelect),
+            // ---- PowerPoint-style ribbon ----------------------------------------
+            _EditorNavBar(active: _navTab, controller: _navScroll, onSelect: _onNavSelect),
+          ],
         ],
       ),
       ),
     );
   }
 
-  // ---- bottom-nav wiring -------------------------------------------------------
+  // ---- ribbon wiring ---------------------------------------------------------
 
   void _onNavSelect(_NavTab tab) {
-    if (tab == _NavTab.ai) {
-      _showPairSheet(); // AI pairing is a sheet, not a docked tool row
-      return;
-    }
-    _setNavTab(_navTab == tab ? null : tab); // tap the active tool again to collapse
+    _setNavTab(_navTab == tab ? null : tab); // tap the active tab again to collapse
   }
 
-  /// The contextual action row for the active bottom-nav tab — the CapCut
-  /// pattern: the selected tool swaps in a compact toolbar right under the
-  /// canvas, above the filmstrip "timeline".
+  /// The contextual action row for the active ribbon tab — the selected
+  /// tool swaps in a compact toolbar right under the canvas, above the
+  /// filmstrip "timeline". Tabs whose toolboxes the user hasn't spec'd yet
+  /// park a "coming soon" note.
   Widget _contextualRow() {
     final n = _slides.length;
     switch (_navTab) {
-      case null || _NavTab.ai:
+      case null:
         return const SizedBox.shrink();
-      case _NavTab.slides:
+      case _NavTab.files:
+        return Row(
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 10),
+              child: FilledButton.tonalIcon(
+                onPressed: _showPairSheet,
+                icon: const Icon(Icons.auto_awesome, size: 18),
+                label: const Text('Pair AI'),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Rename deck',
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: _renameDeck,
+            ),
+            const Expanded(
+              child: Center(
+                child: Text(
+                  'deck-level tools',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _rowHint,
+                ),
+              ),
+            ),
+          ],
+        );
+      case _NavTab.home:
         return Row(
           children: [
             IconButton(
@@ -1085,38 +1192,18 @@ class _EditorScreenState extends State<EditorScreen> {
             ),
           ],
         );
-      case _NavTab.text:
+      case _NavTab.insert:
         return Row(
           children: [
             Padding(
               padding: const EdgeInsets.only(left: 10),
               child: FilledButton.icon(
                 onPressed: n == 0 ? null : _editContent,
-                icon: const Icon(Icons.edit_outlined, size: 18),
-                label: const Text('Edit slide content'),
+                icon: const Icon(Icons.text_fields, size: 18),
+                label: const Text('Add text'),
               ),
             ),
-            const Expanded(
-              child: Center(
-                child: Text(
-                  'or tap any text directly on the slide',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: _rowHint,
-                ),
-              ),
-            ),
-          ],
-        );
-      case _NavTab.shapes:
-        return Row(
-          children: [
             IconButton(tooltip: 'Add shape', icon: const Icon(Icons.category_outlined), onPressed: _showLibrary),
-            IconButton(
-              tooltip: 'Freehand draw',
-              icon: Icon(Icons.gesture, color: _scribbleMode ? kText : kText2),
-              onPressed: () => setState(() => _scribbleMode = !_scribbleMode),
-            ),
             IconButton(
               tooltip: 'Style the selected object',
               icon: const Icon(Icons.format_paint_outlined),
@@ -1128,10 +1215,10 @@ class _EditorScreenState extends State<EditorScreen> {
                     },
             ),
             IconButton(tooltip: 'Layers, groups, components', icon: const Icon(Icons.layers_outlined), onPressed: _showLayers),
-            Expanded(
+            const Expanded(
               child: Center(
                 child: Text(
-                  _scribbleMode ? 'draw on the slide' : 'drag to move · corners resize · top circle rotates',
+                  'tap text on the slide to edit it',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: _rowHint,
@@ -1140,7 +1227,27 @@ class _EditorScreenState extends State<EditorScreen> {
             ),
           ],
         );
-      case _NavTab.theme:
+      case _NavTab.draw:
+        return Row(
+          children: [
+            IconButton(
+              tooltip: 'Freehand draw',
+              icon: Icon(Icons.gesture, color: _scribbleMode ? kText : kText2),
+              onPressed: () => setState(() => _scribbleMode = !_scribbleMode),
+            ),
+            Expanded(
+              child: Center(
+                child: Text(
+                  _scribbleMode ? 'draw on the slide' : 'freehand pen · drag to move · corners resize',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _rowHint,
+                ),
+              ),
+            ),
+          ],
+        );
+      case _NavTab.design:
         final current = ((_deck['dna'] ?? const {})['family'] ?? '').toString();
         return Row(
           children: [
@@ -1167,8 +1274,96 @@ class _EditorScreenState extends State<EditorScreen> {
             ),
           ],
         );
+      case _NavTab.transitions:
+        return _comingSoon('Transitions');
+      case _NavTab.animations:
+        return _comingSoon('Animations');
+      case _NavTab.slideshow:
+        return Row(
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 10),
+              child: FilledButton.icon(
+                onPressed: _startPresenting,
+                icon: const Icon(Icons.play_arrow, size: 18),
+                label: const Text('Present'),
+              ),
+            ),
+            const Expanded(
+              child: Center(
+                child: Text(
+                  'fullscreen · swipe or tap the sides to advance',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _rowHint,
+                ),
+              ),
+            ),
+          ],
+        );
+      case _NavTab.review:
+        return Row(
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 10),
+              child: FilledButton.tonalIcon(
+                onPressed: _showComments,
+                icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                label: const Text('Comments'),
+              ),
+            ),
+            const Expanded(
+              child: Center(
+                child: Text(
+                  'leave notes on this deck',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _rowHint,
+                ),
+              ),
+            ),
+          ],
+        );
+      case _NavTab.view:
+        return Row(
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 10),
+              child: FilledButton.tonalIcon(
+                onPressed: () => _setMode(_Mode.viewing),
+                icon: const Icon(Icons.visibility_outlined, size: 18),
+                label: const Text('Reading view'),
+              ),
+            ),
+            const Expanded(
+              child: Center(
+                child: Text(
+                  'chrome-free pass · also in the More menu',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _rowHint,
+                ),
+              ),
+            ),
+          ],
+        );
+      case _NavTab.help:
+        return _comingSoon('Help');
     }
   }
+
+  /// Placeholder row for a ribbon tab whose toolbox is still being spec'd.
+  Widget _comingSoon(String what) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: Center(
+          child: Text(
+            '$what · coming soon',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: _rowHint,
+          ),
+        ),
+      );
 
   String _slideTitle(Map slide) {
     final archetype = (slide['archetype'] ?? 'slide').toString();
@@ -1190,14 +1385,200 @@ class _EditorScreenState extends State<EditorScreen> {
       builder: (_) => PairSheet(deck: _deck),
     );
   }
+
+  // ---- editor modes (More menu) ---------------------------------------------
+
+  void _setMode(_Mode m) {
+    setState(() {
+      _mode = m;
+      if (m == _Mode.viewing) {
+        _navTab = null;
+        _designMode = false;
+        _scribbleMode = false;
+        _selectedObjectId = null;
+      }
+    });
+  }
+
+  Future<void> _onModeMenu(String choice) async {
+    switch (choice) {
+      case 'editing':
+        _setMode(_Mode.editing);
+      case 'viewing':
+        _setMode(_Mode.viewing);
+      case 'presenting':
+        await _startPresenting();
+      case 'export':
+        await _showExportSheet('Export deck');
+    }
+  }
+
+  /// Slide-step helper for the viewing chevrons.
+  void _step(int delta) {
+    if (_slides.isEmpty) return;
+    var target = _index + delta;
+    if (target < 0) target = 0;
+    if (target >= _slides.length) target = _slides.length - 1;
+    if (target == _index) return;
+    setState(() => _index = target);
+    _refreshLayout();
+  }
+
+  /// Presenting mode — a fullscreen, chrome-free pass over the deck.
+  Future<void> _startPresenting() async {
+    if (_slides.isEmpty) {
+      _toast('Add a slide first.');
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => _PresenterScreen(deck: _deck, first: _index),
+      ),
+    );
+  }
+
+  // ---- comments & share -------------------------------------------------------
+
+  Future<void> _showComments() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: SafeArea(
+          child: StatefulBuilder(
+            builder: (context, setSheet) => Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+                  child: Text('Comments', style: Theme.of(context).textTheme.titleMedium),
+                ),
+                if (_comments.isEmpty)
+                  const SizedBox(
+                    height: 120,
+                    child: Center(child: Text('No comments yet — leave the first one.', style: _rowHint)),
+                  )
+                else
+                  Flexible(
+                    child: ListView(
+                      shrinkWrap: true,
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      children: [
+                        for (final c in _comments)
+                          ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.person_outline, size: 20, color: kText2),
+                            title: Text(c['text'] ?? ''),
+                            subtitle: const Text('You · just now'),
+                          ),
+                      ],
+                    ),
+                  ),
+                const Divider(height: 1, color: kHairline),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _commentField,
+                          minLines: 1,
+                          maxLines: 4,
+                          decoration: const InputDecoration(
+                            isDense: true,
+                            hintText: 'Add a comment',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Post comment',
+                        icon: const Icon(Icons.send, size: 20),
+                        onPressed: () {
+                          final text = _commentField.text.trim();
+                          if (text.isEmpty) return;
+                          setState(() => _comments.add({'text': text}));
+                          _commentField.clear();
+                          setSheet(() {});
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The top-bar Share button — export the deck and hand it to the system
+  /// share sheet.
+  Future<void> _showShareSheet() => _showExportSheet('Share deck');
+
+  Future<void> _showExportSheet(String title) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _busy ? null : () { Navigator.pop(context); _export('export_pptx'); },
+                  icon: const Icon(Icons.description, size: 18),
+                  label: const Text('PowerPoint (.pptx)'),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton.tonalIcon(
+                  onPressed: _busy ? null : () { Navigator.pop(context); _export('export_pdf'); },
+                  icon: const Icon(Icons.picture_as_pdf, size: 18),
+                  label: const Text('PDF (.pdf)'),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-// ---- CapCut-style bottom navigation -------------------------------------------
+// ---- PowerPoint-style bottom ribbon --------------------------------------------
 
-/// The bottom-nav tabs. AI is an action (opens the pairing sheet) rather than
-/// a docked panel; every other tab swaps in a contextual tool row. Export
-/// lives on the top bar with the other deck-level controls.
-enum _NavTab { slides, text, shapes, theme, ai }
+/// The ribbon tabs, in PowerPoint order. Each swaps in a contextual tool row
+/// under the canvas; the remaining tabs get their toolboxes spec'd next.
+enum _NavTab {
+  files,
+  home,
+  insert,
+  draw,
+  design,
+  transitions,
+  animations,
+  slideshow,
+  review,
+  view,
+  help,
+}
+
+/// Editor chrome mode, driven by the More (⋮) menu on the top bar.
+enum _Mode { editing, viewing }
 
 const List<(String, String)> _designFamilies = [
   ('swiss_editorial', 'Swiss editorial'),
@@ -1207,29 +1588,47 @@ const List<(String, String)> _designFamilies = [
 
 const TextStyle _rowHint = TextStyle(fontSize: 10.5, color: kText3);
 
-/// The editor's primary navigation — the whole toolkit one thumb away:
-/// Slides / Text / Shapes / Theme / AI, CapCut-style. The active tool lights
-/// up (white icon + signature gradient tick); its contextual action row
-/// renders between the canvas and the filmstrip.
+/// One ribbon tab's footprint — eleven at this width overflow any phone, so
+/// the bar scrolls and centers the active tab.
+const double _navItemWidth = 72;
+
+/// The editor's primary navigation — a PowerPoint-style ribbon, horizontally
+/// scrollable so all eleven tabs sit one thumb away: Files · Home · Insert ·
+/// Draw · Design · Transitions · Animations · Slide show · Review · View ·
+/// Help. The active tab lights up (white icon + signature gradient tick);
+/// its contextual action row renders between the canvas and the filmstrip.
 class _EditorNavBar extends StatelessWidget {
-  const _EditorNavBar({required this.active, required this.onSelect});
+  const _EditorNavBar({required this.active, required this.controller, required this.onSelect});
 
   final _NavTab? active;
+  final ScrollController controller;
   final void Function(_NavTab) onSelect;
 
   static const _icons = {
-    _NavTab.slides: Icons.view_carousel_outlined,
-    _NavTab.text: Icons.text_fields,
-    _NavTab.shapes: Icons.category_outlined,
-    _NavTab.theme: Icons.palette_outlined,
-    _NavTab.ai: Icons.auto_awesome,
+    _NavTab.files: Icons.folder_open,
+    _NavTab.home: Icons.home_outlined,
+    _NavTab.insert: Icons.add_box,
+    _NavTab.draw: Icons.gesture,
+    _NavTab.design: Icons.palette_outlined,
+    _NavTab.transitions: Icons.swap_horiz,
+    _NavTab.animations: Icons.auto_awesome,
+    _NavTab.slideshow: Icons.slideshow,
+    _NavTab.review: Icons.rate_review,
+    _NavTab.view: Icons.visibility_outlined,
+    _NavTab.help: Icons.help_outline,
   };
   static const _labels = {
-    _NavTab.slides: 'Slides',
-    _NavTab.text: 'Text',
-    _NavTab.shapes: 'Shapes',
-    _NavTab.theme: 'Theme',
-    _NavTab.ai: 'AI',
+    _NavTab.files: 'Files',
+    _NavTab.home: 'Home',
+    _NavTab.insert: 'Insert',
+    _NavTab.draw: 'Draw',
+    _NavTab.design: 'Design',
+    _NavTab.transitions: 'Transitions',
+    _NavTab.animations: 'Animations',
+    _NavTab.slideshow: 'Slide show',
+    _NavTab.review: 'Review',
+    _NavTab.view: 'View',
+    _NavTab.help: 'Help',
   };
 
   @override
@@ -1241,18 +1640,23 @@ class _EditorNavBar extends StatelessWidget {
       ),
       child: SizedBox(
         height: 58,
-        child: Row(
-          children: [
-            for (final t in _NavTab.values)
-              Expanded(
-                child: _NavItemButton(
-                  icon: _icons[t]!,
-                  label: _labels[t]!,
-                  active: active == t,
-                  onTap: () => onSelect(t),
+        child: SingleChildScrollView(
+          controller: controller,
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              for (final t in _NavTab.values)
+                SizedBox(
+                  width: _navItemWidth,
+                  child: _NavItemButton(
+                    icon: _icons[t]!,
+                    label: _labels[t]!,
+                    active: active == t,
+                    onTap: () => onSelect(t),
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1313,7 +1717,116 @@ class _NavItemButton extends StatelessWidget {
   }
 }
 
-/// Compact capsule chip for a design family (Theme tool row).
+/// Presenting mode — a fullscreen, chrome-free pass over the deck: each
+/// slide rendered on black, swipe or tap the side zones to advance, a counter
+/// at the bottom and a close button up top.
+class _PresenterScreen extends StatefulWidget {
+  const _PresenterScreen({required this.deck, required this.first});
+
+  final Map<String, dynamic> deck;
+  final int first;
+
+  @override
+  State<_PresenterScreen> createState() => _PresenterScreenState();
+}
+
+class _PresenterScreenState extends State<_PresenterScreen> {
+  late final PageController _pages;
+  late final List<Map<String, dynamic>> _slides;
+  late final List<Map<String, dynamic>?> _layouts;
+  int _page = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _slides = ((widget.deck['slides'] as List?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+    _layouts = [for (var i = 0; i < _slides.length; i++) _layoutAt(i)];
+    var first = widget.first;
+    if (first < 0) first = 0;
+    if (first >= _slides.length) first = _slides.length - 1;
+    _pages = PageController(initialPage: first);
+    _page = first;
+  }
+
+  @override
+  void dispose() {
+    _pages.dispose();
+    super.dispose();
+  }
+
+  Map<String, dynamic>? _layoutAt(int i) {
+    final r = Bridge.command({'op': 'get_layout', 'deck': widget.deck, 'slide_index': i});
+    return r['ok'] == true && r['layout'] is Map ? (r['layout'] as Map).cast<String, dynamic>() : null;
+  }
+
+  void _go(int delta) {
+    var target = _page + delta;
+    if (target < 0) target = 0;
+    if (target >= _slides.length) target = _slides.length - 1;
+    if (target == _page) return;
+    _pages.animateToPage(target, duration: const Duration(milliseconds: 260), curve: Curves.easeOutCubic);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          PageView.builder(
+            controller: _pages,
+            itemCount: _slides.length,
+            onPageChanged: (value) => setState(() => _page = value),
+            itemBuilder: (context, i) {
+              final layout = _layouts[i];
+              return Center(
+                child: AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: layout == null
+                      ? const Center(child: Text('Unable to render this slide', style: TextStyle(color: kText2)))
+                      : SlideCanvas(layout: layout),
+                ),
+              );
+            },
+          ),
+          // Tap zones: right side advances, left side goes back — swipes still
+          // work because tap recognizers never claim drags.
+          Row(
+            children: [
+              Expanded(child: GestureDetector(onTap: () => _go(-1), behavior: HitTestBehavior.translucent)),
+              const SizedBox(width: 90),
+              Expanded(child: GestureDetector(onTap: () => _go(1), behavior: HitTestBehavior.translucent)),
+            ],
+          ),
+          Positioned(
+            top: 24,
+            right: 12,
+            child: IconButton(
+              tooltip: 'Exit',
+              icon: const Icon(Icons.close, color: Colors.white, size: 26),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 18,
+            child: Center(
+              child: Text(
+                _slides.isEmpty ? '' : '${_page + 1} / ${_slides.length}',
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Compact capsule chip for a design family (Design tool row).
 class _DesignChip extends StatelessWidget {
   const _DesignChip({required this.label, required this.selected, required this.onTap});
 
