@@ -1,7 +1,7 @@
 name: dreamtx
 description: DreamTX — the presentation app that lets YOUR AI build the deck (MCP, no API keys).
 publish_to: "none"
-version: 0.2.16+20
+version: 0.2.17+21
 
 environment:
   sdk: ">=3.4.0 <4.0.0"

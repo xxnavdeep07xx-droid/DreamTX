@@ -54,10 +54,6 @@ class _EditorScreenState extends State<EditorScreen> {
   /// the canvas and the filmstrip. Null = collapsed (canvas gets the space).
   _NavTab? _navTab;
 
-  /// Filmstrip compression — the v-chevron on the strip folds it down to
-  /// a slim handle (the canvas gets the space) and unfolds it back.
-  bool _filmOpen = true;
-
   /// Editor chrome mode (More menu): editing = the full toolkit, viewing =
   /// a chrome-free read-only pass over the deck.
   _Mode _mode = _Mode.editing;
@@ -1024,18 +1020,19 @@ class _EditorScreenState extends State<EditorScreen> {
                 child: _contextualRow(),
               ),
             // ---- filmstrip (stories-style, gradient ring on the live slide) --
-            // Compressible: the v-chevron at the strip's end folds it down
-            // into a slim handle (chevron flips to v-up to reopen) and the
-            // canvas absorbs the freed space. The + is a bare accent glyph —
-            // no gradient disc — so nothing is painted behind it.
-            AnimatedSize(
-              duration: const Duration(milliseconds: 220),
-              curve: Curves.easeOutCubic,
-              alignment: Alignment.bottomCenter,
-              child: _filmOpen
-                  ? SizedBox(
-                      height: 104,
-                      child: Row(
+            // Its own chrome panel, not a black void: the strip sits on the
+            // elevated surface — a little lighter than the canvas's pure
+            // black — under a hairline divider, so the section reads as a
+            // designed band and the white miniatures pop. The + keeps its
+            // signature gradient disc.
+            Container(
+              decoration: const BoxDecoration(
+                color: kSurface,
+                border: Border(top: BorderSide(color: kHairline)),
+              ),
+              child: SizedBox(
+                height: 104,
+                child: Row(
                         children: [
                           Padding(
                             padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
@@ -1045,10 +1042,21 @@ class _EditorScreenState extends State<EditorScreen> {
                                 borderRadius: BorderRadius.circular(22),
                                 onTap: _addSlide,
                                 onLongPress: _addLayoutSlide,
-                                child: const SizedBox(
+                                child: Container(
                                   width: 44,
                                   height: 44,
-                                  child: Icon(Icons.add, color: kAccent, size: 28),
+                                  decoration: BoxDecoration(
+                                    gradient: kInkGradient,
+                                    shape: BoxShape.circle,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(alpha: 0.4),
+                                        blurRadius: 10,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
+                                  ),
+                                  child: const Icon(Icons.add, color: Colors.white, size: 22),
                                 ),
                               ),
                             ),
@@ -1104,38 +1112,6 @@ class _EditorScreenState extends State<EditorScreen> {
                               },
                             ),
                           ),
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(2, 6, 8, 6),
-                            child: IconButton(
-                              tooltip: 'Collapse slide strip',
-                              icon: const Icon(Icons.keyboard_arrow_down, size: 22, color: kText2),
-                              onPressed: () => setState(() => _filmOpen = false),
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  : SizedBox(
-                      height: 40,
-                      child: Row(
-                        children: [
-                          const Spacer(),
-                          Tooltip(
-                            message: 'Show slide strip',
-                            child: Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(18),
-                                onTap: () => setState(() => _filmOpen = true),
-                                child: const SizedBox(
-                                  width: 44,
-                                  height: 40,
-                                  child: Icon(Icons.keyboard_arrow_up, size: 22, color: kText2),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 6),
                         ],
                       ),
                     ),
