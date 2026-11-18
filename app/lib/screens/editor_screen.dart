@@ -16,7 +16,7 @@ import '../widgets/slide_canvas.dart';
 import 'pair_sheet.dart';
 
 /// Screen 2 — Editor. Canvas + filmstrip + a PowerPoint-style bottom ribbon —
-/// Files · Home · Insert · Draw · Design · Transitions · Animations ·
+/// AI · Files · Home · Insert · Draw · Design · Transitions · Animations ·
 /// Slide show · Review · View · Help — horizontally scrollable, each tab
 /// opening a contextual tool row under the canvas. The top bar keeps
 /// deck-level controls: rename (tap the title), undo/redo, comments, share,
@@ -870,7 +870,7 @@ class _EditorScreenState extends State<EditorScreen> {
             tooltip: 'Share',
             icon: _busy
                 ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.2))
-                : const Icon(Icons.ios_share),
+                : const Icon(Icons.share),
             onPressed: _busy ? null : _showShareSheet,
           ),
           PopupMenuButton<String>(
@@ -882,6 +882,9 @@ class _EditorScreenState extends State<EditorScreen> {
               PopupMenuItem(value: 'editing', child: Text('Editing Mode')),
               PopupMenuItem(value: 'viewing', child: Text('Viewing Mode')),
               PopupMenuItem(value: 'presenting', child: Text('Presenting Mode')),
+              // The modes are chrome states; Export is an action from a
+              // different family — a real divider line keeps them apart.
+              PopupMenuDivider(height: 12),
               PopupMenuItem(value: 'export', child: Text('Export')),
             ],
           ),
@@ -1120,7 +1123,7 @@ class _EditorScreenState extends State<EditorScreen> {
     switch (_navTab) {
       case null:
         return const SizedBox.shrink();
-      case _NavTab.files:
+      case _NavTab.ai:
         return Row(
           children: [
             Padding(
@@ -1131,6 +1134,21 @@ class _EditorScreenState extends State<EditorScreen> {
                 label: const Text('Pair AI'),
               ),
             ),
+            const Expanded(
+              child: Center(
+                child: Text(
+                  'MCP pair · your AI drafts the deck',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _rowHint,
+                ),
+              ),
+            ),
+          ],
+        );
+      case _NavTab.files:
+        return Row(
+          children: [
             IconButton(
               tooltip: 'Rename deck',
               icon: const Icon(Icons.edit_outlined),
@@ -1332,7 +1350,7 @@ class _EditorScreenState extends State<EditorScreen> {
               padding: const EdgeInsets.only(left: 10),
               child: FilledButton.tonalIcon(
                 onPressed: () => _setMode(_Mode.viewing),
-                icon: const Icon(Icons.visibility_outlined, size: 18),
+                icon: const Icon(Icons.visibility, size: 18),
                 label: const Text('Reading view'),
               ),
             ),
@@ -1567,6 +1585,7 @@ class _EditorScreenState extends State<EditorScreen> {
 /// The ribbon tabs, in PowerPoint order. Each swaps in a contextual tool row
 /// under the canvas; the remaining tabs get their toolboxes spec'd next.
 enum _NavTab {
+  ai,
   files,
   home,
   insert,
@@ -1591,15 +1610,16 @@ const List<(String, String)> _designFamilies = [
 
 const TextStyle _rowHint = TextStyle(fontSize: 10.5, color: kText3);
 
-/// One ribbon tab's footprint — eleven at this width overflow any phone, so
+/// One ribbon tab's footprint — twelve at this width overflow any phone, so
 /// the bar scrolls and centers the active tab.
-const double _navItemWidth = 72;
+const double _navItemWidth = 66;
 
 /// The editor's primary navigation — a PowerPoint-style ribbon, horizontally
-/// scrollable so all eleven tabs sit one thumb away: Files · Home · Insert ·
-/// Draw · Design · Transitions · Animations · Slide show · Review · View ·
-/// Help. The active tab lights up (white icon + signature gradient tick);
-/// its contextual action row renders between the canvas and the filmstrip.
+/// scrollable so all twelve tabs sit one thumb away: AI · Files · Home ·
+/// Insert · Draw · Design · Transitions · Animations · Slide show · Review ·
+/// View · Help. The active tab lights up (white icon + signature gradient
+/// tick); its contextual action row renders between the canvas and the
+/// filmstrip.
 class _EditorNavBar extends StatelessWidget {
   const _EditorNavBar({required this.active, required this.controller, required this.onSelect});
 
@@ -1608,19 +1628,21 @@ class _EditorNavBar extends StatelessWidget {
   final void Function(_NavTab) onSelect;
 
   static const _icons = {
-    _NavTab.files: Icons.folder_open,
-    _NavTab.home: Icons.home_outlined,
+    _NavTab.ai: Icons.auto_awesome,
+    _NavTab.files: Icons.folder,
+    _NavTab.home: Icons.home,
     _NavTab.insert: Icons.add_box,
     _NavTab.draw: Icons.gesture,
-    _NavTab.design: Icons.palette_outlined,
+    _NavTab.design: Icons.palette,
     _NavTab.transitions: Icons.swap_horiz,
-    _NavTab.animations: Icons.auto_awesome,
+    _NavTab.animations: Icons.animation,
     _NavTab.slideshow: Icons.slideshow,
     _NavTab.review: Icons.rate_review,
-    _NavTab.view: Icons.visibility_outlined,
-    _NavTab.help: Icons.help_outline,
+    _NavTab.view: Icons.visibility,
+    _NavTab.help: Icons.help,
   };
   static const _labels = {
+    _NavTab.ai: 'AI',
     _NavTab.files: 'Files',
     _NavTab.home: 'Home',
     _NavTab.insert: 'Insert',
@@ -1689,23 +1711,24 @@ class _NavItemButton extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 21, color: color),
+            Icon(icon, size: 24, color: color),
             const SizedBox(height: 3),
             Text(
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: 10,
-                fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                color: active ? kText2 : kText3,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.2,
+                color: active ? kText : kText3,
               ),
             ),
             const SizedBox(height: 3),
             // Active tool gets the signature gradient tick — the same mark
             // as the filmstrip's selected ring.
             Container(
-              width: 22,
+              width: 26,
               height: 3,
               decoration: BoxDecoration(
                 color: active ? null : Colors.transparent,
