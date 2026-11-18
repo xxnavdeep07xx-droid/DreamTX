@@ -1663,9 +1663,9 @@ class _EditorNavBar extends StatelessWidget {
     // slot (AnimatedPositioned, 260ms ease-out) instead of each item
     // blinking its own. Slot math: item pitch _navItemWidth, pill 58 wide,
     // pill top = item padding (6) + centered column gap (5).
-    final int? slot = active == null
+    final double? slot = active == null
         ? null
-        : _NavTab.values.indexOf(active!) * _navItemWidth + (_navItemWidth - 58) ~/ 2;
+        : _NavTab.values.indexOf(active!) * _navItemWidth + (_navItemWidth - 58) / 2;
     return Container(
       decoration: const BoxDecoration(
         color: kSurface,
@@ -1693,7 +1693,7 @@ class _EditorNavBar extends StatelessWidget {
                       duration: const Duration(milliseconds: 260),
                       curve: Curves.easeOutCubic,
                       top: 11,
-                      left: slot == null ? 0.0 : slot.toDouble(),
+                      left: slot == null ? 0.0 : slot,
                       width: 58,
                       height: 34,
                       child: AnimatedOpacity(
