@@ -1617,9 +1617,10 @@ const double _navItemWidth = 66;
 /// The editor's primary navigation — a PowerPoint-style ribbon, horizontally
 /// scrollable so all twelve tabs sit one thumb away: AI · Files · Home ·
 /// Insert · Draw · Design · Transitions · Animations · Slide show · Review ·
-/// View · Help. The active tab lights up (white icon + signature gradient
-/// tick); its contextual action row renders between the canvas and the
-/// filmstrip.
+/// View · Help. Material-3 navigation proportions: 76dp tall, a 24dp icon in
+/// a stadium pill when active, an 11sp label below, and edge fades so tabs
+/// melt into the surface instead of clipping. The active tab's contextual
+/// action row renders between the canvas and the filmstrip.
 class _EditorNavBar extends StatelessWidget {
   const _EditorNavBar({required this.active, required this.controller, required this.onSelect});
 
@@ -1663,25 +1664,73 @@ class _EditorNavBar extends StatelessWidget {
         color: kSurface,
         border: Border(top: BorderSide(color: kHairline)),
       ),
+      // Material-3 NavigationBar anatomy, trimmed 80 -> 76dp because our
+      // labels are single-line: a 24dp icon in a stadium pill, an 11sp label
+      // under it, real vertical breathing room — and the ribbon melts into
+      // the surface at both ends instead of hard-clipping half an icon.
       child: SizedBox(
-        height: 58,
-        child: SingleChildScrollView(
-          controller: controller,
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              for (final t in _NavTab.values)
-                SizedBox(
-                  width: _navItemWidth,
-                  child: _NavItemButton(
-                    icon: _icons[t]!,
-                    label: _labels[t]!,
-                    active: active == t,
-                    onTap: () => onSelect(t),
+        height: 76,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Positioned.fill(
+              child: SingleChildScrollView(
+                controller: controller,
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Row(
+                  children: [
+                    for (final t in _NavTab.values)
+                      SizedBox(
+                        width: _navItemWidth,
+                        child: _NavItemButton(
+                          icon: _icons[t]!,
+                          label: _labels[t]!,
+                          active: active == t,
+                          onTap: () => onSelect(t),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            // Edge fades, the PowerPoint-ribbon affordance: 12dp of surface
+            // gradient over each end so tabs glide under instead of slicing.
+            const Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: 12,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      colors: [kSurface, Color(0x00141417)],
+                    ),
                   ),
                 ),
-            ],
-          ),
+              ),
+            ),
+            const Positioned(
+              right: 0,
+              top: 0,
+              bottom: 0,
+              width: 12,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.centerRight,
+                      end: Alignment.centerLeft,
+                      colors: [kSurface, Color(0x00141417)],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1708,35 +1757,38 @@ class _NavItemButton extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 24, color: color),
-            const SizedBox(height: 3),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 10.5,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.2,
-                color: active ? kText : kText3,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Material-3 active indicator: a stadium pill behind the icon
+              // when the tab is lit. Two rows, not three — the pill IS the
+              // active state, so no separate underline tick is needed.
+              Container(
+                width: 58,
+                height: 34,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: active ? const Color(0x1FFFFFFF) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(17),
+                ),
+                child: Icon(icon, size: 24, color: color),
               ),
-            ),
-            const SizedBox(height: 3),
-            // Active tool gets the signature gradient tick — the same mark
-            // as the filmstrip's selected ring.
-            Container(
-              width: 26,
-              height: 3,
-              decoration: BoxDecoration(
-                color: active ? null : Colors.transparent,
-                gradient: active ? kInkGradient : null,
-                borderRadius: BorderRadius.circular(2),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                  letterSpacing: -0.2,
+                  color: active ? kText : kText3,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
