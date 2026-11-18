@@ -1017,14 +1017,29 @@ class _EditorScreenState extends State<EditorScreen> {
                   ),
                 ),
                 height: 48,
-                child: _contextualRow(),
+                // The floating + disc owns the strip's left edge (it mounts
+                // on the seam below this band), so the tool row indents to
+                // the same 72dp origin as slide 0 — no control ever sits
+                // under the disc.
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 72),
+                  child: _contextualRow(),
+                ),
               ),
             // ---- filmstrip (stories-style, gradient ring on the live slide) --
             // Its own chrome panel, not a black void: the strip sits on the
             // elevated surface — a little lighter than the canvas's pure
             // black — under a hairline divider, so the section reads as a
-            // designed band and the white miniatures pop. The + keeps its
-            // signature gradient disc.
+            // designed band and the white miniatures pop.
+            //
+            // v0.2.18 — the + is a FLOATING disc, no longer a member of the
+            // band. It mounts on the panel's top-left seam, straddling the
+            // hairline so the divider passes UNDER it, and the miniature
+            // rail runs the full width behind it: slides glide under the
+            // disc and melt into a left fade. Nothing slices a miniature at
+            // a viewport edge, no wall stands between the disc and the
+            // first slide, and nothing can ever cut into the disc itself —
+            // it is painted last, outside every clip.
             Container(
               decoration: const BoxDecoration(
                 color: kSurface,
@@ -1032,89 +1047,119 @@ class _EditorScreenState extends State<EditorScreen> {
               ),
               child: SizedBox(
                 height: 104,
-                child: Row(
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
-                            child: Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(22),
-                                onTap: _addSlide,
-                                onLongPress: _addLayoutSlide,
-                                child: Container(
-                                  width: 44,
-                                  height: 44,
-                                  decoration: BoxDecoration(
-                                    gradient: kInkGradient,
-                                    shape: BoxShape.circle,
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withValues(alpha: 0.4),
-                                        blurRadius: 10,
-                                        offset: const Offset(0, 4),
-                                      ),
-                                    ],
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    // The rail: full width, slides only. The leading inset
+                    // keeps slide 0 clear of the floating disc at rest, so
+                    // its border and rounded corners are fully visible —
+                    // never flush against the rail's left boundary.
+                    ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.fromLTRB(72, 6, 16, 6),
+                      itemCount: n,
+                      itemBuilder: (context, i) {
+                        final selected = i == _index;
+                        final label = _slideTitle(_slides[i]);
+                        return Padding(
+                          padding: const EdgeInsets.all(6),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(10),
+                            onTap: () {
+                              setState(() {
+                                _index = i;
+                                _refreshLayout();
+                              });
+                            },
+                            onLongPress: () => _slideActions(i),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 150),
+                              width: 124,
+                              padding: EdgeInsets.all(selected ? 2.5 : 1),
+                              decoration: BoxDecoration(
+                                gradient: selected ? kInkGradient : null,
+                                color: selected ? null : kHairline,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                                    child: Text(
+                                      '${i + 1}. $label',
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontSize: 11, color: Color(0xFF17181A), fontWeight: FontWeight.w500),
+                                    ),
                                   ),
-                                  child: const Icon(Icons.add, color: Colors.white, size: 22),
                                 ),
                               ),
                             ),
                           ),
-                          Expanded(
-                            child: ListView.builder(
-                              scrollDirection: Axis.horizontal,
-                              padding: const EdgeInsets.symmetric(horizontal: 4),
-                              itemCount: n,
-                              itemBuilder: (context, i) {
-                                final selected = i == _index;
-                                final label = _slideTitle(_slides[i]);
-                                return Padding(
-                                  padding: const EdgeInsets.all(6),
-                                  child: InkWell(
-                                    borderRadius: BorderRadius.circular(10),
-                                    onTap: () {
-                                      setState(() {
-                                        _index = i;
-                                        _refreshLayout();
-                                      });
-                                    },
-                                    onLongPress: () => _slideActions(i),
-                                    child: AnimatedContainer(
-                                      duration: const Duration(milliseconds: 150),
-                                      width: 124,
-                                      padding: EdgeInsets.all(selected ? 2.5 : 1),
-                                      decoration: BoxDecoration(
-                                        gradient: selected ? kInkGradient : null,
-                                        color: selected ? null : kHairline,
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: Container(
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: Center(
-                                          child: Padding(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                                            child: Text(
-                                              '${i + 1}. $label',
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(fontSize: 11, color: Color(0xFF17181A), fontWeight: FontWeight.w500),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              },
+                        );
+                      },
+                    ),
+                    // Left fade, the PowerPoint-ribbon affordance: a
+                    // miniature melts into the surface as it passes under
+                    // the floating disc instead of being chopped at the
+                    // rail's hard edge — the invisible partition is gone.
+                    const Positioned(
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: 64,
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.centerLeft,
+                              end: Alignment.centerRight,
+                              colors: [kSurface, Color(0x00141417)],
                             ),
                           ),
-                        ],
+                        ),
                       ),
                     ),
+                    // The floating +: signature gradient disc with a soft
+                    // elevation shadow, straddling the panel's top hairline
+                    // (12dp above the seam, 32dp below). Painted LAST — the
+                    // rail passes behind it and no container clips it. Tap
+                    // adds a blank slide; long-press opens the layout list.
+                    Positioned(
+                      left: 14,
+                      top: -12,
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(22),
+                          onTap: _addSlide,
+                          onLongPress: _addLayoutSlide,
+                          child: Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              gradient: kInkGradient,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.45),
+                                  blurRadius: 14,
+                                  offset: const Offset(0, 5),
+                                ),
+                              ],
+                            ),
+                            child: const Icon(Icons.add, color: Colors.white, size: 22),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
             // ---- PowerPoint-style ribbon ----------------------------------------
             _EditorNavBar(active: _navTab, controller: _navScroll, onSelect: _onNavSelect),
