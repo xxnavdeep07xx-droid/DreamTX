@@ -787,12 +787,12 @@ class _EditorScreenState extends State<EditorScreen> {
 
   // ---- export -------------------------------------------------------------------
 
-  Future<void> _export(String op) async {
+  Future<void> _export(String op, {String verb = 'Export'}) async {
     setState(() => _busy = true);
     try {
       final r = Bridge.command({'op': op, 'deck': _deck});
       if (r['ok'] != true || r['base64'] is! String) {
-        _toast('Export failed: ${r['error'] ?? 'engine unavailable'}');
+        _toast('$verb failed: ${r['error'] ?? 'engine unavailable'}');
         return;
       }
       final bytes = base64Decode(r['base64'] as String);
@@ -804,7 +804,7 @@ class _EditorScreenState extends State<EditorScreen> {
         ShareParams(files: [XFile(file.path)], text: _deck['title'].toString()),
       );
     } catch (e) {
-      _toast('Export error: $e');
+      _toast('$verb error: $e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -848,7 +848,8 @@ class _EditorScreenState extends State<EditorScreen> {
         ),
         // The toolkit lives in the bottom ribbon — the top bar keeps
         // deck-level controls: rename (tap the title), undo/redo, comments,
-        // share, and the More menu (modes + export).
+        // share (a .pptx copy straight to the system share sheet), and the
+        // More menu (modes + export with a format choice).
         actions: [
           IconButton(
             tooltip: 'Undo',
@@ -867,15 +868,15 @@ class _EditorScreenState extends State<EditorScreen> {
           ),
           IconButton(
             tooltip: 'Share',
-            icon: const Icon(Icons.ios_share),
-            onPressed: _showShareSheet,
+            icon: _busy
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.2))
+                : const Icon(Icons.ios_share),
+            onPressed: _busy ? null : _showShareSheet,
           ),
           PopupMenuButton<String>(
             tooltip: 'More',
             enabled: !_busy,
-            icon: _busy
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.2))
-                : const Icon(Icons.more_vert),
+            icon: const Icon(Icons.more_vert),
             onSelected: _onModeMenu,
             itemBuilder: (context) => const [
               PopupMenuItem(value: 'editing', child: Text('Editing Mode')),
@@ -1409,7 +1410,7 @@ class _EditorScreenState extends State<EditorScreen> {
       case 'presenting':
         await _startPresenting();
       case 'export':
-        await _showExportSheet('Export deck');
+        await _showExportSheet();
     }
   }
 
@@ -1515,11 +1516,13 @@ class _EditorScreenState extends State<EditorScreen> {
     );
   }
 
-  /// The top-bar Share button — export the deck and hand it to the system
-  /// share sheet.
-  Future<void> _showShareSheet() => _showExportSheet('Share deck');
+  /// The top-bar Share button — "send a copy": no format dialog, just export
+  /// the deck as .pptx and hand it straight to the system share sheet.
+  /// Picking a format (pptx/pdf) is the Export menu's job; Share is the
+  /// fast lane out of the app.
+  Future<void> _showShareSheet() => _export('export_pptx', verb: 'Share');
 
-  Future<void> _showExportSheet(String title) async {
+  Future<void> _showExportSheet() async {
     await showModalBottomSheet<void>(
       context: context,
       builder: (context) => SafeArea(
@@ -1528,7 +1531,7 @@ class _EditorScreenState extends State<EditorScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+              child: Text('Export deck', style: Theme.of(context).textTheme.titleMedium),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
