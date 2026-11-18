@@ -643,16 +643,16 @@ class _ContentSheetState extends State<ContentSheet> {
                   children: [
                     for (final s in fieldSpecs[_archetype] ?? const <FieldSpec>[]) _fieldFor(s),
                     if ((fieldSpecs[_archetype] ?? const <FieldSpec>[]).isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 24),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 24),
                         child: Column(
                           children: [
-                            const Icon(Icons.crop_square, size: 40, color: kText3),
-                            const SizedBox(height: 10),
+                            Icon(Icons.crop_square, size: 40, color: kText3),
+                            SizedBox(height: 10),
                             Text(
                               'Blank slide — nothing to edit here.\nDraw with the Shapes tool, or switch the layout (swap icon above).',
                               textAlign: TextAlign.center,
-                              style: const TextStyle(fontSize: 12.5, color: kText2, height: 1.5),
+                              style: TextStyle(fontSize: 12.5, color: kText2, height: 1.5),
                             ),
                           ],
                         ),
