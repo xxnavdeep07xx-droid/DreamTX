@@ -80,6 +80,9 @@ pub fn layout_slide(dna: &Dna, slide: &Slide) -> Layout {
         SlideContent::Comparison { title, left, right } => b.comparison(title.as_deref(), left, right),
         SlideContent::ChartHero { title, chart, takeaway } => b.chart_hero(title, chart, takeaway.as_deref()),
         SlideContent::Closing { title, subtitle } => b.closing(title, subtitle.as_deref()),
+        // Blank canvas: no archetype elements — finish() still paints the
+        // DNA background, so the slide is an empty stage for overlays.
+        SlideContent::Blank => {}
     }
     b.finish()
 }

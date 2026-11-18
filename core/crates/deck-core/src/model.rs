@@ -228,6 +228,11 @@ pub enum Archetype {
     Comparison,
     ChartHero,
     Closing,
+    /// Empty canvas — no archetype elements, just the DNA background. The
+    /// user fills it with the vector overlay (shapes, scribbles) or switches
+    /// it to a content layout later. Not in `all()`: pickers/MCP list the
+    /// curated content layouts; blank is what `+` creates directly.
+    Blank,
 }
 
 impl Archetype {
@@ -256,6 +261,7 @@ impl Archetype {
             Archetype::Comparison => "Comparison",
             Archetype::ChartHero => "Chart hero",
             Archetype::Closing => "Closing",
+            Archetype::Blank => "Blank",
         }
     }
 }
@@ -305,6 +311,9 @@ pub enum SlideContent {
         title: String,
         subtitle: Option<String>,
     },
+    /// Empty canvas — serializes as `{"kind":"blank"}`. Pairs with
+    /// `Archetype::Blank`.
+    Blank,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -16,11 +16,12 @@ import '../widgets/slide_canvas.dart';
 import 'pair_sheet.dart';
 
 /// Screen 2 — Editor. Canvas + filmstrip + a CapCut-style bottom nav that
-/// carries the whole toolkit: Slides, Text, Shapes, Theme, AI and Export.
-/// Each tab opens a contextual action row right under the canvas (the
-/// Shapes tab doubles as design mode); the top bar keeps only deck-level
-/// stuff — rename, undo, redo. And the AI can still drive the same ops
-/// over MCP.
+/// carries the working toolkit: Slides, Text, Shapes, Theme and AI. Each tab
+/// opens a contextual action row right under the canvas (the Shapes tab
+/// doubles as design mode); the top bar keeps deck-level controls — rename,
+/// undo/redo and export. **+** adds a blank slide instantly (the curated
+/// layout list is a deliberate choice from the Slides row or a long-press
+/// on **+**). And the AI can still drive the same ops over MCP.
 class EditorScreen extends StatefulWidget {
   const EditorScreen({super.key, required this.deck});
 
@@ -528,7 +529,24 @@ class _EditorScreenState extends State<EditorScreen> {
     }
   }
 
-  Future<void> _addSlide() async {
+  /// The **+** button: add a blank slide instantly — no picker, no template.
+  /// The user gets an empty canvas (just the deck's background) to draw on
+  /// or fill later; the curated layout list lives in the Slides tool row.
+  void _addSlide() {
+    final r = Bridge.command({'op': 'add_slide', 'deck': _deck, 'archetype': 'blank'});
+    if (r['ok'] == true && r['deck'] is Map) {
+      _mutate(r['deck'] as Map);
+      setState(() => _index = _slides.length - 1);
+      _refreshLayout();
+    } else {
+      _toast('Could not add: ${r['error']}');
+    }
+  }
+
+  /// The curated template list (Cover, Agenda, …) — a deliberate choice
+  /// from the Slides tool row or a long-press on **+** when you DO want a
+  /// pre-styled layout.
+  Future<void> _addLayoutSlide() async {
     final meta = Bridge.command({'op': 'meta'});
     final r = Bridge.command({'op': 'pacing', 'deck': _deck});
     final suggested = (r['next_suggested'] ?? '').toString();
@@ -576,6 +594,7 @@ class _EditorScreenState extends State<EditorScreen> {
       'Comparison': 'comparison',
       'Chart hero': 'chart_hero',
       'Closing': 'closing',
+      'Blank': 'blank',
     };
     return map[label] ?? 'statement';
   }
@@ -792,7 +811,7 @@ class _EditorScreenState extends State<EditorScreen> {
           child: ColoredBox(color: kHairline),
         ),
         // The whole toolkit lives in the bottom nav now — the top bar keeps
-        // only deck-level controls: rename (tap the title) + undo/redo.
+        // deck-level controls: rename (tap the title), undo/redo and export.
         actions: [
           IconButton(
             tooltip: 'Undo',
@@ -803,6 +822,18 @@ class _EditorScreenState extends State<EditorScreen> {
             tooltip: 'Redo',
             icon: const Icon(Icons.redo),
             onPressed: _redo.isEmpty ? null : _redoStep,
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'Export deck',
+            enabled: !_busy,
+            icon: _busy
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.2))
+                : const Icon(Icons.ios_share),
+            onSelected: _export,
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'export_pptx', child: Text('Export .pptx')),
+              PopupMenuItem(value: 'export_pdf', child: Text('Export .pdf')),
+            ],
           ),
           const SizedBox(width: 4),
         ],
@@ -909,6 +940,7 @@ class _EditorScreenState extends State<EditorScreen> {
                     child: InkWell(
                       borderRadius: BorderRadius.circular(22),
                       onTap: _addSlide,
+                      onLongPress: _addLayoutSlide,
                       child: Container(
                         width: 44,
                         height: 44,
@@ -983,7 +1015,7 @@ class _EditorScreenState extends State<EditorScreen> {
             ),
           ),
           // ---- CapCut-style bottom nav ------------------------------------------
-          _EditorNavBar(active: _navTab, busy: _busy, onSelect: _onNavSelect),
+          _EditorNavBar(active: _navTab, onSelect: _onNavSelect),
         ],
       ),
       ),
@@ -1011,7 +1043,16 @@ class _EditorScreenState extends State<EditorScreen> {
       case _NavTab.slides:
         return Row(
           children: [
-            IconButton(tooltip: 'Add slide', icon: const Icon(Icons.add_circle_outline), onPressed: _addSlide),
+            IconButton(
+              tooltip: 'Add blank slide',
+              icon: const Icon(Icons.add_circle_outline),
+              onPressed: _addSlide,
+            ),
+            IconButton(
+              tooltip: 'Add from a layout template',
+              icon: const Icon(Icons.dashboard_outlined),
+              onPressed: _addLayoutSlide,
+            ),
             IconButton(
               tooltip: 'Duplicate slide',
               icon: const Icon(Icons.content_copy),
@@ -1030,7 +1071,7 @@ class _EditorScreenState extends State<EditorScreen> {
             const Expanded(
               child: Center(
                 child: Text(
-                  'long-press a thumbnail for more',
+                  '+ is blank · long-press a thumbnail for more',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: _rowHint,
@@ -1126,43 +1167,12 @@ class _EditorScreenState extends State<EditorScreen> {
             ),
           ],
         );
-      case _NavTab.export:
-        return Row(
-          children: [
-            const SizedBox(width: 8),
-            FilledButton.icon(
-              onPressed: _busy ? null : () => _export('export_pptx'),
-              icon: const Icon(Icons.file_present_outlined, size: 18),
-              label: const Text('Export .pptx'),
-            ),
-            const SizedBox(width: 8),
-            FilledButton.tonalIcon(
-              onPressed: _busy ? null : () => _export('export_pdf'),
-              icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
-              label: const Text('Export .pdf'),
-            ),
-            if (_busy)
-              const Padding(
-                padding: EdgeInsets.only(left: 12),
-                child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.2)),
-              )
-            else
-              const Expanded(
-                child: Center(
-                  child: Text(
-                    'files are share-ready',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: _rowHint,
-                  ),
-                ),
-              ),
-          ],
-        );
     }
   }
 
   String _slideTitle(Map slide) {
+    final archetype = (slide['archetype'] ?? 'slide').toString();
+    if (archetype == 'blank') return 'Blank';
     final content = slide['content'];
     if (content is Map) {
       for (final k in ['title', 'text', 'kicker']) {
@@ -1170,7 +1180,7 @@ class _EditorScreenState extends State<EditorScreen> {
         if (v is String && v.isNotEmpty) return v;
       }
     }
-    return (slide['archetype'] ?? 'slide').toString();
+    return archetype;
   }
 
   void _showPairSheet() {
@@ -1185,8 +1195,9 @@ class _EditorScreenState extends State<EditorScreen> {
 // ---- CapCut-style bottom navigation -------------------------------------------
 
 /// The bottom-nav tabs. AI is an action (opens the pairing sheet) rather than
-/// a docked panel; every other tab swaps in a contextual tool row.
-enum _NavTab { slides, text, shapes, theme, ai, export }
+/// a docked panel; every other tab swaps in a contextual tool row. Export
+/// lives on the top bar with the other deck-level controls.
+enum _NavTab { slides, text, shapes, theme, ai }
 
 const List<(String, String)> _designFamilies = [
   ('swiss_editorial', 'Swiss editorial'),
@@ -1197,14 +1208,13 @@ const List<(String, String)> _designFamilies = [
 const TextStyle _rowHint = TextStyle(fontSize: 10.5, color: kText3);
 
 /// The editor's primary navigation — the whole toolkit one thumb away:
-/// Slides / Text / Shapes / Theme / AI / Export, CapCut-style. The active
-/// tool lights up (white icon + signature gradient tick); its contextual
-/// action row renders between the canvas and the filmstrip.
+/// Slides / Text / Shapes / Theme / AI, CapCut-style. The active tool lights
+/// up (white icon + signature gradient tick); its contextual action row
+/// renders between the canvas and the filmstrip.
 class _EditorNavBar extends StatelessWidget {
-  const _EditorNavBar({required this.active, required this.busy, required this.onSelect});
+  const _EditorNavBar({required this.active, required this.onSelect});
 
   final _NavTab? active;
-  final bool busy;
   final void Function(_NavTab) onSelect;
 
   static const _icons = {
@@ -1213,7 +1223,6 @@ class _EditorNavBar extends StatelessWidget {
     _NavTab.shapes: Icons.category_outlined,
     _NavTab.theme: Icons.palette_outlined,
     _NavTab.ai: Icons.auto_awesome,
-    _NavTab.export: Icons.ios_share,
   };
   static const _labels = {
     _NavTab.slides: 'Slides',
@@ -1221,7 +1230,6 @@ class _EditorNavBar extends StatelessWidget {
     _NavTab.shapes: 'Shapes',
     _NavTab.theme: 'Theme',
     _NavTab.ai: 'AI',
-    _NavTab.export: 'Export',
   };
 
   @override
@@ -1241,7 +1249,6 @@ class _EditorNavBar extends StatelessWidget {
                   icon: _icons[t]!,
                   label: _labels[t]!,
                   active: active == t,
-                  busy: busy && t == _NavTab.export,
                   onTap: () => onSelect(t),
                 ),
               ),
@@ -1258,13 +1265,11 @@ class _NavItemButton extends StatelessWidget {
     required this.label,
     required this.active,
     required this.onTap,
-    this.busy = false,
   });
 
   final IconData icon;
   final String label;
   final bool active;
-  final bool busy;
   final VoidCallback onTap;
 
   @override
@@ -1273,14 +1278,11 @@ class _NavItemButton extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: busy ? null : onTap,
+        onTap: onTap,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            if (busy)
-              const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.2))
-            else
-              Icon(icon, size: 21, color: color),
+            Icon(icon, size: 21, color: color),
             const SizedBox(height: 3),
             Text(
               label,

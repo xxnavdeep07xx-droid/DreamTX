@@ -19,7 +19,7 @@ const deckRef = {
   description: "The current deck state, as returned by create_deck / get_deck. Pass it back unchanged.",
 };
 
-const arch = { type: "string", enum: ["cover", "agenda", "section", "statement", "stat_wall", "split", "comparison", "chart_hero", "closing"] };
+const arch = { type: "string", enum: ["cover", "agenda", "section", "statement", "stat_wall", "split", "comparison", "chart_hero", "closing", "blank"], description: ""blank" gives an empty canvas slide for shapes and freehand overlays." };
 
 export const TOOLS: ToolDef[] = [
   {

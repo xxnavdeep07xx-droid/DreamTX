@@ -18,6 +18,7 @@ pub enum PacingIssue {
 fn density(slide: &Slide) -> u32 {
     match &slide.content {
         SlideContent::Cover { .. } | SlideContent::Section { .. } | SlideContent::Closing { .. } => 1,
+        SlideContent::Blank => 0,
         SlideContent::Statement { .. } => 2,
         SlideContent::Agenda { items, .. } => 2 + items.len().min(4) as u32,
         SlideContent::StatWall { stats, .. } => 2 + stats.len().min(4) as u32,
@@ -34,7 +35,11 @@ pub fn audit(deck: &Deck) -> Vec<PacingIssue> {
     let n = deck.slides.len();
 
     for i in 1..n {
-        if deck.slides[i].archetype == deck.slides[i - 1].archetype {
+        // Blank slides are the user's canvas — several in a row is normal
+        // editing, not a pacing failure.
+        if deck.slides[i].archetype == deck.slides[i - 1].archetype
+            && deck.slides[i].archetype != Archetype::Blank
+        {
             issues.push(PacingIssue::RepeatedArchetype { slide_index: i });
         }
     }
@@ -107,6 +112,7 @@ pub fn suggest_next(deck: &Deck) -> Archetype {
         Archetype::Comparison => Archetype::ChartHero,
         Archetype::ChartHero => Archetype::Statement,
         Archetype::Closing => Archetype::Statement,
+        Archetype::Blank => Archetype::Statement,
     }
 }
 

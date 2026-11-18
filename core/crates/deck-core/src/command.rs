@@ -158,6 +158,7 @@ fn parse_archetype(s: &str) -> Option<Archetype> {
         "comparison" => Some(Archetype::Comparison),
         "chart_hero" => Some(Archetype::ChartHero),
         "closing" => Some(Archetype::Closing),
+        "blank" => Some(Archetype::Blank),
         _ => None,
     }
 }
@@ -204,6 +205,7 @@ fn default_content(a: Archetype, deck: &Deck) -> SlideContent {
             takeaway: None,
         },
         Archetype::Closing => SlideContent::Closing { title: "Thank you".into(), subtitle: None },
+        Archetype::Blank => SlideContent::Blank,
     }
 }
 
@@ -681,5 +683,6 @@ fn archetype_of(c: &SlideContent) -> Archetype {
         SlideContent::Comparison { .. } => Archetype::Comparison,
         SlideContent::ChartHero { .. } => Archetype::ChartHero,
         SlideContent::Closing { .. } => Archetype::Closing,
+        SlideContent::Blank => Archetype::Blank,
     }
 }
