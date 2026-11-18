@@ -1693,7 +1693,7 @@ class _EditorNavBar extends StatelessWidget {
                       duration: const Duration(milliseconds: 260),
                       curve: Curves.easeOutCubic,
                       top: 11,
-                      left: slot == null ? 0.0 : slot,
+                      left: slot ?? 0.0,
                       width: 58,
                       height: 34,
                       child: AnimatedOpacity(
