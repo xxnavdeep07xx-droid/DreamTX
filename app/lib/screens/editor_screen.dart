@@ -1659,6 +1659,13 @@ class _EditorNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The ONE stadium pill, shared across tabs: it slides to the active
+    // slot (AnimatedPositioned, 260ms ease-out) instead of each item
+    // blinking its own. Slot math: item pitch _navItemWidth, pill 58 wide,
+    // pill top = item padding (6) + centered column gap (5).
+    final int? slot = active == null
+        ? null
+        : _NavTab.values.indexOf(active!) * _navItemWidth + (_navItemWidth - 58) ~/ 2;
     return Container(
       decoration: const BoxDecoration(
         color: kSurface,
@@ -1678,18 +1685,42 @@ class _EditorNavBar extends StatelessWidget {
                 controller: controller,
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Row(
+                child: Stack(
                   children: [
-                    for (final t in _NavTab.values)
-                      SizedBox(
-                        width: _navItemWidth,
-                        child: _NavItemButton(
-                          icon: _icons[t]!,
-                          label: _labels[t]!,
-                          active: active == t,
-                          onTap: () => onSelect(t),
+                    // Behind the icons: the gliding active pill. Fades out
+                    // when the ribbon collapses (active == null).
+                    AnimatedPositioned(
+                      duration: const Duration(milliseconds: 260),
+                      curve: Curves.easeOutCubic,
+                      top: 11,
+                      left: slot == null ? 0.0 : slot.toDouble(),
+                      width: 58,
+                      height: 34,
+                      child: AnimatedOpacity(
+                        duration: const Duration(milliseconds: 180),
+                        opacity: slot == null ? 0.0 : 1.0,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: const Color(0x1FFFFFFF),
+                            borderRadius: BorderRadius.circular(17),
+                          ),
                         ),
                       ),
+                    ),
+                    Row(
+                      children: [
+                        for (final t in _NavTab.values)
+                          SizedBox(
+                            width: _navItemWidth,
+                            child: _NavItemButton(
+                              icon: _icons[t]!,
+                              label: _labels[t]!,
+                              active: active == t,
+                              onTap: () => onSelect(t),
+                            ),
+                          ),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -1757,34 +1788,41 @@ class _NavItemButton extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
+        // No rectangular ripple: on the dark bar the default splash paints
+        // as an unclipped WHITE SQUARE around the tap point, which reads as
+        // a glitch next to the round pill. The active state is carried by
+        // the shared gliding pill + color switch instead — no ink needed.
+        splashColor: Colors.transparent,
+        highlightColor: Colors.transparent,
+        hoverColor: Colors.transparent,
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Material-3 active indicator: a stadium pill behind the icon
-              // when the tab is lit. Two rows, not three — the pill IS the
-              // active state, so no separate underline tick is needed.
-              Container(
+              // The icon slot exactly matches the shared pill's footprint
+              // (58 x 34), so the gliding pill lands dead-center behind the
+              // icon. Fixed label height pins the math (6 + 5 = pill top 11).
+              SizedBox(
                 width: 58,
                 height: 34,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: active ? const Color(0x1FFFFFFF) : Colors.transparent,
-                  borderRadius: BorderRadius.circular(17),
-                ),
                 child: Icon(icon, size: 24, color: color),
               ),
               const SizedBox(height: 4),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                  letterSpacing: -0.2,
-                  color: active ? kText : kText3,
+              SizedBox(
+                height: 16,
+                child: Center(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                      letterSpacing: -0.2,
+                      color: active ? kText : kText3,
+                    ),
+                  ),
                 ),
               ),
             ],

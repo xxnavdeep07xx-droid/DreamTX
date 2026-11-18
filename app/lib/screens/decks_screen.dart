@@ -289,6 +289,10 @@ class _DeckCard extends StatelessWidget {
                 width: 38,
                 child: Text(
                   index.toString().padLeft(2, '0'),
+                  // Optically centered in its slot between the card edge and
+                  // the divider — left-aligned text (with letterSpacing's
+                  // trailing space) sat visibly off-center in the 38px zone.
+                  textAlign: TextAlign.center,
                   style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
