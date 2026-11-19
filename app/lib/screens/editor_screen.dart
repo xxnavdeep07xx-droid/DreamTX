@@ -1222,10 +1222,16 @@ class _EditorScreenState extends State<EditorScreen> {
               // into a short ledge that runs flush to the edge, with the
               // chevron centered in the pocket under the ledge. Collapsed, the
               // same rule (directly above the ribbon) carries an up chevron; the
-              // cool-light-neutral line goes warm-accent red while the strip is
-              // open. No detached floating chevron, no chrome panel, no left
-              // fade: the rail still floats on the app's pure black exactly as
-              // in 2.15, white miniatures and all.
+              // cool-light-neutral line goes theme-purple while the strip is
+              // open — the app's own accent (kPurple), not a warm red: the
+              // user's verdict was that a red/orange rule reads off-theme next
+              // to the purple→pink signature family, and kPurple is the same
+              // interactive accent the app already uses for its cursor, focus
+              // rings, and progress marks, so the boundary belongs to the
+              // signature family instead of clashing with it. No detached
+              // floating chevron, no chrome panel, no left fade: the rail
+              // still floats on the app's pure black exactly as in 2.15,
+              // white miniatures and all.
               //
               // The reveal: the band itself never unmounts — it stays laid out
               // at the full 104dp inside a top-anchored Align/ClipRect pair
@@ -1863,7 +1869,14 @@ const double _navItemWidth = 66;
 /// carrying the state alone:
 ///
 /// * collapsed — a cool light neutral rule (kText2) and an up chevron;
-/// * expanded — the restrained warm accent red (kAccent) and a down chevron.
+/// * expanded — the app's theme accent purple (kPurple) and a down chevron.
+///
+/// The accent question was settled by the user's eye: a warm red/orange
+/// rule reads off-theme against the app's purple→pink signature family
+/// (kInkGradient), so the open state wears kPurple — the same interactive
+/// accent the theme already spends on the text cursor, focus rings, and
+/// progress marks. It reinforces the state without ever reading as a
+/// warning: kAccent stays reserved for destructive/live semantics.
 ///
 /// The rule is drawn by [_FilmstripDividerPainter] from the same geometry
 /// constants that place the handle, so the chevron is always optically
@@ -1911,7 +1924,7 @@ class _FilmstripDivider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color line = expanded ? kAccent : kText2;
+    final Color line = expanded ? kPurple : kText2;
     final String label = expanded ? 'Collapse slides' : 'Expand slides';
     // Chevron center: horizontally the middle of the flat ledge (the ledge
     // spans the last rampFromRight - rampRun = 70dp), vertically the optical
