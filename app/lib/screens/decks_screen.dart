@@ -1,9 +1,6 @@
-import 'dart:io' show exit;
-
 import 'package:material_ui/material_ui.dart';
 
 import '../core/bridge.dart';
-import '../core/restart.dart';
 import '../core/store.dart';
 import '../theme.dart';
 import 'editor_screen.dart';
@@ -21,27 +18,15 @@ class _DecksScreenState extends State<DecksScreen> {
   List<Map<String, dynamic>> _decks = [];
   bool _loading = true;
 
-  /// Set when the deck store could not be read even after the automatic
-  /// retries in [_reload] — the body swaps the eternal spinner for an
+  /// Set when the deck store could not be read even after the bounded
+  /// attempts in [_reload] — the body swaps the eternal spinner for an
   /// actionable error card with a Retry button. Never set while loading.
   String? _loadError;
 
-  /// True when the failure carries the classic in-place-update signature:
-  /// a Java ClassNotFoundException mentioning DexPathList. That means the
-  /// APK was installed over this still-alive process — the Flutter UI keeps
-  /// running (the engine and AOT Dart load from native code, not dex), but
-  /// the first Java class the storage bridge lazily loads is gone from the
-  /// stale dex path. No in-process code can repair a broken classloader, so
-  /// the error card swaps its Retry for a Restart-app button (exit(0)); the
-  /// next cold launch is healthy and the decks reappear untouched on disk.
-  bool _needsRestart = false;
-
-  /// True while the first stale-classloader detection of this process is
-  /// self-healing: instead of asking for a tap, the card becomes a calm
-  /// "Finishing the update" notice and the process restarts itself after
-  /// a short beat (see [StaleProcessRestart]). Only reachable once per
-  /// process; a second detection falls back to the manual card.
-  bool _selfHeal = false;
+  /// Monotonic generation counter: a reload that starts while an older one
+  /// is still awaiting storage can never have its own results overwritten
+  /// by the older run's late answer.
+  int _reloadGeneration = 0;
 
   /// True while an input dialog (New deck / Rename) is on screen. The
   /// empty-state card recedes (fades) while a dialog is open — see
@@ -69,73 +54,70 @@ class _DecksScreenState extends State<DecksScreen> {
     _reload(initial: true);
   }
 
-  /// Reads the deck store. Bulletproof by design: opening the store goes
-  /// over a platform channel (path_provider), and right after an in-place
-  /// app update that channel can transiently stall or throw — with the old
-  /// code any such hiccup died silently (uncaught async error or a never-
-  /// completing await) and the dashboard spun FOREVER. Now every attempt is
-  /// guarded: a timeout bounds the channel call, the catch eats any throw,
-  /// a stall clears on an automatic retry, and a real failure lands as a
-  /// visible error card instead of an infinite spinner.
+  /// Reads the deck store. Every await is bounded ([DeckStore.open] bounds
+  /// the platform-channel call, [DeckStore.scan] bounds the whole read) and
+  /// every call inside is nonblocking — a stalled channel or a wedged file
+  /// surfaces as a visible error card with a Retry button within seconds,
+  /// never as an infinite spinner and never as a crash. One immediate retry
+  /// absorbs a transient stall right after an in-place app update; after
+  /// that the user decides. No process is ever killed, and no startup path
+  /// demands an uninstall, a data wipe, or network.
   Future<void> _reload({bool initial = false}) async {
+    final gen = ++_reloadGeneration;
     // Coming from the error card (Retry): back to the spinner. Coming back
-    // from the editor (normal silent refresh): no spinner flash — same
-    // behavior as before this guard existed.
+    // from the editor (normal silent refresh): no spinner flash — the list
+    // stays on screen until the fresh scan lands.
     if (!initial && mounted && _loadError != null) {
       setState(() {
         _loading = true;
         _loadError = null;
-        _needsRestart = false;
       });
     }
-    const attempts = 3;
-    const perAttempt = Duration(seconds: 6);
+    const attempts = 2;
+    const retryGap = Duration(milliseconds: 400);
     Object? lastError;
     for (var i = 0; i < attempts; i++) {
       try {
-        final store = await DeckStore.open().timeout(perAttempt);
-        final decks = await store.list();
-        if (!mounted) return;
+        final store = await DeckStore.open();
+        // Returning from the editor: let its queued writes land first, so
+        // the scan below can never see a stale library.
+        await store.flushPendingWrites();
+        final scan = await store.scan();
+        if (gen != _reloadGeneration || !mounted) return;
+        if (scan.skipped.isNotEmpty) {
+          // Diagnostics: unreadable files are named, never conflated with
+          // an empty library.
+          print('[deck-store] scan skipped ${scan.skipped.length} '
+              'unreadable deck file(s): ${scan.skipped.join(', ')}');
+        }
         setState(() {
-          _decks = decks;
+          _decks = scan.decks;
           _loading = false;
           _loadError = null;
-          _needsRestart = false;
         });
         return;
-      } catch (e) {
+      } catch (e, st) {
         lastError = e;
-        // The stale-classloader signature is deterministic — the dex behind
-        // this live process was replaced by an in-place app update, and no
-        // retry can load a Java class from a dex file that no longer exists.
-        // Stop immediately instead of burning the retry delays.
-        if (e.toString().contains('ClassNotFound') ||
-            e.toString().contains('DexPath')) {
-          break;
-        }
-        if (i + 1 < attempts) {
-          await Future<void>.delayed(const Duration(milliseconds: 800));
-        }
+        // Full trace to the logs only — the card carries a concise message.
+        print('[deck-store] load attempt ${i + 1}/$attempts failed: $e\n$st');
+        if (i + 1 < attempts) await Future<void>.delayed(retryGap);
       }
     }
-    if (!mounted) return;
-    final msg = lastError.toString();
-    final stale = msg.contains('ClassNotFound') || msg.contains('DexPath');
-    // First stale detection in this process: self-heal. Show the calm
-    // notice, give the frame a beat to paint, then kill the zombie process
-    // outright — the user's very next launch is the healthy new build.
-    final heal = stale && !StaleProcessRestart.armed;
+    if (gen != _reloadGeneration || !mounted) return;
     setState(() {
       _loading = false;
-      _needsRestart = stale;
-      _selfHeal = heal;
-      _loadError = 'Deck store did not respond — $msg';
+      _loadError = 'Deck store did not respond — ${_briefError(lastError)}';
     });
-    if (heal) {
-      StaleProcessRestart.armed = true;
-      await Future<void>.delayed(const Duration(milliseconds: 1500));
-      StaleProcessRestart.kill();
-    }
+  }
+
+  /// One line, at most ~200 chars: the actual error text for the card, with
+  /// the stack trace kept strictly in the logs.
+  static String _briefError(Object? e) {
+    var msg = e.toString();
+    final nl = msg.indexOf('\n');
+    if (nl >= 0) msg = msg.substring(0, nl);
+    if (msg.length > 200) msg = msg.substring(0, 200);
+    return msg;
   }
 
   Future<void> _newDeck() async {
@@ -148,8 +130,16 @@ class _DecksScreenState extends State<DecksScreen> {
       return;
     }
     final deck = (r['deck'] as Map).cast<String, dynamic>();
-    final store = await DeckStore.open();
-    await store.save(deck);
+    try {
+      final store = await DeckStore.open();
+      await store.save(deck);
+    } catch (e) {
+      // Storage trouble is never silent: say it, then still open the editor
+      // — the deck lives in memory and every later save retries.
+      print('[deck-store] new deck could not be written: $e');
+      _toast('Deck created, but storage is not answering — it will retry '
+          'every time you edit.');
+    }
     if (!mounted) return;
     _open(deck);
   }
@@ -172,8 +162,14 @@ class _DecksScreenState extends State<DecksScreen> {
     if (title == null || title.trim().isEmpty) return;
     final updated = Map<String, dynamic>.from(deck);
     updated['title'] = title.trim();
-    final store = await DeckStore.open();
-    await store.save(updated);
+    try {
+      final store = await DeckStore.open();
+      await store.save(updated);
+    } catch (e) {
+      print('[deck-store] rename could not be written: $e');
+      _toast('Storage did not accept the rename — try again from the card.');
+      return;
+    }
     _reload();
   }
 
@@ -249,8 +245,14 @@ class _DecksScreenState extends State<DecksScreen> {
       ),
     );
     if (confirmed != true) return;
-    final store = await DeckStore.open();
-    await store.delete((deck['id']).toString());
+    try {
+      final store = await DeckStore.open();
+      await store.delete((deck['id']).toString());
+    } catch (e) {
+      print('[deck-store] delete failed on disk: $e');
+      _toast('Could not delete the deck file — it stays in your library.');
+      return; // the list below would be a lie
+    }
     _reload();
   }
 
@@ -295,8 +297,8 @@ class _DecksScreenState extends State<DecksScreen> {
                           ),
                           const SizedBox(height: 5),
                           Text(
-                            _selfHeal
-                                ? 'DECKS · FINISHING UPDATE'
+                            _loading
+                                ? 'DECKS · LOADING'
                                 : _loadError != null
                                     ? 'DECKS · STORAGE OFFLINE'
                                     : (count == 0
@@ -331,10 +333,7 @@ class _DecksScreenState extends State<DecksScreen> {
                     ? const Center(child: CircularProgressIndicator())
                     : _loadError != null
                         ? _LoadErrorCard(
-                            message: _loadError!,
-                            onRetry: () => _reload(),
-                            restart: _needsRestart,
-                            auto: _selfHeal)
+                            message: _loadError!, onRetry: () => _reload())
                         : count == 0
                             ? _EmptyState(
                                 onCreate: _newDeck, dimmed: _dialogOpen)
@@ -554,43 +553,15 @@ class _EmptyScreenState extends State<_EmptyState> {
 }
 
 /// Failure state for the deck store: when the store cannot be read even
-/// after the automatic retries in _reload, this replaces the spinner — an
+/// after the bounded attempts in _reload, this replaces the spinner — an
 /// actionable card in the same visual language as the empty state, carrying
-/// the actual error text so a recurring cause is visible on screen, and a
-/// Retry button that runs the guarded load again.
-///
-/// The [restart] variant is the stale-classloader case (APK installed over a
-/// live process — see _needsRestart): a Retry would only fail again in this
-/// broken process, so the button becomes Restart app, which kills the
-/// process outright; the user reopens DreamTX and gets a healthy cold start.
-///
-/// The [auto] flavor is the FIRST detection in this process: the card swaps
-/// its scary copy for a calm "Finishing the update" notice with no button —
-/// the app restarts itself after a short beat ([StaleProcessRestart]), so
-/// the user does nothing at all and the next launch is the healthy new build.
+/// a concise rendition of the actual error (full stack traces stay in the
+/// logs) and a Retry button that runs the bounded load again.
 class _LoadErrorCard extends StatelessWidget {
-  const _LoadErrorCard(
-      {required this.message,
-      required this.onRetry,
-      this.restart = false,
-      this.auto = false});
+  const _LoadErrorCard({required this.message, required this.onRetry});
 
   final String message;
   final VoidCallback onRetry;
-
-  /// True when the failure is the in-place-update classloader casualty —
-  /// show the restart copy and the Restart-app button instead of Retry.
-  final bool restart;
-
-  /// True while this process is self-healing: the calm notice, not the
-  /// manual card. Implies [restart].
-  final bool auto;
-
-  /// Deliberate self-kill for the [restart] case: the dex classloader of
-  /// THIS process is stale and cannot be repaired in place, so a fresh
-  /// cold launch is the only cure. exit(0) is normally avoided in Flutter
-  /// apps; this is the exceptional case that justifies it.
-  void _exitApp() => exit(0);
 
   @override
   Widget build(BuildContext context) {
@@ -608,32 +579,20 @@ class _LoadErrorCard extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                restart
-                    ? (auto ? Icons.sync : Icons.restart_alt_outlined)
-                    : Icons.warning_amber_outlined,
-                size: 44,
-                color: restart ? kPurple : kAccent,
-              ),
+              const Icon(Icons.warning_amber_outlined, size: 44, color: kAccent),
               const SizedBox(height: 14),
-              Text(
-                restart
-                    ? (auto
-                        ? 'Finishing the update'
-                        : 'DreamTX needs a quick restart')
-                    : 'Could not read your decks',
-                style: const TextStyle(
+              const Text(
+                'Could not read your decks',
+                style: TextStyle(
                     fontSize: 17, fontWeight: FontWeight.w700, color: kText),
               ),
               const SizedBox(height: 4),
-              Text(
-                restart
-                    ? (auto
-                        ? 'DreamTX was updated while it was still running, so it is closing for a second to finish switching to the new version. Your decks are safe on disk — nothing is lost. Just reopen it.'
-                        : 'The app was updated while it was still running, so its storage bridge went stale. Your decks are safe on disk — nothing is lost. Tap Restart, then reopen DreamTX.')
-                    : 'Device storage did not answer. This can happen right after an app update — a retry usually fixes it.',
+              const Text(
+                'Device storage did not answer. This can happen right after an '
+                'app update — a retry usually fixes it. Your decks stay safe on '
+                'disk either way.',
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 13.5, color: kText2),
+                style: TextStyle(fontSize: 13.5, color: kText2),
               ),
               const SizedBox(height: 10),
               Text(
@@ -644,21 +603,12 @@ class _LoadErrorCard extends StatelessWidget {
                 style: const TextStyle(fontSize: 11.5, color: kText3),
               ),
               const SizedBox(height: 20),
-              if (auto)
-                const SizedBox(
-                  width: 140,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.all(Radius.circular(2)),
-                    child: LinearProgressIndicator(minHeight: 3),
-                  ),
-                )
-              else
-                _GradientButton(
-                  icon: restart ? Icons.restart_alt : Icons.refresh,
-                  label: restart ? 'Restart app' : 'Retry',
-                  onPressed: restart ? _exitApp : onRetry,
-                  height: 46,
-                ),
+              _GradientButton(
+                icon: Icons.refresh,
+                label: 'Retry',
+                onPressed: onRetry,
+                height: 46,
+              ),
             ],
           ),
         ),

@@ -1,7 +1,7 @@
 name: dreamtx
 description: DreamTX — the presentation app that lets YOUR AI build the deck (MCP, no API keys).
 publish_to: "none"
-version: 0.2.23+27
+version: 0.2.24+29
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -12,6 +12,13 @@ dependencies:
   material_ui: ^1.11.0
   ffi: ^2.1.0
   path_provider: ^2.1.4
+  # Hard pin, exact: path_provider_android >= 2.3.0 swapped its Android
+  # implementation from the platform channel to the JNI (dart:ffi) bridge,
+  # which throws java.lang.ClassNotFoundException on the affected device at
+  # first use (dart-lang/native#3802). 2.2.23 is the last method-channel
+  # implementation. CI verifies the *resolved* version from pubspec.lock,
+  # not this declaration.
+  path_provider_android: 2.2.23
   share_plus: ^13.3.1
   cupertino_icons: ^1.0.8
 
