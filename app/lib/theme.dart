@@ -12,6 +12,7 @@ import 'package:material_ui/material_ui.dart';
 const Color kBg = Color(0xFF000000); // app background (reference is pure black)
 const Color kSurface = Color(0xFF141417); // cards, sheets, bottom bands
 const Color kElevated = Color(0xFF1C1C22); // floating dock, chips, tiles
+const Color kFilmstrip = Color(0xFF0E0E10); // expanded filmstrip panel — one deliberate step up from the pure-black workspace, a shade darker than the nav band (kSurface) so the three surfaces read apart
 const Color kHairline = Color(0xFF2A2A31); // subtle borders / dividers
 const Color kText = Color(0xFFF5F5F7); // primary text — near-white
 const Color kText2 = Color(0xFF9E9EA6); // muted secondary text

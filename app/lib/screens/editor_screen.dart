@@ -1229,9 +1229,15 @@ class _EditorScreenState extends State<EditorScreen> {
               // at the ramp and ledge, and the chevron repeats the disc's
               // diagonal gradient over its glyph — the user's verdict after
               // two single-color tries was that only the disc's own gradient
-              // reads on-theme. No detached floating chevron, no chrome
-              // panel, no left fade: the rail still floats on the app's pure
-              // black exactly as in 2.15, white miniatures and all.
+              // reads on-theme. And the band itself is now a real panel: one
+              // continuous kFilmstrip charcoal fill (a dedicated token — a
+              // step lighter than the black workspace, a shade darker than
+              // the nav's kSurface) runs the full width of the expanded strip
+              // behind everything, so the strip reads as its own surface
+              // instead of melting into the black canvas — flat fill only, no
+              // border, no shadow, no left fade, and the divider still draws
+              // the boundary above it with the workspace staying pure black
+              // behind the raised chevron tab.
               //
               // The reveal: the band itself never unmounts — it stays laid out
               // at the full 104dp inside a top-anchored Align/ClipRect pair
@@ -1278,6 +1284,25 @@ class _EditorScreenState extends State<EditorScreen> {
                       child: Stack(
                         clipBehavior: Clip.none,
                         children: [
+                          // The panel fill: one continuous charcoal surface
+                          // behind the whole expanded band — full width,
+                          // behind the + disc, behind the thumbnails, in every
+                          // gap and edge. It lives INSIDE the reveal's clip, so
+                          // it appears and folds with the row itself: nothing
+                          // lingers or flashes during the 200ms transition, and
+                          // collapsed the clip takes the fill to zero height —
+                          // no colored strip left above the navigation. Flat
+                          // kFilmstrip only (dedicated token, between the
+                          // black workspace and the nav's kSurface): no
+                          // border, no shadow, no gradient — the divider above
+                          // stays the only boundary. The fill's top edge meets
+                          // the divider's 2dp stroke guard under its baseline,
+                          // so the gradient rule reads as lying directly on the
+                          // panel's top edge; everything ON the fill — white
+                          // cards, selection ring, disc — keeps its own colors.
+                          const Positioned.fill(
+                            child: ColoredBox(color: kFilmstrip),
+                          ),
                           // The rail: full width, slides only. The leading
                           // inset puts slide 0 at the exact resting spot it
                           // has always had since 2.15 (first card at 74dp, a
@@ -1351,11 +1376,12 @@ class _EditorScreenState extends State<EditorScreen> {
                           // home spot and size — 14dp from the strip's left edge,
                           // vertically centered (top 30 of the 104dp band), 44dp
                           // across, original soft shadow. Painted LAST, over the
-                          // rail: the slides it passes over are seen behind it,
-                          // which is what makes the + read as a floating button on
-                          // the black canvas rather than a chip on a panel. No
-                          // container clips it. Tap adds a blank slide; long-press
-                          // opens the layout list.
+                          // rail and the panel fill: the slides it passes over
+                          // are seen behind it, and nothing clips it — the +
+                          // still reads as a floating button, now riding the
+                          // charcoal panel instead of the bare black canvas.
+                          // Tap adds a blank slide; long-press opens the
+                          // layout list.
                           Positioned(
                             left: 14,
                             top: 30,
