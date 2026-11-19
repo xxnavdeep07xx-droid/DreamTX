@@ -18,6 +18,11 @@ class _DecksScreenState extends State<DecksScreen> {
   List<Map<String, dynamic>> _decks = [];
   bool _loading = true;
 
+  /// Set when the deck store could not be read even after the automatic
+  /// retries in [_reload] — the body swaps the eternal spinner for an
+  /// actionable error card with a Retry button. Never set while loading.
+  String? _loadError;
+
   /// True while an input dialog (New deck / Rename) is on screen. The
   /// empty-state card recedes (fades) while a dialog is open — see
   /// _EmptyState. Measured reality on window-resize-free devices: the card
@@ -41,16 +46,52 @@ class _DecksScreenState extends State<DecksScreen> {
   @override
   void initState() {
     super.initState();
-    _reload();
+    _reload(initial: true);
   }
 
-  Future<void> _reload() async {
-    final store = await DeckStore.open();
-    final decks = await store.list();
+  /// Reads the deck store. Bulletproof by design: opening the store goes
+  /// over a platform channel (path_provider), and right after an in-place
+  /// app update that channel can transiently stall or throw — with the old
+  /// code any such hiccup died silently (uncaught async error or a never-
+  /// completing await) and the dashboard spun FOREVER. Now every attempt is
+  /// guarded: a timeout bounds the channel call, the catch eats any throw,
+  /// a stall clears on an automatic retry, and a real failure lands as a
+  /// visible error card instead of an infinite spinner.
+  Future<void> _reload({bool initial = false}) async {
+    // Coming from the error card (Retry): back to the spinner. Coming back
+    // from the editor (normal silent refresh): no spinner flash — same
+    // behavior as before this guard existed.
+    if (!initial && mounted && _loadError != null) {
+      setState(() {
+        _loading = true;
+        _loadError = null;
+      });
+    }
+    const attempts = 3;
+    const perAttempt = Duration(seconds: 6);
+    Object? lastError;
+    for (var i = 0; i < attempts; i++) {
+      try {
+        final store = await DeckStore.open().timeout(perAttempt);
+        final decks = await store.list();
+        if (!mounted) return;
+        setState(() {
+          _decks = decks;
+          _loading = false;
+          _loadError = null;
+        });
+        return;
+      } catch (e) {
+        lastError = e;
+        if (i + 1 < attempts) {
+          await Future<void>.delayed(const Duration(milliseconds: 800));
+        }
+      }
+    }
     if (!mounted) return;
     setState(() {
-      _decks = decks;
       _loading = false;
+      _loadError = 'Deck store did not respond — $lastError';
     });
   }
 
@@ -228,9 +269,11 @@ class _DecksScreenState extends State<DecksScreen> {
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
-                  : count == 0
-                      ? _EmptyState(onCreate: _newDeck, dimmed: _dialogOpen)
-                      : ListView.separated(
+                  : _loadError != null
+                      ? _LoadErrorCard(message: _loadError!, onRetry: () => _reload())
+                      : count == 0
+                          ? _EmptyState(onCreate: _newDeck, dimmed: _dialogOpen)
+                          : ListView.separated(
                           padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
                           itemCount: count,
                           separatorBuilder: (_, __) => const SizedBox(height: 12),
@@ -428,6 +471,68 @@ class _EmptyScreenState extends State<_EmptyState> {
               height: 46,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Failure state for the deck store: when the store cannot be read even
+/// after the automatic retries in _reload, this replaces the spinner — an
+/// actionable card in the same visual language as the empty state, carrying
+/// the actual error text so a recurring cause is visible on screen, and a
+/// Retry button that runs the guarded load again.
+class _LoadErrorCard extends StatelessWidget {
+  const _LoadErrorCard({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 340),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 36),
+          decoration: BoxDecoration(
+            color: kSurface,
+            border: Border.all(color: kHairline, width: 1),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.warning_amber_outlined, size: 44, color: kAccent),
+              const SizedBox(height: 14),
+              const Text(
+                'Could not read your decks',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: kText),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Device storage did not answer. This can happen right after an app update — a retry usually fixes it.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13.5, color: kText2),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                message,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 11.5, color: kText3),
+              ),
+              const SizedBox(height: 20),
+              _GradientButton(
+                icon: Icons.refresh,
+                label: 'Retry',
+                onPressed: onRetry,
+                height: 46,
+              ),
+            ],
+          ),
         ),
       ),
     );
