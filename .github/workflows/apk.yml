@@ -19,9 +19,12 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+      # Pinned, not floating: `stable` drifted mid-stream twice this project
+      # and every drift silently re-resolved dependencies. Builds are now
+      # reproducible from the exact toolchain + committed lock below.
       - uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: "3.50.0"
           cache: true
 
       # ---- Generate platform folders first (jniLibs target must exist) ----
@@ -30,6 +33,34 @@ jobs:
         run: |
           flutter create --org com.dreamtx --project-name dreamtx .
           flutter pub get
+
+      # ---- Dependency resolution is a contract, not a suggestion ----------
+      - name: Verify resolved pins + enforce committed lock
+        working-directory: app
+        run: |
+          python3 - <<'PY'
+          import re, sys
+          lock = open("pubspec.lock").read()
+          m = re.search(
+              r'^  path_provider_android:\n(?: {4}[^\n]*\n)*? {4}version: "([^"]+)"',
+              lock, re.M)
+          v = m.group(1) if m else None
+          print("resolved path_provider_android:", v)
+          if v != "2.2.23":
+              sys.exit(
+                  "FAIL: path_provider_android resolved to " + str(v)
+                  + ", expected 2.2.23 (the pre-JNI build; the newer JNI "
+                  "implementation is the startup crash being guarded against)")
+          PY
+          # flutter create + pub get must reproduce the committed resolution
+          # byte-for-byte; any drift fails the build instead of shipping.
+          git diff --exit-code -- pubspec.lock
+
+      - name: Upload resolved dependency lock (traceability + bootstrap)
+        uses: actions/upload-artifact@v4
+        with:
+          name: pubspec-lock
+          path: app/pubspec.lock
 
       # ---- Host smoke gate: analyze + widget tests (no device needed) ----
       - name: Smoke tests (analyze + widget tests)

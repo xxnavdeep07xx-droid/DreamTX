@@ -27,31 +27,47 @@ jobs:
         run: cargo build --manifest-path core/Cargo.toml -p deck-core --target wasm32-unknown-unknown --features wasm --release
 
   worker:
-    name: worker typecheck
+    name: worker typecheck + mcp flow (wasm engine)
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: worker
     steps:
       - uses: actions/checkout@v4
+      # The Worker runs the real Rust deck-core compiled to wasm; build it
+      # before typecheck/tests so the import in src/engine.ts resolves.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --locked
       - uses: actions/setup-node@v4
         with:
           node-version: 20
       - run: npm install --no-audit --no-fund
+      - run: npm run build:wasm
       - run: npx tsc --noEmit
+      # End-to-end MCP flow against a local Worker (wrangler dev): pairing,
+      # handshake, deck mutation through the wasm engine, app-visible update.
+      - run: node --test test/
 
   app-analyze:
-    name: flutter analyze
+    name: flutter analyze + tests
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: app
     steps:
       - uses: actions/checkout@v4
+      # Same pinned toolchain as the APK workflow — analyze/test results must
+      # describe the exact build that ships.
       - uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: "3.50.0"
           cache: true
       - run: flutter pub get
+      # The committed lock governs resolution; pub get must not drift it.
+      - name: Enforce committed dependency lock
+        run: git diff --exit-code -- pubspec.lock
       - run: flutter analyze
       - run: flutter test

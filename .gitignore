@@ -7,6 +7,7 @@ node_modules/
 dist/
 .wrangler/
 .dev.vars
+worker/wasm/
 
 # Flutter / Dart
 .dart_tool/
@@ -16,7 +17,8 @@ dist/
 build/
 .flutter-plugins*
 .flutter-plugins-dependencies
-pubspec.lock
+# app/pubspec.lock IS tracked: dependency resolution is part of the
+# reproducible-build contract (CI enforces it with git diff --exit-code).
 
 # Android (generated in CI / locally via flutter create)
 app/android/
