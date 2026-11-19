@@ -1244,6 +1244,7 @@ class _EditorScreenState extends State<EditorScreen> {
               KeyedSubtree(
                 key: const ValueKey('filmstrip_reveal'),
                 child: ExcludeSemantics(
+                  key: const ValueKey('filmstrip_strip_semantics'),
                   excluding: !_filmOpen,
                   child: TweenAnimationBuilder<double>(
                     duration: MediaQuery.of(context).disableAnimations

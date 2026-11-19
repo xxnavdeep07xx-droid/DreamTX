@@ -396,8 +396,7 @@ void main() {
     expect(find.byIcon(Icons.keyboard_arrow_up), findsOneWidget);
     expect(find.byIcon(Icons.keyboard_arrow_down), findsNothing);
     expect(find.bySemanticsLabel('Expand slides'), findsOneWidget);
-    final exclude = find.descendant(
-        of: reveal, matching: find.byType(ExcludeSemantics));
+    final exclude = find.byKey(const ValueKey('filmstrip_strip_semantics'));
     expect(exclude, findsOneWidget);
     expect(tester.widget<ExcludeSemantics>(exclude).excluding, isTrue);
 
