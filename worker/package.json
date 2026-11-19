@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:wasm": "wasm-pack build ../core/crates/deck-core --target web --out-dir ../worker/wasm --release --features wasm",
+    "build:wasm": "wasm-pack build ../core/crates/deck-core --target web --out-dir \"$PWD/wasm\" --release --features wasm",
     "typecheck": "tsc --noEmit",
     "test": "node --test test/",
     "dev": "npm run build:wasm && wrangler dev",

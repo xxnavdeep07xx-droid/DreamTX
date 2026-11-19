@@ -46,6 +46,9 @@ jobs:
           node-version: 20
       - run: npm install --no-audit --no-fund
       - run: npm run build:wasm
+      # Diagnostic: the pkg layout lands in the logs — if the glue names
+      # ever drift (crate rename, wasm-pack change), this is where it shows.
+      - run: ls -la wasm
       - run: npx tsc --noEmit
       # End-to-end MCP flow against a local Worker (wrangler dev): pairing,
       # handshake, deck mutation through the wasm engine, app-visible update.

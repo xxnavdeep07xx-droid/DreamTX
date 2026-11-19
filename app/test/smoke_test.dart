@@ -138,6 +138,10 @@ void main() {
     _mockStorage(dir: tmp.path);
 
     await tester.pumpWidget(const MaterialApp(home: DecksScreen()));
+    // The scan is real async file IO: give it real event-loop time before
+    // the fake clock takes over again (the runAsync escape hatch).
+    await tester.runAsync(
+        () async => await Future<void>.delayed(const Duration(milliseconds: 600)));
     await tester.pumpAndSettle();
 
     expect(find.text('Test deck'), findsOneWidget);
@@ -159,6 +163,8 @@ void main() {
     expect(find.text('DECKS · LOADING'), findsOneWidget);
     expect(find.text('DECKS · NONE YET'), findsNothing);
 
+    await tester.runAsync(
+        () async => await Future<void>.delayed(const Duration(milliseconds: 600)));
     await tester.pumpAndSettle();
 
     expect(find.text('No decks yet'), findsOneWidget);
@@ -190,6 +196,8 @@ void main() {
     File('${decks.path}/d1.json')
         .writeAsStringSync(jsonEncode(_deckFixture('d1', 'Healed deck', 1)));
     await tester.tap(find.text('Retry'));
+    await tester.runAsync(
+        () async => await Future<void>.delayed(const Duration(milliseconds: 600)));
     await tester.pumpAndSettle();
     expect(find.text('Healed deck'), findsOneWidget);
     expect(find.text('DECKS · 1 ON THIS DEVICE'), findsOneWidget);
