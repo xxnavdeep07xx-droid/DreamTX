@@ -55,10 +55,15 @@ class _EditorScreenState extends State<EditorScreen> {
   /// the canvas and the filmstrip. Null = collapsed (canvas gets the space).
   _NavTab? _navTab;
 
-  /// Filmstrip compression — the v-chevron at the strip's end folds it down
-  /// to a slim handle (the canvas gets the space) and unfolds it back. The
-  /// OPEN state is pixel-identical to the 2.15 canvas: same 104dp band, same
-  /// + disc spot, same 74dp slide-0 origin — nothing resizes or realigns.
+  /// Filmstrip expansion — driven from the handle built into the strip's
+  /// divider: one continuous boundary runs the editor's full width directly
+  /// above the strip band (or, when collapsed, directly above the ribbon);
+  /// near the right edge it ramps up into a short ledge flush to the edge,
+  /// and the chevron in that pocket folds the band up under the rule or
+  /// unfolds it back. The OPEN state keeps the 2.15 canvas geometry: same
+  /// 104dp band, same + disc spot, same 74dp slide-0 origin — nothing
+  /// resizes or realigns, and selection plus scroll offset survive every
+  /// round trip (the band is revealed/clipped, never unmounted).
   bool _filmOpen = true;
 
   /// Editor chrome mode (More menu): editing = the full toolkit, viewing =
@@ -1211,205 +1216,176 @@ class _EditorScreenState extends State<EditorScreen> {
                   child: _contextualRow(),
                 ),
               // ---- filmstrip (stories-style, gradient ring on the live slide) --
-              // Back to the 2.15 canvas: NO chrome panel, NO hairline divider,
-              // NO left fade — the strip floats on the app's pure black exactly
-              // as it always did, and the white miniatures pop on it. The only
-              // thing that survives from the floating rework is the LAYER
-              // ORDER: the rail runs the FULL width behind the + disc, and the
-              // disc (home spot, home 44dp size, home shadow) is painted LAST
-              // — over the slides, not on any background — so the miniatures
-              // it covers are SEEN behind it and the + reads as a floating
-              // button. At rest nothing overlaps: slide 0 sits at the same
-              // 74dp origin it has had since 2.15.
+              // The strip's boundary is now the toggle itself: one continuous
+              // rule drawn by [_FilmstripDivider] directly above the band —
+              // flat across the editor, then near the right edge a ramp up
+              // into a short ledge that runs flush to the edge, with the
+              // chevron centered in the pocket under the ledge. Collapsed, the
+              // same rule (directly above the ribbon) carries an up chevron; the
+              // cool-light-neutral line goes warm-accent red while the strip is
+              // open. No detached floating chevron, no chrome panel, no left
+              // fade: the rail still floats on the app's pure black exactly as
+              // in 2.15, white miniatures and all.
               //
-              // Compressible by request (the 2.16 ask): a small v-chevron at
-              // the strip's end folds the whole band down into a slim handle —
-              // the canvas absorbs the freed space — and the handle's v flips
-              // up to reopen. The chevron floats over the rail's end zone
-              // exactly like the disc floats over its leading zone: no
-              // background, painted after the rail, miniatures glide under
-              // it mid-scroll. The one geometric concession is the rail's
-              // trailing inset (52dp instead of 4dp — the mirror of the 68dp
-              // leading inset that already reserves the disc's zone) so no
-              // miniature ever RESTS under the chevron.
-              AnimatedSize(
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOutCubic,
-                  alignment: Alignment.bottomCenter,
-                  child: _filmOpen
-                      ? SizedBox(
-                          height: 104,
-                          child: Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              // The rail: full width, slides only. The leading
-                              // inset puts slide 0 at the exact resting spot it
-                              // has always had since 2.15 (first card at 74dp, a
-                              // 16dp gap from the disc's right edge), its border
-                              // and rounded corners fully visible. The trailing
-                              // inset stops the last card short of the chevron.
-                              ListView.builder(
-                                scrollDirection: Axis.horizontal,
-                                padding:
-                                    const EdgeInsets.fromLTRB(68, 6, 52, 6),
-                                itemCount: n,
-                                itemBuilder: (context, i) {
-                                  final selected = i == _index;
-                                  final label = _slideTitle(_slides[i]);
-                                  return Padding(
-                                    padding: const EdgeInsets.all(6),
-                                    child: InkWell(
-                                      borderRadius: BorderRadius.circular(10),
-                                      onTap: () {
-                                        setState(() {
-                                          _index = i;
-                                          _refreshLayout();
-                                        });
-                                      },
-                                      onLongPress: () => _slideActions(i),
-                                      child: AnimatedContainer(
-                                        duration:
-                                            const Duration(milliseconds: 150),
-                                        width: 124,
-                                        padding:
-                                            EdgeInsets.all(selected ? 2.5 : 1),
-                                        decoration: BoxDecoration(
-                                          gradient:
-                                              selected ? kInkGradient : null,
-                                          color: selected ? null : kHairline,
-                                          borderRadius:
-                                              BorderRadius.circular(10),
-                                        ),
-                                        child: Container(
-                                          decoration: BoxDecoration(
-                                            color: Colors.white,
-                                            borderRadius:
-                                                BorderRadius.circular(8),
-                                          ),
-                                          child: Center(
-                                            child: Padding(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                      horizontal: 8),
-                                              child: Text(
-                                                '${i + 1}. $label',
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                    fontSize: 11,
-                                                    color: Color(0xFF17181A),
-                                                    fontWeight:
-                                                        FontWeight.w500),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
+              // The reveal: the band itself never unmounts — it stays laid out
+              // at the full 104dp inside a vertical SizeTransition that clips
+              // paint and hit-testing down to nothing when collapsed (and
+              // ExcludeSemantics pulls it out of the a11y tree). That is what
+              // preserves the scroll offset and the selected slide across
+              // every fold/unfold, and one 200ms eased height transition —
+              // instant under reduced-motion — is the single coordinated move.
+              _FilmstripDivider(
+                expanded: _filmOpen,
+                onToggle: _toggleFilmstrip,
+              ),
+              KeyedSubtree(
+                key: const ValueKey('filmstrip_reveal'),
+                child: ExcludeSemantics(
+                  excluding: !_filmOpen,
+                  child: TweenAnimationBuilder<double>(
+                    duration: MediaQuery.of(context).disableAnimations
+                        ? Duration.zero
+                        : const Duration(milliseconds: 200),
+                    curve: Curves.easeInOutCubic,
+                    tween: Tween<double>(
+                        begin: 1.0, end: _filmOpen ? 1.0 : 0.0),
+                    builder: (context, v, child) => SizeTransition(
+                      // Top-anchored: the band folds UP under the divider's
+                      // baseline — its bottom edge rises to meet the rule —
+                      // and drops back down on unfold.
+                      axisAlignment: -1,
+                      sizeFactor: AlwaysStoppedAnimation<double>(v),
+                      child: child,
+                    ),
+                    child: SizedBox(
+                      key: const ValueKey('filmstrip_row'),
+                      height: 104,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          // The rail: full width, slides only. The leading
+                          // inset puts slide 0 at the exact resting spot it
+                          // has always had since 2.15 (first card at 74dp, a
+                          // 16dp gap from the disc's right edge), its border
+                          // and rounded corners fully visible. The trailing
+                          // inset is the plain 4dp again — nothing reserves
+                          // the rail's end zone anymore (the old end chevron
+                          // is gone; the toggle lives in the divider above).
+                          ListView.builder(
+                            scrollDirection: Axis.horizontal,
+                            padding:
+                                const EdgeInsets.fromLTRB(68, 6, 4, 6),
+                            itemCount: n,
+                            itemBuilder: (context, i) {
+                              final selected = i == _index;
+                              final label = _slideTitle(_slides[i]);
+                              return Padding(
+                                padding: const EdgeInsets.all(6),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(10),
+                                  onTap: () {
+                                    setState(() {
+                                      _index = i;
+                                      _refreshLayout();
+                                    });
+                                  },
+                                  onLongPress: () => _slideActions(i),
+                                  child: AnimatedContainer(
+                                    duration:
+                                        const Duration(milliseconds: 150),
+                                    width: 124,
+                                    padding:
+                                        EdgeInsets.all(selected ? 2.5 : 1),
+                                    decoration: BoxDecoration(
+                                      gradient:
+                                          selected ? kInkGradient : null,
+                                      color: selected ? null : kHairline,
+                                      borderRadius:
+                                          BorderRadius.circular(10),
                                     ),
-                                  );
-                                },
-                              ),
-                              // The floating +: the signature gradient disc, at its
-                              // home spot and size — 14dp from the strip's left edge,
-                              // vertically centered (top 30 of the 104dp band), 44dp
-                              // across, original soft shadow. Painted LAST, over the
-                              // rail: the slides it passes over are seen behind it,
-                              // which is what makes the + read as a floating button on
-                              // the black canvas rather than a chip on a panel. No
-                              // container clips it. Tap adds a blank slide; long-press
-                              // opens the layout list.
-                              Positioned(
-                                left: 14,
-                                top: 30,
-                                child: Material(
-                                  color: Colors.transparent,
-                                  child: InkWell(
-                                    borderRadius: BorderRadius.circular(22),
-                                    onTap: _addSlide,
-                                    onLongPress: _addLayoutSlide,
                                     child: Container(
-                                      width: 44,
-                                      height: 44,
                                       decoration: BoxDecoration(
-                                        gradient: kInkGradient,
-                                        shape: BoxShape.circle,
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Colors.black
-                                                .withValues(alpha: 0.4),
-                                            blurRadius: 10,
-                                            offset: const Offset(0, 4),
+                                        color: Colors.white,
+                                        borderRadius:
+                                            BorderRadius.circular(8),
+                                      ),
+                                      child: Center(
+                                        child: Padding(
+                                          padding:
+                                              const EdgeInsets.symmetric(
+                                                  horizontal: 8),
+                                          child: Text(
+                                            '${i + 1}. $label',
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                                fontSize: 11,
+                                                color: Color(0xFF17181A),
+                                                fontWeight:
+                                                    FontWeight.w500),
                                           ),
-                                        ],
-                                      ),
-                                      child: const Icon(Icons.add,
-                                          color: Colors.white, size: 22),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              // The v-chevron: points DOWN while the strip is open —
-                              // tap folds the band. A sibling of the disc in the same
-                              // paint order: no background of its own, floating over
-                              // the full-width rail, nothing clips it.
-                              Positioned(
-                                right: 6,
-                                top: 30,
-                                child: Tooltip(
-                                  message: 'Collapse slide strip',
-                                  child: Material(
-                                    color: Colors.transparent,
-                                    child: InkWell(
-                                      borderRadius: BorderRadius.circular(22),
-                                      onTap: () =>
-                                          setState(() => _filmOpen = false),
-                                      child: const SizedBox(
-                                        width: 44,
-                                        height: 44,
-                                        child: Icon(Icons.keyboard_arrow_down,
-                                            size: 22, color: kText2),
+                                        ),
                                       ),
                                     ),
                                   ),
                                 ),
-                              ),
-                            ],
+                              );
+                            },
                           ),
-                        )
-                      : SizedBox(
-                          // The collapsed strip: a slim handle pinned to the
-                          // bottom of the old band, its v flipped UP — tap
-                          // unfolds the strip back to the exact 2.15 geometry.
-                          height: 40,
-                          child: Row(
-                            children: [
-                              const Spacer(),
-                              Tooltip(
-                                message: 'Show slide strip',
-                                child: Material(
-                                  color: Colors.transparent,
-                                  child: InkWell(
-                                    borderRadius: BorderRadius.circular(22),
-                                    onTap: () =>
-                                        setState(() => _filmOpen = true),
-                                    child: const SizedBox(
-                                      width: 44,
-                                      height: 40,
-                                      child: Icon(Icons.keyboard_arrow_up,
-                                          size: 22, color: kText2),
-                                    ),
+                          // The floating +: the signature gradient disc, at its
+                          // home spot and size — 14dp from the strip's left edge,
+                          // vertically centered (top 30 of the 104dp band), 44dp
+                          // across, original soft shadow. Painted LAST, over the
+                          // rail: the slides it passes over are seen behind it,
+                          // which is what makes the + read as a floating button on
+                          // the black canvas rather than a chip on a panel. No
+                          // container clips it. Tap adds a blank slide; long-press
+                          // opens the layout list.
+                          Positioned(
+                            left: 14,
+                            top: 30,
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(22),
+                                onTap: _addSlide,
+                                onLongPress: _addLayoutSlide,
+                                child: Container(
+                                  width: 44,
+                                  height: 44,
+                                  decoration: BoxDecoration(
+                                    gradient: kInkGradient,
+                                    shape: BoxShape.circle,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black
+                                            .withValues(alpha: 0.4),
+                                        blurRadius: 10,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
                                   ),
+                                  child: const Icon(Icons.add,
+                                      color: Colors.white, size: 22),
                                 ),
                               ),
-                              const SizedBox(width: 6),
-                            ],
+                            ),
                           ),
-                        )),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
               // ---- PowerPoint-style ribbon ----------------------------------------
               _EditorNavBar(
                   active: _navTab,
                   controller: _navScroll,
-                  onSelect: _onNavSelect),
+                  onSelect: _onNavSelect,
+                  // The integrated divider already draws the boundary rule
+                  // directly above the ribbon while the strip is collapsed —
+                  // the ribbon's own hairline would double it.
+                  showTopRule: _filmOpen),
             ],
           ],
         ),
@@ -1418,6 +1394,14 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   // ---- ribbon wiring ---------------------------------------------------------
+
+  /// The one toggle behind the integrated edge handle: the strip band folds
+  /// up under the divider (the canvas reclaims the 104dp) and unfolds back.
+  /// Selection, scroll offset, and the ribbon's own tab state are all kept —
+  /// nothing here touches them.
+  void _toggleFilmstrip() {
+    setState(() => _filmOpen = !_filmOpen);
+  }
 
   void _onNavSelect(_NavTab tab) {
     _setNavTab(
@@ -1857,13 +1841,179 @@ const double _navItemWidth = 66;
 /// a stadium pill when active, an 11sp label below, and edge fades so tabs
 /// melt into the surface instead of clipping. The active tab's contextual
 /// action row renders between the canvas and the filmstrip.
+/// The filmstrip's boundary rule and its built-in edge handle.
+///
+/// One continuous rule runs the editor's full width directly above the strip
+/// band — or, when the strip is collapsed, directly above the ribbon. Near
+/// the right edge it ramps up into a short horizontal ledge that runs flush
+/// to the screen edge, and the chevron sits centered in the pocket under
+/// that ledge: a toggle built into the boundary itself — no detached
+/// floating button, no rectangular outline. The drawn tab keeps one
+/// silhouette in both states; the state reads three ways (chevron direction,
+/// the line's color, the a11y label), with color reinforcing but never
+/// carrying the state alone:
+///
+/// * collapsed — a cool light neutral rule (kText2) and an up chevron;
+/// * expanded — the restrained warm accent red (kAccent) and a down chevron.
+///
+/// The rule is drawn by [_FilmstripDividerPainter] from the same geometry
+/// constants that place the handle, so the chevron is always optically
+/// centered in the pocket at every width — the numbers are right-edge
+/// relative, which keeps the handle right-aligned on any screen.
+///
+/// The tap target is a reserved 48 × 48 box at the right edge while the drawn
+/// tab itself stays ~30dp tall. The hit box lives entirely inside the 48dp
+/// header region — it never overlaps the canvas, the thumbnail row, or the
+/// ribbon, and the decorative painting below it never claims taps.
+class _FilmstripDivider extends StatelessWidget {
+  const _FilmstripDivider({required this.expanded, required this.onToggle});
+
+  final bool expanded;
+  final VoidCallback onToggle;
+
+  // ---- shared geometry (logical px, right-edge relative) ---------------------
+  //
+  //   0 ........................ W-92   W-70 ................. W
+  //   ───────────────────────────╱──────── ledge, y = 18 ─────┐ edge
+  //   baseline, y = 46         ╱        ^ chevron (20dp)      │
+  //
+  /// The compact header region — exactly the 48dp hit target's height.
+  static const double regionHeight = 48;
+
+  /// The raised ledge: 28dp above the baseline (the spec's 24–30 rise).
+  static const double ledgeY = 18;
+
+  /// The flat rule — 2dp in from the region's bottom so the stroke never
+  /// bleeds into the strip/ribbon below; it sits directly above both.
+  static const double baselineY = 46;
+
+  /// The ramp starts this far from the right edge.
+  static const double rampFromRight = 92;
+
+  /// ...and climbs the full rise over these many horizontal pixels.
+  static const double rampRun = 22;
+
+  static const double chevronSize = 20;
+
+  /// The reserved tap target. The drawn tab stays ~30dp tall.
+  static const double hitSize = 48;
+
+  static const double stroke = 1.8;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color line = expanded ? kAccent : kText2;
+    final String label = expanded ? 'Collapse slides' : 'Expand slides';
+    // Chevron center: horizontally the middle of the flat ledge (the ledge
+    // spans the last rampFromRight - rampRun = 70dp), vertically the optical
+    // middle of the pocket between ledge and baseline — both expressed as
+    // padding inside the 48×48 hit box at the right edge.
+    final double chevronLeft =
+        hitSize - (rampFromRight - rampRun) / 2 - chevronSize / 2;
+    final double chevronTop =
+        (ledgeY + baselineY) / 2 - chevronSize / 2;
+    return SizedBox(
+      height: regionHeight,
+      child: Stack(
+        children: [
+          // The rule: one continuous baseline → ramp → ledge. Decorative
+          // painting only — no child, so it can never capture a tap.
+          Positioned.fill(
+            child: CustomPaint(
+              key: const ValueKey('filmstrip_divider'),
+              painter: _FilmstripDividerPainter(color: line),
+            ),
+          ),
+          // The handle: the whole reserved 48×48 at the right edge toggles,
+          // carrying the chevron centered in its pocket. The tooltip serves
+          // long-press/hover discovery; the Semantics node carries the action
+          // (and exposes the expanded state) for assistive tech.
+          Positioned(
+            right: 0,
+            top: 0,
+            child: SizedBox(
+              key: const ValueKey('filmstrip_handle'),
+              width: hitSize,
+              height: hitSize,
+              child: Semantics(
+                button: true,
+                label: label,
+                value: expanded ? 'expanded' : 'collapsed',
+                onTap: onToggle,
+                child: Tooltip(
+                  message: label,
+                  excludeFromSemantics: true,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onToggle,
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(chevronLeft, chevronTop, 0, 0),
+                      child: Icon(
+                        expanded
+                            ? Icons.keyboard_arrow_down
+                            : Icons.keyboard_arrow_up,
+                        size: chevronSize,
+                        color: line,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Draws the filmstrip's boundary: the flat baseline from the editor's left
+/// edge (no side padding), the ramp up near the right edge, and the ledge
+/// running flush to the right edge — one path, one stroke, rounded joins.
+class _FilmstripDividerPainter extends CustomPainter {
+  _FilmstripDividerPainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final path = Path()
+      ..moveTo(0, _FilmstripDivider.baselineY)
+      ..lineTo(
+          w - _FilmstripDivider.rampFromRight, _FilmstripDivider.baselineY)
+      ..lineTo(w - _FilmstripDivider.rampFromRight + _FilmstripDivider.rampRun,
+          _FilmstripDivider.ledgeY)
+      ..lineTo(w, _FilmstripDivider.ledgeY);
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = _FilmstripDivider.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..color = color;
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(_FilmstripDividerPainter oldDelegate) =>
+      oldDelegate.color != color;
+}
+
 class _EditorNavBar extends StatelessWidget {
   const _EditorNavBar(
-      {required this.active, required this.controller, required this.onSelect});
+      {required this.active,
+      required this.controller,
+      required this.onSelect,
+      this.showTopRule = true});
 
   final _NavTab? active;
   final ScrollController controller;
   final void Function(_NavTab) onSelect;
+
+  /// Whether to draw the ribbon's own top hairline. The integrated filmstrip
+  /// divider already paints the boundary directly above the ribbon while the
+  /// strip is collapsed; showing this rule too would double the line.
+  final bool showTopRule;
 
   static const _icons = {
     _NavTab.ai: Icons.auto_awesome,
@@ -1906,9 +2056,11 @@ class _EditorNavBar extends StatelessWidget {
         : _NavTab.values.indexOf(active!) * _navItemWidth +
             (_navItemWidth - 58) / 2;
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: kSurface,
-        border: Border(top: BorderSide(color: kHairline)),
+        border: showTopRule
+            ? const Border(top: BorderSide(color: kHairline))
+            : null,
       ),
       // Material-3 NavigationBar anatomy, trimmed 80 -> 76dp because our
       // labels are single-line: a 24dp icon in a stadium pill, an 11sp label

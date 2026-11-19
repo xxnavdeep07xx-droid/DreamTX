@@ -315,17 +315,40 @@ void main() {
     expect(Directory('${tmp.path}/decks').listSync(), isEmpty);
   });
 
-  testWidgets('filmstrip: the v-chevron folds the strip and nothing moves when it unfolds', (tester) async {
+  testWidgets('filmstrip: the integrated edge handle folds the band without moving anything', (tester) async {
     Bridge.testOverride = _fakeEngine;
     _mockStorage(dir: tmp.path);
+    // A phone-class surface (390×844 logical) — the divider's proportions
+    // are right-edge-relative, so these geometry assertions are the real
+    // spec numbers, not approximations.
+    tester.view.physicalSize = const Size(780, 1688);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(MaterialApp(
-        home: EditorScreen(deck: _deckFixture('d1', 'Test deck', 3))));
+        home: EditorScreen(deck: _deckFixture('d1', 'Test deck', 8))));
     await tester.pumpAndSettle();
 
-    final strip = find.byType(AnimatedSize);
-    expect(strip, findsOneWidget);
-    expect(tester.getSize(strip).height, 104); // the 2.15 band, exactly
+    // Expanded: the 48dp divider region directly above the exact 104dp
+    // 2.15 band, full editor width.
+    final reveal = find.byKey(const ValueKey('filmstrip_reveal'));
+    final row = find.byKey(const ValueKey('filmstrip_row'));
+    final handle = find.byKey(const ValueKey('filmstrip_handle'));
+    final divider = find.byKey(const ValueKey('filmstrip_divider'));
+    expect(tester.getSize(row), const Size(390, 104));
+    expect(tester.getSize(reveal).height, 104);
+    expect(tester.getSize(divider), const Size(390, 48));
+
+    // The handle: a reserved 48×48, flush to the right edge, and fully
+    // inside the divider region — no invisible target over the canvas,
+    // the thumbnail row, or the ribbon.
+    expect(tester.getSize(handle), const Size(48, 48));
+    expect(tester.getTopRight(handle).dx, 390);
+    expect(tester.getTopRight(handle).dy,
+        closeTo(tester.getTopLeft(divider).dy, 0.5));
+    expect(tester.getBottomRight(handle).dy,
+        lessThanOrEqualTo(tester.getTopLeft(row).dy + 0.5));
 
     // The floating + at its home spot — nothing resized, nothing realigned.
     final disc = find.byIcon(Icons.add);
@@ -337,32 +360,81 @@ void main() {
     expect(discPos().top, 30);
     expect(find.text('1. Slide 1'), findsOneWidget);
     expect(find.text('2. Slide 2'), findsOneWidget);
-    expect(find.text('3. Slide 3'), findsOneWidget);
 
     // The v faces DOWN while the strip is open — it signs "close".
     expect(find.byIcon(Icons.keyboard_arrow_down), findsOneWidget);
 
-    // Fold it: the whole band becomes a slim handle, its v flips UP, and the
-    // canvas absorbs the freed space.
-    await tester.tap(find.byTooltip('Collapse slide strip'));
+    // Select slide 2 and scroll the rail — both must survive the round trip.
+    await tester.tap(find.text('2. Slide 2'));
     await tester.pumpAndSettle();
-    expect(tester.getSize(strip).height, 40);
+    expect(find.text('Slide 2 / 8'), findsOneWidget);
+    final tile1AtRest = tester.getTopLeft(find.text('1. Slide 1')).dx;
+    await tester.drag(find.text('2. Slide 2'), const Offset(-120, 0));
+    await tester.pumpAndSettle();
+    final tile1Scrolled = tester.getTopLeft(find.text('1. Slide 1')).dx;
+    expect(tile1Scrolled, lessThan(tile1AtRest - 100)); // the rail really scrolled
+
+    // Fold: the band collapses to nothing under the rule — the canvas gets
+    // the space, the v flips UP, and the hidden band leaves the a11y tree.
+    await tester.tap(find.byTooltip('Collapse slides'));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(reveal).height, 0);
     expect(find.byIcon(Icons.keyboard_arrow_up), findsOneWidget);
     expect(find.byIcon(Icons.keyboard_arrow_down), findsNothing);
-    expect(find.byIcon(Icons.add),
-        findsNothing); // the strip (and its disc) is gone
+    final exclude = find.descendant(
+        of: reveal, matching: find.byType(ExcludeSemantics));
+    expect(exclude, findsOneWidget);
+    expect(tester.widget<ExcludeSemantics>(exclude).excluding, isTrue);
 
-    // Unfold: back to the exact same geometry — same band, same disc spot.
-    await tester.tap(find.byTooltip('Show slide strip'));
+    // Unfold: back to the exact same geometry — same band, same disc spot,
+    // same scroll offset, same selection.
+    await tester.tap(find.byTooltip('Expand slides'));
     await tester.pumpAndSettle();
-    expect(tester.getSize(strip).height, 104);
+    expect(tester.getSize(reveal).height, 104);
     expect(discPos().left, 14);
     expect(discPos().top, 30);
+    expect(tester.getTopLeft(find.text('1. Slide 1')).dx,
+        closeTo(tile1Scrolled, 0.5));
+    expect(find.text('Slide 2 / 8'), findsOneWidget);
+
+    // Landscape: the right-edge geometry stays flush and usable.
+    tester.view.physicalSize = const Size(1688, 780);
+    await tester.pumpAndSettle();
+    expect(tester.getSize(handle), const Size(48, 48));
+    expect(tester.getTopRight(handle).dx, 844);
+    await tester.tap(find.byTooltip('Collapse slides'));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(reveal).height, 0);
 
     // The + still works end to end (fake engine adds a blank slide).
+    await tester.tap(find.byTooltip('Expand slides'));
+    await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.add));
     await tester.pumpAndSettle();
-    expect(find.text('4. Blank'), findsOneWidget);
+    expect(find.text('9. Blank'), findsOneWidget);
+  });
+
+  testWidgets('filmstrip: reduced motion collapses instantly', (tester) async {
+    Bridge.testOverride = _fakeEngine;
+    _mockStorage(dir: tmp.path);
+
+    await tester.pumpWidget(MaterialApp(
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(disableAnimations: true),
+        child: child!,
+      ),
+      home: EditorScreen(deck: _deckFixture('d1', 'Test deck', 2)),
+    ));
+    await tester.pumpAndSettle();
+
+    final reveal = find.byKey(const ValueKey('filmstrip_reveal'));
+    expect(tester.getSize(reveal).height, 104);
+
+    // With animations disabled the 200ms height transition must not run:
+    // well before its natural end the band is already fully gone.
+    await tester.tap(find.byTooltip('Collapse slides'));
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(tester.getSize(reveal).height, 0);
   });
 
   testWidgets('pair sheet: renders offline, and demanding a pairing without a server URL surfaces the error instead of hanging', (tester) async {
