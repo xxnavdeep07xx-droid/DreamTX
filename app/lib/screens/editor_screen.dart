@@ -54,6 +54,12 @@ class _EditorScreenState extends State<EditorScreen> {
   /// the canvas and the filmstrip. Null = collapsed (canvas gets the space).
   _NavTab? _navTab;
 
+  /// Filmstrip compression — the v-chevron at the strip's end folds it down
+  /// to a slim handle (the canvas gets the space) and unfolds it back. The
+  /// OPEN state is pixel-identical to the 2.15 canvas: same 104dp band, same
+  /// + disc spot, same 74dp slide-0 origin — nothing resizes or realigns.
+  bool _filmOpen = true;
+
   /// Editor chrome mode (More menu): editing = the full toolkit, viewing =
   /// a chrome-free read-only pass over the deck.
   _Mode _mode = _Mode.editing;
@@ -85,12 +91,14 @@ class _EditorScreenState extends State<EditorScreen> {
     super.dispose();
   }
 
-  List<Map<String, dynamic>> get _slides =>
-      (_deck['slides'] as List? ?? []).whereType<Map<String, dynamic>>().toList();
+  List<Map<String, dynamic>> get _slides => (_deck['slides'] as List? ?? [])
+      .whereType<Map<String, dynamic>>()
+      .toList();
 
   // ---- deck state + undo/redo ------------------------------------------------
 
-  Map<String, dynamic> _copy() => jsonDecode(jsonEncode(_deck)) as Map<String, dynamic>;
+  Map<String, dynamic> _copy() =>
+      jsonDecode(jsonEncode(_deck)) as Map<String, dynamic>;
 
   /// Apply a new deck produced by the engine (or a local edit): push undo,
   /// wipe redo, persist, refresh.
@@ -138,11 +146,14 @@ class _EditorScreenState extends State<EditorScreen> {
       return;
     }
     _index = _index.clamp(0, _slides.length - 1);
-    final r = Bridge.command({'op': 'get_layout', 'deck': _deck, 'slide_index': _index});
+    final r = Bridge.command(
+        {'op': 'get_layout', 'deck': _deck, 'slide_index': _index});
     setState(() {
       if (r['ok'] == true && r['layout'] is Map) {
         _layout = (r['layout'] as Map).cast<String, dynamic>();
-        _warnings = ((r['layout']['warnings'] as List?) ?? []).map((e) => e.toString()).toList();
+        _warnings = ((r['layout']['warnings'] as List?) ?? [])
+            .map((e) => e.toString())
+            .toList();
       } else {
         _layout = null;
         _warnings = ['layout error: ${r['error']}'];
@@ -152,7 +163,8 @@ class _EditorScreenState extends State<EditorScreen> {
 
   // ---- vector overlay layer (studio tools) -------------------------------------
 
-  String? get _slideId => _slides.isEmpty ? null : _slides[_index]['id'] as String?;
+  String? get _slideId =>
+      _slides.isEmpty ? null : _slides[_index]['id'] as String?;
 
   List<Map<String, dynamic>> get _objects {
     if (_slides.isEmpty) return const [];
@@ -200,9 +212,12 @@ class _EditorScreenState extends State<EditorScreen> {
     final i = _NavTab.values.indexOf(tab);
     final view = _navScroll.position.viewportDimension;
     final maxExtent = _navScroll.position.maxScrollExtent;
-    final target =
-        (i * _navItemWidth + _navItemWidth / 2 - view / 2).clamp(0.0, maxExtent).toDouble();
-    _navScroll.animateTo(target, duration: const Duration(milliseconds: 240), curve: Curves.easeOutCubic);
+    final target = (i * _navItemWidth + _navItemWidth / 2 - view / 2)
+        .clamp(0.0, maxExtent)
+        .toDouble();
+    _navScroll.animateTo(target,
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOutCubic);
   }
 
   void _showLibrary() {
@@ -233,12 +248,29 @@ class _EditorScreenState extends State<EditorScreen> {
       'locked': false,
       'fill': open ? {'type': 'none'} : {'type': 'solid', 'color': 'FFFFFF'},
       'stroke': open
-          ? {'color': 'D03028', 'width': 3.0, 'dash': 'solid', 'start_arrow': 'none', 'end_arrow': 'none'}
-          : {'color': '17181A', 'width': 1.5, 'dash': 'solid', 'start_arrow': 'none', 'end_arrow': 'none'},
+          ? {
+              'color': 'D03028',
+              'width': 3.0,
+              'dash': 'solid',
+              'start_arrow': 'none',
+              'end_arrow': 'none'
+            }
+          : {
+              'color': '17181A',
+              'width': 1.5,
+              'dash': 'solid',
+              'start_arrow': 'none',
+              'end_arrow': 'none'
+            },
       'effects': {},
       'closed': true,
     };
-    final r = Bridge.command({'op': 'add_object', 'deck': _deck, 'slide_id': slideId, 'shape': shape});
+    final r = Bridge.command({
+      'op': 'add_object',
+      'deck': _deck,
+      'slide_id': slideId,
+      'shape': shape
+    });
     if (r['ok'] == true && r['deck'] is Map) {
       _mutate(r['deck'] as Map);
       setState(() => _selectedObjectId = shape['id'] as String?);
@@ -264,7 +296,10 @@ class _EditorScreenState extends State<EditorScreen> {
     final h = math.max(maxy - miny, 1.0);
     final norm = [
       for (final p in pts)
-        {'x': ((p.dx - minx) / w).clamp(0.0, 1.0).toDouble(), 'y': ((p.dy - miny) / h).clamp(0.0, 1.0).toDouble()},
+        {
+          'x': ((p.dx - minx) / w).clamp(0.0, 1.0).toDouble(),
+          'y': ((p.dy - miny) / h).clamp(0.0, 1.0).toDouble()
+        },
     ];
     final shape = <String, dynamic>{
       'id': _newObjectId(),
@@ -277,12 +312,23 @@ class _EditorScreenState extends State<EditorScreen> {
       'opacity': 1.0,
       'locked': false,
       'fill': {'type': 'none'},
-      'stroke': {'color': 'D03028', 'width': 3.0, 'dash': 'solid', 'start_arrow': 'none', 'end_arrow': 'none'},
+      'stroke': {
+        'color': 'D03028',
+        'width': 3.0,
+        'dash': 'solid',
+        'start_arrow': 'none',
+        'end_arrow': 'none'
+      },
       'effects': {},
       'points': norm,
       'closed': false,
     };
-    final r = Bridge.command({'op': 'add_object', 'deck': _deck, 'slide_id': slideId, 'shape': shape});
+    final r = Bridge.command({
+      'op': 'add_object',
+      'deck': _deck,
+      'slide_id': slideId,
+      'shape': shape
+    });
     if (r['ok'] == true && r['deck'] is Map) {
       _mutate(r['deck'] as Map);
       setState(() => _selectedObjectId = shape['id'] as String?);
@@ -319,7 +365,13 @@ class _EditorScreenState extends State<EditorScreen> {
   void _commitObject(Map obj) {
     final slideId = _slideId;
     if (slideId == null) return;
-    final r = Bridge.command({'op': 'update_object', 'deck': _deck, 'slide_id': slideId, 'object_id': obj['id'], 'shape': obj});
+    final r = Bridge.command({
+      'op': 'update_object',
+      'deck': _deck,
+      'slide_id': slideId,
+      'object_id': obj['id'],
+      'shape': obj
+    });
     if (r['ok'] == true && r['deck'] is Map) {
       _setDeck(r['deck'] as Map);
     } else {
@@ -331,7 +383,13 @@ class _EditorScreenState extends State<EditorScreen> {
   void _styleChanged(Map obj) {
     final slideId = _slideId;
     if (slideId == null) return;
-    final r = Bridge.command({'op': 'update_object', 'deck': _deck, 'slide_id': slideId, 'object_id': obj['id'], 'shape': obj});
+    final r = Bridge.command({
+      'op': 'update_object',
+      'deck': _deck,
+      'slide_id': slideId,
+      'object_id': obj['id'],
+      'shape': obj
+    });
     if (r['ok'] == true && r['deck'] is Map) {
       _mutate(r['deck'] as Map);
     } else {
@@ -348,26 +406,59 @@ class _EditorScreenState extends State<EditorScreen> {
     }
   }
 
-  void _groupObjects(List<String> ids) => _objOp({'op': 'group_objects', 'deck': _deck, 'slide_id': _slideId, 'ids': ids});
+  void _groupObjects(List<String> ids) => _objOp(
+      {'op': 'group_objects', 'deck': _deck, 'slide_id': _slideId, 'ids': ids});
 
-  void _ungroupObjects(List<String> ids) => _objOp({'op': 'ungroup_objects', 'deck': _deck, 'slide_id': _slideId, 'ids': ids});
+  void _ungroupObjects(List<String> ids) => _objOp({
+        'op': 'ungroup_objects',
+        'deck': _deck,
+        'slide_id': _slideId,
+        'ids': ids
+      });
 
-  void _alignObjects(String mode, List<String> ids) => _objOp({'op': 'align_objects', 'deck': _deck, 'slide_id': _slideId, 'ids': ids, 'mode': mode});
+  void _alignObjects(String mode, List<String> ids) => _objOp({
+        'op': 'align_objects',
+        'deck': _deck,
+        'slide_id': _slideId,
+        'ids': ids,
+        'mode': mode
+      });
 
   void _booleanObjects(String mode, List<String> ids) {
     if (ids.length != 2) return;
-    _objOp({'op': 'boolean_op', 'deck': _deck, 'slide_id': _slideId, 'a': ids[0], 'b': ids[1], 'mode': mode});
+    _objOp({
+      'op': 'boolean_op',
+      'deck': _deck,
+      'slide_id': _slideId,
+      'a': ids[0],
+      'b': ids[1],
+      'mode': mode
+    });
   }
 
-  void _saveComponent(List<String> ids, String name) =>
-      _objOp({'op': 'save_component', 'deck': _deck, 'slide_id': _slideId, 'ids': ids, 'name': name});
+  void _saveComponent(List<String> ids, String name) => _objOp({
+        'op': 'save_component',
+        'deck': _deck,
+        'slide_id': _slideId,
+        'ids': ids,
+        'name': name
+      });
 
-  void _placeComponent(String componentId) =>
-      _objOp({'op': 'place_component', 'deck': _deck, 'slide_id': _slideId, 'component_id': componentId});
+  void _placeComponent(String componentId) => _objOp({
+        'op': 'place_component',
+        'deck': _deck,
+        'slide_id': _slideId,
+        'component_id': componentId
+      });
 
   void _syncComponent(String objectId) {
     if (objectId.isEmpty) return;
-    _objOp({'op': 'update_component', 'deck': _deck, 'slide_id': _slideId, 'object_id': objectId});
+    _objOp({
+      'op': 'update_component',
+      'deck': _deck,
+      'slide_id': _slideId,
+      'object_id': objectId
+    });
   }
 
   void _reorderObject(String id, int dir) {
@@ -375,7 +466,13 @@ class _EditorScreenState extends State<EditorScreen> {
     final idx = objs.indexWhere((o) => o['id'] == id);
     if (idx < 0) return;
     final to = (idx + dir).clamp(0, objs.length - 1);
-    _objOp({'op': 'move_object_z', 'deck': _deck, 'slide_id': _slideId, 'object_id': id, 'to_index': to});
+    _objOp({
+      'op': 'move_object_z',
+      'deck': _deck,
+      'slide_id': _slideId,
+      'object_id': id,
+      'to_index': to
+    });
   }
 
   void _toggleObjectLock(String id) {
@@ -389,8 +486,12 @@ class _EditorScreenState extends State<EditorScreen> {
     }
   }
 
-  void _deleteObject(String id) =>
-      _objOp({'op': 'delete_object', 'deck': _deck, 'slide_id': _slideId, 'object_id': id});
+  void _deleteObject(String id) => _objOp({
+        'op': 'delete_object',
+        'deck': _deck,
+        'slide_id': _slideId,
+        'object_id': id
+      });
 
   void _editStyleOf(String id) {
     for (final o in _objects) {
@@ -410,7 +511,12 @@ class _EditorScreenState extends State<EditorScreen> {
     copy['id'] = newId;
     copy['x'] = ((objs[idx]['x'] as num?)?.toDouble() ?? 0) + 24;
     copy['y'] = ((objs[idx]['y'] as num?)?.toDouble() ?? 0) + 24;
-    final r = Bridge.command({'op': 'add_object', 'deck': _deck, 'slide_id': _slideId, 'shape': copy});
+    final r = Bridge.command({
+      'op': 'add_object',
+      'deck': _deck,
+      'slide_id': _slideId,
+      'shape': copy
+    });
     if (r['ok'] != true || r['deck'] is! Map) {
       _toast('Could not duplicate: ${r['error']}');
       return;
@@ -442,12 +548,22 @@ class _EditorScreenState extends State<EditorScreen> {
       copy['y'] = y + h + 10 + h;
       copy['opacity'] = (op * 0.35).clamp(0.05, 0.6);
       copy['effects'] = {};
-      final r = Bridge.command({'op': 'add_object', 'deck': _deck, 'slide_id': _slideId, 'shape': copy});
+      final r = Bridge.command({
+        'op': 'add_object',
+        'deck': _deck,
+        'slide_id': _slideId,
+        'shape': copy
+      });
       if (r['ok'] != true || r['deck'] is! Map) {
         _toast('Could not add reflection: ${r['error']}');
         return;
       }
-      final r2 = Bridge.command({'op': 'group_objects', 'deck': r['deck'], 'slide_id': _slideId, 'ids': [id, newId]});
+      final r2 = Bridge.command({
+        'op': 'group_objects',
+        'deck': r['deck'],
+        'slide_id': _slideId,
+        'ids': [id, newId]
+      });
       if (r2['ok'] == true && r2['deck'] is Map) {
         _mutate(r2['deck'] as Map);
       } else {
@@ -484,7 +600,8 @@ class _EditorScreenState extends State<EditorScreen> {
 
   Future<void> _editText(String key) async {
     final slide = _slides[_index];
-    final content = Map<String, dynamic>.from(slide['content'] ?? <String, dynamic>{});
+    final content =
+        Map<String, dynamic>.from(slide['content'] ?? <String, dynamic>{});
     final current = _resolveKey(content, key)?.toString() ?? '';
     final text = await dreamInputDialog(
       context,
@@ -519,7 +636,8 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   /// Set a dotted path inside a copy of the content map, returning the copy.
-  Map<String, dynamic> _applyKey(Map<String, dynamic> content, String key, String value) {
+  Map<String, dynamic> _applyKey(
+      Map<String, dynamic> content, String key, String value) {
     final updated = Map<String, dynamic>.from(content);
     final parts = key.split('.');
     dynamic cur = updated;
@@ -569,7 +687,8 @@ class _EditorScreenState extends State<EditorScreen> {
   /// The user gets an empty canvas (just the deck's background) to draw on
   /// or fill later; the curated layout list lives in the Slides tool row.
   void _addSlide() {
-    final r = Bridge.command({'op': 'add_slide', 'deck': _deck, 'archetype': 'blank'});
+    final r = Bridge.command(
+        {'op': 'add_slide', 'deck': _deck, 'archetype': 'blank'});
     if (r['ok'] == true && r['deck'] is Map) {
       _mutate(r['deck'] as Map);
       setState(() => _index = _slides.length - 1);
@@ -586,7 +705,8 @@ class _EditorScreenState extends State<EditorScreen> {
     final meta = Bridge.command({'op': 'meta'});
     final r = Bridge.command({'op': 'pacing', 'deck': _deck});
     final suggested = (r['next_suggested'] ?? '').toString();
-    final archetypes = (meta['archetypes'] as List? ?? []).map((e) => e.toString()).toList();
+    final archetypes =
+        (meta['archetypes'] as List? ?? []).map((e) => e.toString()).toList();
     final choice = await showModalBottomSheet<String>(
       context: context,
       builder: (context) => SafeArea(
@@ -609,7 +729,8 @@ class _EditorScreenState extends State<EditorScreen> {
       ),
     );
     if (choice == null) return;
-    final add = Bridge.command({'op': 'add_slide', 'deck': _deck, 'archetype': _archetypeOf(choice)});
+    final add = Bridge.command(
+        {'op': 'add_slide', 'deck': _deck, 'archetype': _archetypeOf(choice)});
     if (add['ok'] == true && add['deck'] is Map) {
       _mutate(add['deck'] as Map);
       setState(() => _index = _slides.length - 1);
@@ -663,8 +784,14 @@ class _EditorScreenState extends State<EditorScreen> {
     var deck = add['deck'] as Map;
     // add_slide appends; move the copy right behind the original.
     if (_slides.length > 1) {
-      final newId = (((deck['slides'] as List?) ?? []).whereType<Map>().last)['id'];
-      final move = Bridge.command({'op': 'move_slide', 'deck': deck, 'slide_id': newId, 'to_index': i + 1});
+      final newId =
+          (((deck['slides'] as List?) ?? []).whereType<Map>().last)['id'];
+      final move = Bridge.command({
+        'op': 'move_slide',
+        'deck': deck,
+        'slide_id': newId,
+        'to_index': i + 1
+      });
       if (move['ok'] == true && move['deck'] is Map) deck = move['deck'] as Map;
     }
     _mutate(deck);
@@ -693,7 +820,8 @@ class _EditorScreenState extends State<EditorScreen> {
   void _deleteAt(int i) {
     if (i < 0 || i >= _slides.length) return;
     final slide = _slides[i];
-    final r = Bridge.command({'op': 'delete_slide', 'deck': _deck, 'slide_id': slide['id']});
+    final r = Bridge.command(
+        {'op': 'delete_slide', 'deck': _deck, 'slide_id': slide['id']});
     if (r['ok'] == true && r['deck'] is Map) {
       _mutate(r['deck'] as Map);
       _refreshLayout(); // clamps _index
@@ -713,7 +841,8 @@ class _EditorScreenState extends State<EditorScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-              child: Text('Slide ${i + 1} of ${_slides.length}', style: Theme.of(context).textTheme.titleMedium),
+              child: Text('Slide ${i + 1} of ${_slides.length}',
+                  style: Theme.of(context).textTheme.titleMedium),
             ),
             ListTile(
               leading: const Icon(Icons.edit_outlined),
@@ -738,7 +867,8 @@ class _EditorScreenState extends State<EditorScreen> {
               onTap: () => Navigator.pop(context, 'right'),
             ),
             ListTile(
-              leading: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
+              leading: Icon(Icons.delete_outline,
+                  color: Theme.of(context).colorScheme.error),
               title: const Text('Delete'),
               onTap: () => Navigator.pop(context, 'del'),
             ),
@@ -781,7 +911,8 @@ class _EditorScreenState extends State<EditorScreen> {
   void _applyDesign(String choice) {
     final current = ((_deck['dna'] ?? const {})['family'] ?? '').toString();
     if (choice == current) return;
-    final r = Bridge.command({'op': 'apply_dna', 'deck': _deck, 'change': choice});
+    final r =
+        Bridge.command({'op': 'apply_dna', 'deck': _deck, 'change': choice});
     if (r['ok'] == true && r['deck'] is Map) _mutate(r['deck'] as Map);
   }
 
@@ -798,7 +929,8 @@ class _EditorScreenState extends State<EditorScreen> {
       final bytes = base64Decode(r['base64'] as String);
       final ext = op == 'export_pptx' ? 'pptx' : 'pdf';
       final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/${(_deck['title'] ?? 'deck').toString().replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_')}.$ext');
+      final file = File(
+          '${dir.path}/${(_deck['title'] ?? 'deck').toString().replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_')}.$ext');
       await file.writeAsBytes(bytes, flush: true);
       await SharePlus.instance.share(
         ShareParams(files: [XFile(file.path)], text: _deck['title'].toString()),
@@ -819,7 +951,9 @@ class _EditorScreenState extends State<EditorScreen> {
   @override
   Widget build(BuildContext context) {
     final title = (_deck['title'] ?? 'Deck').toString();
-    final family = ((_deck['dna'] ?? const {})['family'] ?? '').toString().replaceAll('_', ' ');
+    final family = ((_deck['dna'] ?? const {})['family'] ?? '')
+        .toString()
+        .replaceAll('_', ' ');
     final n = _slides.length;
     // KeyboardStableMetrics: all text entry on this screen happens in
     // bottom-sheet routes (content editor, inspector, pair sheet) that sit
@@ -830,310 +964,420 @@ class _EditorScreenState extends State<EditorScreen> {
     // subtree too, so they stay put as well.)
     return KeyboardStableMetrics(
       child: Scaffold(
-      appBar: AppBar(
-        title: Tooltip(
-          message: '$family — tap to rename deck',
-          child: InkWell(
-            onTap: _renameDeck,
-            borderRadius: BorderRadius.circular(6),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-              child: Text(title, overflow: TextOverflow.ellipsis),
+        appBar: AppBar(
+          title: Tooltip(
+            message: '$family — tap to rename deck',
+            child: InkWell(
+              onTap: _renameDeck,
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                child: Text(title, overflow: TextOverflow.ellipsis),
+              ),
             ),
           ),
+          bottom: const PreferredSize(
+            preferredSize: Size.fromHeight(1),
+            child: ColoredBox(color: kHairline),
+          ),
+          // The toolkit lives in the bottom ribbon — the top bar keeps
+          // deck-level controls: rename (tap the title), undo/redo, comments,
+          // share (a .pptx copy straight to the system share sheet), and the
+          // More menu (modes + export with a format choice).
+          actions: [
+            IconButton(
+              tooltip: 'Undo',
+              icon: const Icon(Icons.undo),
+              onPressed: _undo.isEmpty ? null : _undoStep,
+            ),
+            IconButton(
+              tooltip: 'Redo',
+              icon: const Icon(Icons.redo),
+              onPressed: _redo.isEmpty ? null : _redoStep,
+            ),
+            IconButton(
+              tooltip: 'Comments',
+              icon: const Icon(Icons.chat_bubble_outline),
+              onPressed: _showComments,
+            ),
+            IconButton(
+              tooltip: 'Share',
+              icon: _busy
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2.2))
+                  : const Icon(Icons.share),
+              onPressed: _busy ? null : _showShareSheet,
+            ),
+            PopupMenuButton<String>(
+              tooltip: 'More',
+              enabled: !_busy,
+              icon: const Icon(Icons.more_vert),
+              onSelected: _onModeMenu,
+              itemBuilder: (context) => const [
+                PopupMenuItem(value: 'editing', child: Text('Editing Mode')),
+                PopupMenuItem(value: 'viewing', child: Text('Viewing Mode')),
+                PopupMenuItem(
+                    value: 'presenting', child: Text('Presenting Mode')),
+                // The modes are chrome states; Export is an action from a
+                // different family — a real divider line keeps them apart.
+                PopupMenuDivider(height: 12),
+                PopupMenuItem(value: 'export', child: Text('Export')),
+              ],
+            ),
+            const SizedBox(width: 4),
+          ],
         ),
-        bottom: const PreferredSize(
-          preferredSize: Size.fromHeight(1),
-          child: ColoredBox(color: kHairline),
-        ),
-        // The toolkit lives in the bottom ribbon — the top bar keeps
-        // deck-level controls: rename (tap the title), undo/redo, comments,
-        // share (a .pptx copy straight to the system share sheet), and the
-        // More menu (modes + export with a format choice).
-        actions: [
-          IconButton(
-            tooltip: 'Undo',
-            icon: const Icon(Icons.undo),
-            onPressed: _undo.isEmpty ? null : _undoStep,
-          ),
-          IconButton(
-            tooltip: 'Redo',
-            icon: const Icon(Icons.redo),
-            onPressed: _redo.isEmpty ? null : _redoStep,
-          ),
-          IconButton(
-            tooltip: 'Comments',
-            icon: const Icon(Icons.chat_bubble_outline),
-            onPressed: _showComments,
-          ),
-          IconButton(
-            tooltip: 'Share',
-            icon: _busy
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.2))
-                : const Icon(Icons.share),
-            onPressed: _busy ? null : _showShareSheet,
-          ),
-          PopupMenuButton<String>(
-            tooltip: 'More',
-            enabled: !_busy,
-            icon: const Icon(Icons.more_vert),
-            onSelected: _onModeMenu,
-            itemBuilder: (context) => const [
-              PopupMenuItem(value: 'editing', child: Text('Editing Mode')),
-              PopupMenuItem(value: 'viewing', child: Text('Viewing Mode')),
-              PopupMenuItem(value: 'presenting', child: Text('Presenting Mode')),
-              // The modes are chrome states; Export is an action from a
-              // different family — a real divider line keeps them apart.
-              PopupMenuDivider(height: 12),
-              PopupMenuItem(value: 'export', child: Text('Export')),
-            ],
-          ),
-          const SizedBox(width: 4),
-        ],
-      ),
-      body: Column(
-        children: [
-          // ---- canvas ----------------------------------------------------------
-          Expanded(
-            child: _layout == null
-                ? const Center(child: Text('No slide here yet — add one below.'))
-                : Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Stack(
-                      children: [
-                        Center(
-                          child: AspectRatio(
-                            aspectRatio: 16 / 9,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(12),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.55),
-                                    blurRadius: 24,
-                                    offset: const Offset(0, 8),
-                                  ),
-                                ],
-                              ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(12),
-                                child: Stack(
-                                  children: [
-                                    SlideCanvas(layout: _layout!, onTextTap: _designMode || _mode == _Mode.viewing ? null : _editText),
-                                    ShapesLayer(
-                                      objects: _objects,
-                                      selectedId: _selectedObjectId,
-                                      interactive: _designMode,
-                                      scribbleMode: _scribbleMode,
-                                      onSelect: (id) => setState(() => _selectedObjectId = id),
-                                      onLive: _liveObject,
-                                      onCommit: _commitObject,
-                                      onGestureStart: _objectGestureStart,
-                                      onScribble: _onScribbleDone,
+        body: Column(
+          children: [
+            // ---- canvas ----------------------------------------------------------
+            Expanded(
+              child: _layout == null
+                  ? const Center(
+                      child: Text('No slide here yet — add one below.'))
+                  : Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Stack(
+                        children: [
+                          Center(
+                            child: AspectRatio(
+                              aspectRatio: 16 / 9,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(12),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color:
+                                          Colors.black.withValues(alpha: 0.55),
+                                      blurRadius: 24,
+                                      offset: const Offset(0, 8),
                                     ),
                                   ],
                                 ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        // CapCut-style floating position chip (like the
-                        // timeline counter) — always-visible slide index.
-                        Positioned(
-                          right: 12,
-                          top: 12,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.5),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: kHairline),
-                            ),
-                            child: Text(
-                              n == 0
-                                  ? 'no slides'
-                                  : _mode == _Mode.viewing
-                                      ? 'viewing · ${_index + 1} / $n'
-                                      : 'Slide ${_index + 1} / $n',
-                              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: kText2),
-                            ),
-                          ),
-                        ),
-                        if (_warnings.isNotEmpty)
-                          Positioned(
-                            left: 12,
-                            bottom: 12,
-                            child: Chip(
-                              avatar: const Icon(Icons.warning_amber_outlined, size: 18),
-                              label: Text(_warnings.first, overflow: TextOverflow.ellipsis),
-                            ),
-                          ),
-                        // Viewing mode: edge chevrons replace the editing chrome.
-                        if (_mode == _Mode.viewing) ...[
-                          Positioned(
-                            left: 0,
-                            top: 0,
-                            bottom: 0,
-                            child: Center(
-                              child: IconButton(
-                                tooltip: 'Previous slide',
-                                icon: const Icon(Icons.chevron_left, size: 30, color: kText2),
-                                onPressed: _index > 0 ? () => _step(-1) : null,
-                              ),
-                            ),
-                          ),
-                          Positioned(
-                            right: 0,
-                            top: 0,
-                            bottom: 0,
-                            child: Center(
-                              child: IconButton(
-                                tooltip: 'Next slide',
-                                icon: const Icon(Icons.chevron_right, size: 30, color: kText2),
-                                onPressed: _index < n - 1 ? () => _step(1) : null,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-          ),
-          // ---- editing chrome: tool row + filmstrip + ribbon nav ---------------
-          if (_mode == _Mode.editing) ...[
-            // Tabs with no tools yet (transitions / animations / help) skip
-            // the band entirely — the canvas keeps the space until their
-            // toolboxes get spec'd.
-            if (_navTab != null &&
-                _navTab != _NavTab.transitions &&
-                _navTab != _NavTab.animations &&
-                _navTab != _NavTab.help)
-              Container(
-                decoration: const BoxDecoration(
-                  color: kSurface,
-                  border: Border(
-                    top: BorderSide(color: kHairline),
-                    bottom: BorderSide(color: kHairline),
-                  ),
-                ),
-                height: 48,
-                child: _contextualRow(),
-              ),
-            // ---- filmstrip (stories-style, gradient ring on the live slide) --
-            // Back to the 2.15 canvas: NO chrome panel, NO hairline divider,
-            // NO left fade — the strip floats on the app's pure black exactly
-            // as it always did, and the white miniatures pop on it. The only
-            // thing that survives from the floating rework is the LAYER
-            // ORDER: the rail runs the FULL width behind the + disc, and the
-            // disc (home spot, home 44dp size, home shadow) is painted LAST
-            // — over the slides, not on any background — so the miniatures
-            // it covers are SEEN behind it and the + reads as a floating
-            // button. At rest nothing overlaps: slide 0 sits at the same
-            // 74dp origin it has had since 2.15.
-            SizedBox(
-              height: 104,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                    // The rail: full width, slides only. The leading inset
-                    // puts slide 0 at the exact resting spot it has always
-                    // had since 2.15 (first card at 74dp, a 16dp gap from
-                    // the disc's right edge), its border and rounded
-                    // corners fully visible.
-                    ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.fromLTRB(68, 6, 4, 6),
-                      itemCount: n,
-                      itemBuilder: (context, i) {
-                        final selected = i == _index;
-                        final label = _slideTitle(_slides[i]);
-                        return Padding(
-                          padding: const EdgeInsets.all(6),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(10),
-                            onTap: () {
-                              setState(() {
-                                _index = i;
-                                _refreshLayout();
-                              });
-                            },
-                            onLongPress: () => _slideActions(i),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 150),
-                              width: 124,
-                              padding: EdgeInsets.all(selected ? 2.5 : 1),
-                              decoration: BoxDecoration(
-                                gradient: selected ? kInkGradient : null,
-                                color: selected ? null : kHairline,
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Center(
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                                    child: Text(
-                                      '${i + 1}. $label',
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(fontSize: 11, color: Color(0xFF17181A), fontWeight: FontWeight.w500),
-                                    ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Stack(
+                                    children: [
+                                      SlideCanvas(
+                                          layout: _layout!,
+                                          onTextTap: _designMode ||
+                                                  _mode == _Mode.viewing
+                                              ? null
+                                              : _editText),
+                                      ShapesLayer(
+                                        objects: _objects,
+                                        selectedId: _selectedObjectId,
+                                        interactive: _designMode,
+                                        scribbleMode: _scribbleMode,
+                                        onSelect: (id) => setState(
+                                            () => _selectedObjectId = id),
+                                        onLive: _liveObject,
+                                        onCommit: _commitObject,
+                                        onGestureStart: _objectGestureStart,
+                                        onScribble: _onScribbleDone,
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
                             ),
                           ),
-                        );
-                      },
-                    ),
-                    // The floating +: the signature gradient disc, at its
-                    // home spot and size — 14dp from the strip's left edge,
-                    // vertically centered (top 30 of the 104dp band), 44dp
-                    // across, original soft shadow. Painted LAST, over the
-                    // rail: the slides it passes over are seen behind it,
-                    // which is what makes the + read as a floating button on
-                    // the black canvas rather than a chip on a panel. No
-                    // container clips it. Tap adds a blank slide; long-press
-                    // opens the layout list.
-                    Positioned(
-                      left: 14,
-                      top: 30,
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(22),
-                          onTap: _addSlide,
-                          onLongPress: _addLayoutSlide,
-                          child: Container(
-                            width: 44,
-                            height: 44,
-                            decoration: BoxDecoration(
-                              gradient: kInkGradient,
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.4),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
+                          // CapCut-style floating position chip (like the
+                          // timeline counter) — always-visible slide index.
+                          Positioned(
+                            right: 12,
+                            top: 12,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.5),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: kHairline),
+                              ),
+                              child: Text(
+                                n == 0
+                                    ? 'no slides'
+                                    : _mode == _Mode.viewing
+                                        ? 'viewing · ${_index + 1} / $n'
+                                        : 'Slide ${_index + 1} / $n',
+                                style: const TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: kText2),
+                              ),
                             ),
-                            child: const Icon(Icons.add, color: Colors.white, size: 22),
                           ),
-                        ),
+                          if (_warnings.isNotEmpty)
+                            Positioned(
+                              left: 12,
+                              bottom: 12,
+                              child: Chip(
+                                avatar: const Icon(Icons.warning_amber_outlined,
+                                    size: 18),
+                                label: Text(_warnings.first,
+                                    overflow: TextOverflow.ellipsis),
+                              ),
+                            ),
+                          // Viewing mode: edge chevrons replace the editing chrome.
+                          if (_mode == _Mode.viewing) ...[
+                            Positioned(
+                              left: 0,
+                              top: 0,
+                              bottom: 0,
+                              child: Center(
+                                child: IconButton(
+                                  tooltip: 'Previous slide',
+                                  icon: const Icon(Icons.chevron_left,
+                                      size: 30, color: kText2),
+                                  onPressed:
+                                      _index > 0 ? () => _step(-1) : null,
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              right: 0,
+                              top: 0,
+                              bottom: 0,
+                              child: Center(
+                                child: IconButton(
+                                  tooltip: 'Next slide',
+                                  icon: const Icon(Icons.chevron_right,
+                                      size: 30, color: kText2),
+                                  onPressed:
+                                      _index < n - 1 ? () => _step(1) : null,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
-                  ],
+            ),
+            // ---- editing chrome: tool row + filmstrip + ribbon nav ---------------
+            if (_mode == _Mode.editing) ...[
+              // Tabs with no tools yet (transitions / animations / help) skip
+              // the band entirely — the canvas keeps the space until their
+              // toolboxes get spec'd.
+              if (_navTab != null &&
+                  _navTab != _NavTab.transitions &&
+                  _navTab != _NavTab.animations &&
+                  _navTab != _NavTab.help)
+                Container(
+                  decoration: const BoxDecoration(
+                    color: kSurface,
+                    border: Border(
+                      top: BorderSide(color: kHairline),
+                      bottom: BorderSide(color: kHairline),
+                    ),
+                  ),
+                  height: 48,
+                  child: _contextualRow(),
                 ),
-              ),
-            // ---- PowerPoint-style ribbon ----------------------------------------
-            _EditorNavBar(active: _navTab, controller: _navScroll, onSelect: _onNavSelect),
+              // ---- filmstrip (stories-style, gradient ring on the live slide) --
+              // Back to the 2.15 canvas: NO chrome panel, NO hairline divider,
+              // NO left fade — the strip floats on the app's pure black exactly
+              // as it always did, and the white miniatures pop on it. The only
+              // thing that survives from the floating rework is the LAYER
+              // ORDER: the rail runs the FULL width behind the + disc, and the
+              // disc (home spot, home 44dp size, home shadow) is painted LAST
+              // — over the slides, not on any background — so the miniatures
+              // it covers are SEEN behind it and the + reads as a floating
+              // button. At rest nothing overlaps: slide 0 sits at the same
+              // 74dp origin it has had since 2.15.
+              //
+              // Compressible by request (the 2.16 ask): a small v-chevron at
+              // the strip's end folds the whole band down into a slim handle —
+              // the canvas absorbs the freed space — and the handle's v flips
+              // up to reopen. The chevron floats over the rail's end zone
+              // exactly like the disc floats over its leading zone: no
+              // background, painted after the rail, miniatures glide under
+              // it mid-scroll. The one geometric concession is the rail's
+              // trailing inset (52dp instead of 4dp — the mirror of the 68dp
+              // leading inset that already reserves the disc's zone) so no
+              // miniature ever RESTS under the chevron.
+              AnimatedSize(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  alignment: Alignment.bottomCenter,
+                  child: _filmOpen
+                      ? SizedBox(
+                          height: 104,
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              // The rail: full width, slides only. The leading
+                              // inset puts slide 0 at the exact resting spot it
+                              // has always had since 2.15 (first card at 74dp, a
+                              // 16dp gap from the disc's right edge), its border
+                              // and rounded corners fully visible. The trailing
+                              // inset stops the last card short of the chevron.
+                              ListView.builder(
+                                scrollDirection: Axis.horizontal,
+                                padding:
+                                    const EdgeInsets.fromLTRB(68, 6, 52, 6),
+                                itemCount: n,
+                                itemBuilder: (context, i) {
+                                  final selected = i == _index;
+                                  final label = _slideTitle(_slides[i]);
+                                  return Padding(
+                                    padding: const EdgeInsets.all(6),
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(10),
+                                      onTap: () {
+                                        setState(() {
+                                          _index = i;
+                                          _refreshLayout();
+                                        });
+                                      },
+                                      onLongPress: () => _slideActions(i),
+                                      child: AnimatedContainer(
+                                        duration:
+                                            const Duration(milliseconds: 150),
+                                        width: 124,
+                                        padding:
+                                            EdgeInsets.all(selected ? 2.5 : 1),
+                                        decoration: BoxDecoration(
+                                          gradient:
+                                              selected ? kInkGradient : null,
+                                          color: selected ? null : kHairline,
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                        ),
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                          child: Center(
+                                            child: Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 8),
+                                              child: Text(
+                                                '${i + 1}. $label',
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                    fontSize: 11,
+                                                    color: Color(0xFF17181A),
+                                                    fontWeight:
+                                                        FontWeight.w500),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                              // The floating +: the signature gradient disc, at its
+                              // home spot and size — 14dp from the strip's left edge,
+                              // vertically centered (top 30 of the 104dp band), 44dp
+                              // across, original soft shadow. Painted LAST, over the
+                              // rail: the slides it passes over are seen behind it,
+                              // which is what makes the + read as a floating button on
+                              // the black canvas rather than a chip on a panel. No
+                              // container clips it. Tap adds a blank slide; long-press
+                              // opens the layout list.
+                              Positioned(
+                                left: 14,
+                                top: 30,
+                                child: Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(22),
+                                    onTap: _addSlide,
+                                    onLongPress: _addLayoutSlide,
+                                    child: Container(
+                                      width: 44,
+                                      height: 44,
+                                      decoration: BoxDecoration(
+                                        gradient: kInkGradient,
+                                        shape: BoxShape.circle,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black
+                                                .withValues(alpha: 0.4),
+                                            blurRadius: 10,
+                                            offset: const Offset(0, 4),
+                                          ),
+                                        ],
+                                      ),
+                                      child: const Icon(Icons.add,
+                                          color: Colors.white, size: 22),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              // The v-chevron: points DOWN while the strip is open —
+                              // tap folds the band. A sibling of the disc in the same
+                              // paint order: no background of its own, floating over
+                              // the full-width rail, nothing clips it.
+                              Positioned(
+                                right: 6,
+                                top: 30,
+                                child: Tooltip(
+                                  message: 'Collapse slide strip',
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(22),
+                                      onTap: () =>
+                                          setState(() => _filmOpen = false),
+                                      child: const SizedBox(
+                                        width: 44,
+                                        height: 44,
+                                        child: Icon(Icons.keyboard_arrow_down,
+                                            size: 22, color: kText2),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : SizedBox(
+                          // The collapsed strip: a slim handle pinned to the
+                          // bottom of the old band, its v flipped UP — tap
+                          // unfolds the strip back to the exact 2.15 geometry.
+                          height: 40,
+                          child: Row(
+                            children: [
+                              const Spacer(),
+                              Tooltip(
+                                message: 'Show slide strip',
+                                child: Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(22),
+                                    onTap: () =>
+                                        setState(() => _filmOpen = true),
+                                    child: const SizedBox(
+                                      width: 44,
+                                      height: 40,
+                                      child: Icon(Icons.keyboard_arrow_up,
+                                          size: 22, color: kText2),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                            ],
+                          ),
+                        )),
+              // ---- PowerPoint-style ribbon ----------------------------------------
+              _EditorNavBar(
+                  active: _navTab,
+                  controller: _navScroll,
+                  onSelect: _onNavSelect),
+            ],
           ],
-        ],
-      ),
+        ),
       ),
     );
   }
@@ -1141,7 +1385,8 @@ class _EditorScreenState extends State<EditorScreen> {
   // ---- ribbon wiring ---------------------------------------------------------
 
   void _onNavSelect(_NavTab tab) {
-    _setNavTab(_navTab == tab ? null : tab); // tap the active tab again to collapse
+    _setNavTab(
+        _navTab == tab ? null : tab); // tap the active tab again to collapse
   }
 
   /// The contextual action row for the active ribbon tab — the selected
@@ -1222,7 +1467,10 @@ class _EditorScreenState extends State<EditorScreen> {
                 label: const Text('Add text'),
               ),
             ),
-            IconButton(tooltip: 'Add shape', icon: const Icon(Icons.category_outlined), onPressed: _showLibrary),
+            IconButton(
+                tooltip: 'Add shape',
+                icon: const Icon(Icons.category_outlined),
+                onPressed: _showLibrary),
             IconButton(
               tooltip: 'Style the selected object',
               icon: const Icon(Icons.format_paint_outlined),
@@ -1230,10 +1478,16 @@ class _EditorScreenState extends State<EditorScreen> {
                   ? null
                   : () {
                       final obj = _selectedObject;
-                      if (obj != null) showInspector(context, object: obj, onChange: _styleChanged);
+                      if (obj != null) {
+                        showInspector(context,
+                            object: obj, onChange: _styleChanged);
+                      }
                     },
             ),
-            IconButton(tooltip: 'Layers, groups, components', icon: const Icon(Icons.layers_outlined), onPressed: _showLayers),
+            IconButton(
+                tooltip: 'Layers, groups, components',
+                icon: const Icon(Icons.layers_outlined),
+                onPressed: _showLayers),
           ],
         );
       case _NavTab.draw:
@@ -1254,7 +1508,10 @@ class _EditorScreenState extends State<EditorScreen> {
             for (final (id, label) in _designFamilies)
               Padding(
                 padding: const EdgeInsets.only(right: 6),
-                child: _DesignChip(label: label, selected: id == current, onTap: () => _applyDesign(id)),
+                child: _DesignChip(
+                    label: label,
+                    selected: id == current,
+                    onTap: () => _applyDesign(id)),
               ),
             IconButton(
               tooltip: 'New variant of this design',
@@ -1391,7 +1648,8 @@ class _EditorScreenState extends State<EditorScreen> {
       context: context,
       isScrollControlled: true,
       builder: (context) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        padding:
+            EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
         child: SafeArea(
           child: StatefulBuilder(
             builder: (context, setSheet) => Column(
@@ -1399,12 +1657,15 @@ class _EditorScreenState extends State<EditorScreen> {
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-                  child: Text('Comments', style: Theme.of(context).textTheme.titleMedium),
+                  child: Text('Comments',
+                      style: Theme.of(context).textTheme.titleMedium),
                 ),
                 if (_comments.isEmpty)
                   const SizedBox(
                     height: 120,
-                    child: Center(child: Text('No comments yet — leave the first one.', style: _rowHint)),
+                    child: Center(
+                        child: Text('No comments yet — leave the first one.',
+                            style: _rowHint)),
                   )
                 else
                   Flexible(
@@ -1415,7 +1676,8 @@ class _EditorScreenState extends State<EditorScreen> {
                         for (final c in _comments)
                           ListTile(
                             dense: true,
-                            leading: const Icon(Icons.person_outline, size: 20, color: kText2),
+                            leading: const Icon(Icons.person_outline,
+                                size: 20, color: kText2),
                             title: Text(c['text'] ?? ''),
                             subtitle: const Text('You · just now'),
                           ),
@@ -1424,7 +1686,8 @@ class _EditorScreenState extends State<EditorScreen> {
                   ),
                 const Divider(height: 1, color: kHairline),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   child: Row(
                     children: [
                       Expanded(
@@ -1476,14 +1739,20 @@ class _EditorScreenState extends State<EditorScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Text('Export deck', style: Theme.of(context).textTheme.titleMedium),
+              child: Text('Export deck',
+                  style: Theme.of(context).textTheme.titleMedium),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               child: SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                  onPressed: _busy ? null : () { Navigator.pop(context); _export('export_pptx'); },
+                  onPressed: _busy
+                      ? null
+                      : () {
+                          Navigator.pop(context);
+                          _export('export_pptx');
+                        },
                   icon: const Icon(Icons.description, size: 18),
                   label: const Text('PowerPoint (.pptx)'),
                 ),
@@ -1494,7 +1763,12 @@ class _EditorScreenState extends State<EditorScreen> {
               child: SizedBox(
                 width: double.infinity,
                 child: FilledButton.tonalIcon(
-                  onPressed: _busy ? null : () { Navigator.pop(context); _export('export_pdf'); },
+                  onPressed: _busy
+                      ? null
+                      : () {
+                          Navigator.pop(context);
+                          _export('export_pdf');
+                        },
                   icon: const Icon(Icons.picture_as_pdf, size: 18),
                   label: const Text('PDF (.pdf)'),
                 ),
@@ -1549,7 +1823,8 @@ const double _navItemWidth = 66;
 /// melt into the surface instead of clipping. The active tab's contextual
 /// action row renders between the canvas and the filmstrip.
 class _EditorNavBar extends StatelessWidget {
-  const _EditorNavBar({required this.active, required this.controller, required this.onSelect});
+  const _EditorNavBar(
+      {required this.active, required this.controller, required this.onSelect});
 
   final _NavTab? active;
   final ScrollController controller;
@@ -1593,7 +1868,8 @@ class _EditorNavBar extends StatelessWidget {
     // item padding (6) + centered column gap (5).
     final double? slot = active == null
         ? null
-        : _NavTab.values.indexOf(active!) * _navItemWidth + (_navItemWidth - 58) / 2;
+        : _NavTab.values.indexOf(active!) * _navItemWidth +
+            (_navItemWidth - 58) / 2;
     return Container(
       decoration: const BoxDecoration(
         color: kSurface,
@@ -1801,8 +2077,11 @@ class _PresenterScreenState extends State<_PresenterScreen> {
   }
 
   Map<String, dynamic>? _layoutAt(int i) {
-    final r = Bridge.command({'op': 'get_layout', 'deck': widget.deck, 'slide_index': i});
-    return r['ok'] == true && r['layout'] is Map ? (r['layout'] as Map).cast<String, dynamic>() : null;
+    final r = Bridge.command(
+        {'op': 'get_layout', 'deck': widget.deck, 'slide_index': i});
+    return r['ok'] == true && r['layout'] is Map
+        ? (r['layout'] as Map).cast<String, dynamic>()
+        : null;
   }
 
   void _go(int delta) {
@@ -1810,7 +2089,9 @@ class _PresenterScreenState extends State<_PresenterScreen> {
     if (target < 0) target = 0;
     if (target >= _slides.length) target = _slides.length - 1;
     if (target == _page) return;
-    _pages.animateToPage(target, duration: const Duration(milliseconds: 260), curve: Curves.easeOutCubic);
+    _pages.animateToPage(target,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic);
   }
 
   @override
@@ -1829,7 +2110,9 @@ class _PresenterScreenState extends State<_PresenterScreen> {
                 child: AspectRatio(
                   aspectRatio: 16 / 9,
                   child: layout == null
-                      ? const Center(child: Text('Unable to render this slide', style: TextStyle(color: kText2)))
+                      ? const Center(
+                          child: Text('Unable to render this slide',
+                              style: TextStyle(color: kText2)))
                       : SlideCanvas(layout: layout),
                 ),
               );
@@ -1839,9 +2122,15 @@ class _PresenterScreenState extends State<_PresenterScreen> {
           // work because tap recognizers never claim drags.
           Row(
             children: [
-              Expanded(child: GestureDetector(onTap: () => _go(-1), behavior: HitTestBehavior.translucent)),
+              Expanded(
+                  child: GestureDetector(
+                      onTap: () => _go(-1),
+                      behavior: HitTestBehavior.translucent)),
               const SizedBox(width: 90),
-              Expanded(child: GestureDetector(onTap: () => _go(1), behavior: HitTestBehavior.translucent)),
+              Expanded(
+                  child: GestureDetector(
+                      onTap: () => _go(1),
+                      behavior: HitTestBehavior.translucent)),
             ],
           ),
           Positioned(
@@ -1872,7 +2161,8 @@ class _PresenterScreenState extends State<_PresenterScreen> {
 
 /// Compact capsule chip for a design family (Design tool row).
 class _DesignChip extends StatelessWidget {
-  const _DesignChip({required this.label, required this.selected, required this.onTap});
+  const _DesignChip(
+      {required this.label, required this.selected, required this.onTap});
 
   final String label;
   final bool selected;
@@ -1891,7 +2181,9 @@ class _DesignChip extends StatelessWidget {
           decoration: BoxDecoration(
             color: selected ? kElevated : kBg,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: selected ? kMagenta : kHairline, width: selected ? 1.4 : 1),
+            border: Border.all(
+                color: selected ? kMagenta : kHairline,
+                width: selected ? 1.4 : 1),
           ),
           child: Text(
             label,

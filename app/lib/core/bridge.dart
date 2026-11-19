@@ -10,6 +10,11 @@ import 'dart:ffi' as ffi;
 class Bridge {
   Bridge._();
 
+  /// Widget-test seam: when non-null, commands are answered by this
+  /// in-memory engine instead of crossing FFI into the Rust core (the host
+  /// test runner has no libdreamtx.so). Production never sets it.
+  static Map<String, dynamic> Function(Map<String, dynamic> req)? testOverride;
+
   static ffi.DynamicLibrary? _lib;
 
   static ffi.DynamicLibrary get lib {
@@ -20,10 +25,11 @@ class Bridge {
     return _lib!;
   }
 
-  static int Function(ffi.Pointer<ffi.Uint8>, ffi.Pointer<ffi.Pointer<ffi.Uint8>>)
+  static int Function(
+          ffi.Pointer<ffi.Uint8>, ffi.Pointer<ffi.Pointer<ffi.Uint8>>)
       _command() => lib.lookupFunction<
-          ffi.Int32 Function(ffi.Pointer<ffi.Uint8>,
-              ffi.Pointer<ffi.Pointer<ffi.Uint8>>),
+          ffi.Int32 Function(
+              ffi.Pointer<ffi.Uint8>, ffi.Pointer<ffi.Pointer<ffi.Uint8>>),
           int Function(ffi.Pointer<ffi.Uint8>,
               ffi.Pointer<ffi.Pointer<ffi.Uint8>>)>('dreamtx_command');
 
@@ -33,6 +39,8 @@ class Bridge {
 
   /// Run a JSON command against the Rust core.
   static Map<String, dynamic> command(Map<String, dynamic> req) {
+    final override = testOverride;
+    if (override != null) return override(req);
     final reqPtr = jsonEncode(req).toNativeUtf8().cast<ffi.Uint8>();
     final outPtr = calloc<ffi.Pointer<ffi.Uint8>>();
     final rc = _command()(reqPtr, outPtr);

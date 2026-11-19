@@ -3,6 +3,7 @@ import 'dart:io' show exit;
 import 'package:material_ui/material_ui.dart';
 
 import '../core/bridge.dart';
+import '../core/restart.dart';
 import '../core/store.dart';
 import '../theme.dart';
 import 'editor_screen.dart';
@@ -34,6 +35,13 @@ class _DecksScreenState extends State<DecksScreen> {
   /// the error card swaps its Retry for a Restart-app button (exit(0)); the
   /// next cold launch is healthy and the decks reappear untouched on disk.
   bool _needsRestart = false;
+
+  /// True while the first stale-classloader detection of this process is
+  /// self-healing: instead of asking for a tap, the card becomes a calm
+  /// "Finishing the update" notice and the process restarts itself after
+  /// a short beat (see [StaleProcessRestart]). Only reachable once per
+  /// process; a second detection falls back to the manual card.
+  bool _selfHeal = false;
 
   /// True while an input dialog (New deck / Rename) is on screen. The
   /// empty-state card recedes (fades) while a dialog is open — see
@@ -97,24 +105,44 @@ class _DecksScreenState extends State<DecksScreen> {
         return;
       } catch (e) {
         lastError = e;
+        // The stale-classloader signature is deterministic — the dex behind
+        // this live process was replaced by an in-place app update, and no
+        // retry can load a Java class from a dex file that no longer exists.
+        // Stop immediately instead of burning the retry delays.
+        if (e.toString().contains('ClassNotFound') ||
+            e.toString().contains('DexPath')) {
+          break;
+        }
         if (i + 1 < attempts) {
           await Future<void>.delayed(const Duration(milliseconds: 800));
         }
       }
     }
     if (!mounted) return;
+    final msg = lastError.toString();
+    final stale = msg.contains('ClassNotFound') || msg.contains('DexPath');
+    // First stale detection in this process: self-heal. Show the calm
+    // notice, give the frame a beat to paint, then kill the zombie process
+    // outright — the user's very next launch is the healthy new build.
+    final heal = stale && !StaleProcessRestart.armed;
     setState(() {
       _loading = false;
-      final msg = lastError.toString();
-      _needsRestart = msg.contains('ClassNotFound') || msg.contains('DexPath');
+      _needsRestart = stale;
+      _selfHeal = heal;
       _loadError = 'Deck store did not respond — $msg';
     });
+    if (heal) {
+      StaleProcessRestart.armed = true;
+      await Future<void>.delayed(const Duration(milliseconds: 1500));
+      StaleProcessRestart.kill();
+    }
   }
 
   Future<void> _newDeck() async {
     final title = await _dimDuring(_askTitle);
     if (title == null || title.trim().isEmpty) return;
-    final r = Bridge.command({'op': 'new_deck', 'title': title.trim(), 'family': 'swiss_editorial'});
+    final r = Bridge.command(
+        {'op': 'new_deck', 'title': title.trim(), 'family': 'swiss_editorial'});
     if (r['ok'] != true) {
       _toast('Engine error: ${r['error']}');
       return;
@@ -136,11 +164,11 @@ class _DecksScreenState extends State<DecksScreen> {
 
   Future<void> _rename(Map<String, dynamic> deck) async {
     final title = await _dimDuring(() => dreamInputDialog(
-      context,
-      title: 'Rename deck',
-      initial: (deck['title'] ?? '').toString(),
-      confirmLabel: 'Rename',
-    ));
+          context,
+          title: 'Rename deck',
+          initial: (deck['title'] ?? '').toString(),
+          confirmLabel: 'Rename',
+        ));
     if (title == null || title.trim().isEmpty) return;
     final updated = Map<String, dynamic>.from(deck);
     updated['title'] = title.trim();
@@ -159,7 +187,8 @@ class _DecksScreenState extends State<DecksScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-              child: Text((deck['title'] ?? 'Deck').toString(), style: Theme.of(context).textTheme.titleMedium),
+              child: Text((deck['title'] ?? 'Deck').toString(),
+                  style: Theme.of(context).textTheme.titleMedium),
             ),
             ListTile(
               leading: const Icon(Icons.open_in_new),
@@ -172,7 +201,8 @@ class _DecksScreenState extends State<DecksScreen> {
               onTap: () => Navigator.pop(context, 'rename'),
             ),
             ListTile(
-              leading: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
+              leading: Icon(Icons.delete_outline,
+                  color: Theme.of(context).colorScheme.error),
               title: const Text('Delete'),
               onTap: () => Navigator.pop(context, 'delete'),
             ),
@@ -206,10 +236,13 @@ class _DecksScreenState extends State<DecksScreen> {
         title: Text("Delete '${deck['title']}'?"),
         content: const Text('The deck file is removed from this device.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Keep')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Keep')),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            style: FilledButton.styleFrom(backgroundColor: kAccent, foregroundColor: Colors.white),
+            style: FilledButton.styleFrom(
+                backgroundColor: kAccent, foregroundColor: Colors.white),
             child: const Text('Delete'),
           ),
         ],
@@ -237,75 +270,91 @@ class _DecksScreenState extends State<DecksScreen> {
         // perfectly still while the keyboard opens and closes.
         resizeToAvoidBottomInset: false,
         body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // ---- Masthead: unambiguous "top" --------------------------------
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'DreamTX',
-                          style: TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.5,
-                            height: 1.1,
-                            color: kText,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // ---- Masthead: unambiguous "top" --------------------------------
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'DreamTX',
+                            style: TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.5,
+                              height: 1.1,
+                              color: kText,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 5),
-                        Text(
-                          _loadError != null
-                              ? 'DECKS · STORAGE OFFLINE'
-                              : (count == 0 ? 'DECKS · NONE YET' : 'DECKS · $count ON THIS DEVICE'),
-                          style: const TextStyle(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 1.8,
-                            color: kText2,
+                          const SizedBox(height: 5),
+                          Text(
+                            _selfHeal
+                                ? 'DECKS · FINISHING UPDATE'
+                                : _loadError != null
+                                    ? 'DECKS · STORAGE OFFLINE'
+                                    : (count == 0
+                                        ? 'DECKS · NONE YET'
+                                        : 'DECKS · $count ON THIS DEVICE'),
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 1.8,
+                              color: kText2,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  _GradientButton(icon: Icons.add, label: 'New deck', onPressed: _newDeck),
-                ],
+                    const SizedBox(width: 12),
+                    _GradientButton(
+                        icon: Icons.add,
+                        label: 'New deck',
+                        onPressed: _newDeck),
+                  ],
+                ),
               ),
-            ),
-            // The rule: hard separation between masthead and body, in the
-            // signature purple→pink→orange gradient.
-            Container(height: 2, decoration: const BoxDecoration(gradient: kInkGradient)),
-            // ---- Body: ruled deck index ------------------------------------
-            Expanded(
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _loadError != null
-                      ? _LoadErrorCard(message: _loadError!, onRetry: () => _reload(), restart: _needsRestart)
-                      : count == 0
-                          ? _EmptyState(onCreate: _newDeck, dimmed: _dialogOpen)
-                          : ListView.separated(
-                          padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
-                          itemCount: count,
-                          separatorBuilder: (_, __) => const SizedBox(height: 12),
-                          itemBuilder: (context, i) => _DeckCard(
-                            index: i + 1,
-                            deck: _decks[i],
-                            onOpen: () => _open(_decks[i]),
-                            onDelete: () => _delete(_decks[i]),
-                            onLongPress: () => _cardActions(_decks[i]),
-                          ),
-                        ),
-            ),
-          ],
-        ),
+              // The rule: hard separation between masthead and body, in the
+              // signature purple→pink→orange gradient.
+              Container(
+                  height: 2,
+                  decoration: const BoxDecoration(gradient: kInkGradient)),
+              // ---- Body: ruled deck index ------------------------------------
+              Expanded(
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _loadError != null
+                        ? _LoadErrorCard(
+                            message: _loadError!,
+                            onRetry: () => _reload(),
+                            restart: _needsRestart,
+                            auto: _selfHeal)
+                        : count == 0
+                            ? _EmptyState(
+                                onCreate: _newDeck, dimmed: _dialogOpen)
+                            : ListView.separated(
+                                padding:
+                                    const EdgeInsets.fromLTRB(20, 18, 20, 28),
+                                itemCount: count,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(height: 12),
+                                itemBuilder: (context, i) => _DeckCard(
+                                  index: i + 1,
+                                  deck: _decks[i],
+                                  onOpen: () => _open(_decks[i]),
+                                  onDelete: () => _delete(_decks[i]),
+                                  onLongPress: () => _cardActions(_decks[i]),
+                                ),
+                              ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -331,7 +380,9 @@ class _DeckCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final slides = (deck['slides'] as List? ?? []).length;
-    final family = ((deck['dna'] ?? const {})['family'] ?? '').toString().replaceAll('_', ' ');
+    final family = ((deck['dna'] ?? const {})['family'] ?? '')
+        .toString()
+        .replaceAll('_', ' ');
     return Container(
       decoration: BoxDecoration(
         color: kSurface,
@@ -373,12 +424,18 @@ class _DeckCard extends StatelessWidget {
                       (deck['title'] ?? 'Untitled').toString(),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: kText),
+                      style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: kText),
                     ),
                     const SizedBox(height: 3),
                     Text(
                       '$slides slides · $family',
-                      style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500, color: kText2),
+                      style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w500,
+                          color: kText2),
                     ),
                   ],
                 ),
@@ -473,7 +530,8 @@ class _EmptyScreenState extends State<_EmptyState> {
             const SizedBox(height: 14),
             const Text(
               'No decks yet',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: kText),
+              style: TextStyle(
+                  fontSize: 17, fontWeight: FontWeight.w700, color: kText),
             ),
             const SizedBox(height: 4),
             const Text(
@@ -505,8 +563,17 @@ class _EmptyScreenState extends State<_EmptyState> {
 /// live process — see _needsRestart): a Retry would only fail again in this
 /// broken process, so the button becomes Restart app, which kills the
 /// process outright; the user reopens DreamTX and gets a healthy cold start.
+///
+/// The [auto] flavor is the FIRST detection in this process: the card swaps
+/// its scary copy for a calm "Finishing the update" notice with no button —
+/// the app restarts itself after a short beat ([StaleProcessRestart]), so
+/// the user does nothing at all and the next launch is the healthy new build.
 class _LoadErrorCard extends StatelessWidget {
-  const _LoadErrorCard({required this.message, required this.onRetry, this.restart = false});
+  const _LoadErrorCard(
+      {required this.message,
+      required this.onRetry,
+      this.restart = false,
+      this.auto = false});
 
   final String message;
   final VoidCallback onRetry;
@@ -514,6 +581,10 @@ class _LoadErrorCard extends StatelessWidget {
   /// True when the failure is the in-place-update classloader casualty —
   /// show the restart copy and the Restart-app button instead of Retry.
   final bool restart;
+
+  /// True while this process is self-healing: the calm notice, not the
+  /// manual card. Implies [restart].
+  final bool auto;
 
   /// Deliberate self-kill for the [restart] case: the dex classloader of
   /// THIS process is stale and cannot be repaired in place, so a fresh
@@ -538,19 +609,28 @@ class _LoadErrorCard extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                restart ? Icons.restart_alt_outlined : Icons.warning_amber_outlined,
+                restart
+                    ? (auto ? Icons.sync : Icons.restart_alt_outlined)
+                    : Icons.warning_amber_outlined,
                 size: 44,
                 color: restart ? kPurple : kAccent,
               ),
               const SizedBox(height: 14),
               Text(
-                restart ? 'DreamTX needs a quick restart' : 'Could not read your decks',
-                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: kText),
+                restart
+                    ? (auto
+                        ? 'Finishing the update'
+                        : 'DreamTX needs a quick restart')
+                    : 'Could not read your decks',
+                style: const TextStyle(
+                    fontSize: 17, fontWeight: FontWeight.w700, color: kText),
               ),
               const SizedBox(height: 4),
               Text(
                 restart
-                    ? 'The app was updated while it was still running, so its storage bridge went stale. Your decks are safe on disk — nothing is lost. Tap Restart, then reopen DreamTX.'
+                    ? (auto
+                        ? 'DreamTX was updated while it was still running, so it is closing for a second to finish switching to the new version. Your decks are safe on disk — nothing is lost. Just reopen it.'
+                        : 'The app was updated while it was still running, so its storage bridge went stale. Your decks are safe on disk — nothing is lost. Tap Restart, then reopen DreamTX.')
                     : 'Device storage did not answer. This can happen right after an app update — a retry usually fixes it.',
                 textAlign: TextAlign.center,
                 style: const TextStyle(fontSize: 13.5, color: kText2),
@@ -564,12 +644,21 @@ class _LoadErrorCard extends StatelessWidget {
                 style: const TextStyle(fontSize: 11.5, color: kText3),
               ),
               const SizedBox(height: 20),
-              _GradientButton(
-                icon: restart ? Icons.restart_alt : Icons.refresh,
-                label: restart ? 'Restart app' : 'Retry',
-                onPressed: restart ? _exitApp : onRetry,
-                height: 46,
-              ),
+              if (auto)
+                const SizedBox(
+                  width: 140,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.all(Radius.circular(2)),
+                    child: LinearProgressIndicator(minHeight: 3),
+                  ),
+                )
+              else
+                _GradientButton(
+                  icon: restart ? Icons.restart_alt : Icons.refresh,
+                  label: restart ? 'Restart app' : 'Retry',
+                  onPressed: restart ? _exitApp : onRetry,
+                  height: 46,
+                ),
             ],
           ),
         ),
@@ -615,7 +704,10 @@ class _GradientButton extends StatelessWidget {
                 const SizedBox(width: 6),
                 Text(
                   label,
-                  style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Colors.white),
+                  style: const TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white),
                 ),
               ],
             ),

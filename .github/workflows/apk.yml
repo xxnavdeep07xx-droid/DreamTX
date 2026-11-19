@@ -31,6 +31,13 @@ jobs:
           flutter create --org com.dreamtx --project-name dreamtx .
           flutter pub get
 
+      # ---- Host smoke gate: analyze + widget tests (no device needed) ----
+      - name: Smoke tests (analyze + widget tests)
+        working-directory: app
+        run: |
+          flutter analyze
+          flutter test
+
       # ---- Rust + Android NDK ----------------------------------------------
       - uses: dtolnay/rust-toolchain@stable
         with:

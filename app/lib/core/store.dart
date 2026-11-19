@@ -13,6 +13,11 @@ class DeckStore {
 
   static DeckStore? _cached;
 
+  /// Test seam: clears the process-wide cache so a test can rerun the full
+  /// open() path (and hit whatever platform-channel mock is installed).
+  /// Production never calls this.
+  static void debugResetForTest() => _cached = null;
+
   static Future<DeckStore> open() async {
     if (_cached != null) return _cached!;
     final dir = await getApplicationDocumentsDirectory();
@@ -31,12 +36,12 @@ class DeckStore {
       ..sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
     return files
         .map((f) {
-      try {
-        final decoded = jsonDecode(f.readAsStringSync());
-        if (decoded is Map<String, dynamic>) return decoded;
-      } catch (_) {}
-      return null;
-    })
+          try {
+            final decoded = jsonDecode(f.readAsStringSync());
+            if (decoded is Map<String, dynamic>) return decoded;
+          } catch (_) {}
+          return null;
+        })
         .whereType<Map<String, dynamic>>()
         .toList();
   }
