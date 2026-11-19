@@ -114,34 +114,33 @@ void main() {
     tmp = Directory.systemTemp.createTempSync('dreamtx_smoke');
     DeckStore.debugResetForTest();
     // Production bounds restored for every test; timeout-specific tests
-    // shrink them themselves.
+    // shrink them themselves. The scan seam is off unless a test sets it.
     DeckStore.openBound = const Duration(seconds: 8);
     DeckStore.scanBound = const Duration(seconds: 5);
     DeckStore.debugWriteDelay = Duration.zero;
+    DeckStore.debugScanOverride = null;
   });
 
   tearDown(() {
     Bridge.testOverride = null;
+    DeckStore.debugScanOverride = null;
     _clearStorageMock();
     try {
       tmp.deleteSync(recursive: true);
     } catch (_) {}
   });
 
-  testWidgets('startup: decks load from the storage bridge; a corrupt file is skipped and named, not shown as an error', (tester) async {
-    final decks = Directory('${tmp.path}/decks')..createSync(recursive: true);
-    File('${decks.path}/d1.json')
-        .writeAsStringSync(jsonEncode(_deckFixture('d1', 'Test deck', 2)));
-    File('${decks.path}/d2.json')
-        .writeAsStringSync(jsonEncode(_deckFixture('d2', 'Second deck', 5)));
-    File('${decks.path}/d3.json').writeAsStringSync('{ not json');
+  testWidgets('startup: decks load into the dashboard; a corrupt file is skipped and named, never shown as an error', (tester) async {
+    // Widget tests run under the fake-async zone, where real async file IO
+    // never completes — the dashboard's state machine is driven through
+    // the scan seam; the store's real IO (including corrupt-file skips) is
+    // covered by the plain real-async scan test below.
+    DeckStore.debugScanOverride = () async => DeckScan(
+        [_deckFixture('d1', 'Test deck', 2), _deckFixture('d2', 'Second deck', 5)],
+        ['d3.json']);
     _mockStorage(dir: tmp.path);
 
     await tester.pumpWidget(const MaterialApp(home: DecksScreen()));
-    // The scan is real async file IO: give it real event-loop time before
-    // the fake clock takes over again (the runAsync escape hatch).
-    await tester.runAsync(
-        () async => await Future<void>.delayed(const Duration(milliseconds: 600)));
     await tester.pumpAndSettle();
 
     expect(find.text('Test deck'), findsOneWidget);
@@ -155,6 +154,7 @@ void main() {
   });
 
   testWidgets('startup: a genuinely empty library shows the empty state, and "None yet" only after a successful scan', (tester) async {
+    DeckStore.debugScanOverride = () async => const DeckScan([], []);
     _mockStorage(dir: tmp.path);
 
     await tester.pumpWidget(const MaterialApp(home: DecksScreen()));
@@ -163,8 +163,6 @@ void main() {
     expect(find.text('DECKS · LOADING'), findsOneWidget);
     expect(find.text('DECKS · NONE YET'), findsNothing);
 
-    await tester.runAsync(
-        () async => await Future<void>.delayed(const Duration(milliseconds: 600)));
     await tester.pumpAndSettle();
 
     expect(find.text('No decks yet'), findsOneWidget);
@@ -192,15 +190,34 @@ void main() {
 
     // The user's Retry is the recovery path: storage heals, list appears.
     _mockStorage(dir: tmp.path);
-    final decks = Directory('${tmp.path}/decks')..createSync(recursive: true);
-    File('${decks.path}/d1.json')
-        .writeAsStringSync(jsonEncode(_deckFixture('d1', 'Healed deck', 1)));
+    DeckStore.debugScanOverride =
+        () async => DeckScan([_deckFixture('d1', 'Healed deck', 1)], []);
     await tester.tap(find.text('Retry'));
-    await tester.runAsync(
-        () async => await Future<void>.delayed(const Duration(milliseconds: 600)));
     await tester.pumpAndSettle();
     expect(find.text('Healed deck'), findsOneWidget);
     expect(find.text('DECKS · 1 ON THIS DEVICE'), findsOneWidget);
+  });
+
+  test('scan: real files through real async IO — decks load, corrupt files are named', () async {
+    // The store's actual IO path, in the real async zone (widget tests
+    // drive the UI through the scan seam — see the note above).
+    final decks = Directory('${tmp.path}/decks')..createSync(recursive: true);
+    File('${decks.path}/d1.json')
+        .writeAsStringSync(jsonEncode(_deckFixture('d1', 'Test deck', 2)));
+    File('${decks.path}/d2.json')
+        .writeAsStringSync(jsonEncode(_deckFixture('d2', 'Second deck', 5)));
+    File('${decks.path}/d3.json').writeAsStringSync('{ not json');
+    _mockStorage(dir: tmp.path);
+
+    final store = await DeckStore.open();
+    final scan = await store.scan();
+
+    // Newest-first ordering is timing-dependent in a test; membership is not.
+    expect(scan.decks.map((d) => d['title']),
+        containsAll(['Test deck', 'Second deck']));
+    expect(scan.skipped, ['d3.json']);
+    // The corrupt file never masquerades as an empty library.
+    expect(scan.decks, hasLength(2));
   });
 
   testWidgets('startup: a stalled platform channel is bounded — the spinner cannot outlive it', (tester) async {

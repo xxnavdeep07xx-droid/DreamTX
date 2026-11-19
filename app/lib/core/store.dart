@@ -72,9 +72,22 @@ class DeckStore {
   /// Unreadable/corrupt files are skipped and *named* in [DeckScan.skipped]
   /// so logs can tell "3 files were unreadable" apart from "your library is
   /// empty" — the two must never be conflated.
-  Future<DeckScan> scan() async {
+  Future<DeckScan> scan() {
+    // Test seam (see the doc on debugScanOverride): widget tests under the
+    // fake-async zone answer from the override; production never sets it.
+    final override = debugScanOverride;
+    if (override != null) return override();
     return _scan().timeout(scanBound);
   }
+
+  /// Test seam: when set, [scan] answers from this instead of the real
+  /// filesystem. Widget tests run under Flutter's fake-async zone, where
+  /// real async file IO never completes — so the dashboard's widget tests
+  /// drive the UI states (loading / list / empty / error / retry) through
+  /// this seam, while the store's actual IO behavior (scan, saves, deletes,
+  /// atomic writes) is covered by the plain real-async store tests in the
+  /// same suite. Production never sets it.
+  static Future<DeckScan> Function()? debugScanOverride;
 
   Future<DeckScan> _scan() async {
     final entities = await _dir.list().toList();
