@@ -69,6 +69,18 @@ after(() => {
 
 const jsonHeaders = { "content-type": "application/json" };
 
+/** Fail loudly AND informatively: a wrong status dumps the body plus the
+ * tail of wrangler's own console — the cause of a surprise 404/500 is
+ * always in one of the two. */
+function expectStatus(what, expected, actual, respBody) {
+  if (actual !== expected) {
+    throw new Error(
+      `${what}: expected HTTP ${expected}, got ${actual}; body: ` +
+        `${JSON.stringify(respBody)}\nwrangler tail:\n${logs.slice(-30).join("")}`,
+    );
+  }
+}
+
 async function post(pathname, body) {
   const r = await fetch(`${BASE}${pathname}`, {
     method: "POST",
@@ -111,8 +123,8 @@ test("engine is the real Rust wasm, observable on /health", async () => {
 test("pairing → MCP handshake → create_deck → deck DO init → mutation → app-visible update", async () => {
   // -- the app side asks for a pairing -----------------------------------
   const pair = await post("/pair", { deckId: DECK_ID });
-  assert.equal(pair.status, 200);
-  assert.equal(pair.body.ok, true);
+  expectStatus("/pair", 200, pair.status, pair.body);
+  assert.equal(pair.body.ok, true, JSON.stringify(pair.body));
   const token = pair.body.token;
   assert.ok(token && token.includes("-"), `pairing token looks wrong: ${token}`);
 
@@ -120,7 +132,6 @@ test("pairing → MCP handshake → create_deck → deck DO init → mutation �
   const init = await rpc(token, "initialize", {});
   assert.equal(init.result.protocolVersion, "2025-03-26");
   assert.equal(init.result.serverInfo.name, "dreamtx");
-
   const tools = await rpc(token, "tools/list", {});
   const names = tools.result.tools.map((t) => t.name);
   assert.ok(names.includes("add_slide"), `tools/list missing add_slide: ${names}`);
@@ -131,7 +142,11 @@ test("pairing → MCP handshake → create_deck → deck DO init → mutation �
     name: "create_deck",
     arguments: { title: "E2E Deck", family: "swiss_editorial" },
   });
-  assert.equal(created.result.isError, undefined);
+  assert.equal(
+    created.result.isError,
+    undefined,
+    `create_deck errored: ${created.result.content?.[0]?.text}`,
+  );
   const deck = JSON.parse(created.result.content[0].text).deck;
   assert.ok(deck.id, "engine returned a deck");
   assert.equal(deck.version, 1);
@@ -140,8 +155,8 @@ test("pairing → MCP handshake → create_deck → deck DO init → mutation �
 
   // -- the app side pushes the deck into its Durable Object ----------------
   const initResp = await post(`/decks/${DECK_ID}/init`, { deck });
-  assert.equal(initResp.status, 200);
-  assert.equal(initResp.body.ok, true);
+  expectStatus("deck DO init", 200, initResp.status, initResp.body);
+  assert.equal(initResp.body.ok, true, JSON.stringify(initResp.body));
   assert.equal(initResp.body.version, 1);
 
   // -- the AI mutates WITHOUT passing the deck back: the DO injects state --
@@ -149,12 +164,16 @@ test("pairing → MCP handshake → create_deck → deck DO init → mutation �
     name: "add_slide",
     arguments: { archetype: "statement" },
   });
-  assert.equal(mutated.result.isError, undefined, "add_slide failed");
+  assert.equal(
+    mutated.result.isError,
+    undefined,
+    `add_slide errored: ${mutated.result.content?.[0]?.text}`,
+  );
   assert.equal(mutated.result.engine, "wasm", "mutation answered by wasm");
 
   // -- the app side sees the update: version bumped, slide count grew -----
   const state = await get(`/decks/${DECK_ID}/state`);
-  assert.equal(state.status, 200);
+  expectStatus("deck DO state", 200, state.status, state.body);
   assert.ok(state.body.version >= 2, `version did not bump: ${state.body.version}`);
   assert.equal(
     state.body.slides,
@@ -163,7 +182,7 @@ test("pairing → MCP handshake → create_deck → deck DO init → mutation �
   );
   assert.ok(
     state.body.log.some((e) => e.op === "add_slide" && e.actor === "ai"),
-    "the audit log records the AI's mutation",
+    `the audit log records the AI's mutation: ${JSON.stringify(state.body.log)}`,
   );
 });
 

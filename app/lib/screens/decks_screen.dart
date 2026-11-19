@@ -652,12 +652,18 @@ class _GradientButton extends StatelessWidget {
               children: [
                 Icon(icon, size: 18, color: Colors.white),
                 const SizedBox(width: 6),
-                Text(
-                  label,
-                  style: const TextStyle(
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white),
+                // Never overflow the pill on narrow cards or under large
+                // accessibility text scales — ellipsize instead.
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white),
+                  ),
                 ),
               ],
             ),
