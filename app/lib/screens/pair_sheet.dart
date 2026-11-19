@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -10,6 +11,13 @@ import '../theme.dart';
 /// Pair sheet — "use your own AI" UX: ask the server for a 15-minute pairing
 /// code + URL, paste it into ChatGPT/Claude/any MCP client, then watch the
 /// deck update live over the deck DO WebSocket (with version catch-up).
+///
+/// Hardened contract: every network wait is bounded (a dead server surfaces
+/// as a visible error within seconds, never as a stuck "pairing…" state),
+/// the HttpClient and WebSocket are always released, every setState after an
+/// await is dispose-guarded, and a mid-flight dispose closes whatever was
+/// in flight instead of leaking it. Pairing is fully independent of the
+/// offline startup path: it only ever touches this sheet's own state.
 class PairSheet extends StatefulWidget {
   const PairSheet({super.key, required this.deck});
 
@@ -20,24 +28,53 @@ class PairSheet extends StatefulWidget {
 }
 
 class _PairSheetState extends State<PairSheet> {
+  static const _httpTimeout = Duration(seconds: 10);
+  static const _wsTimeout = Duration(seconds: 15);
+
   String? _serverUrl;
   Map<String, dynamic>? _pairing;
   String? _error;
   String _status = 'idle';
   WebSocket? _ws;
   int? _lastVersion;
+  bool _disposed = false;
+
+  /// Owned by this state and disposed with it — the URL field used to build
+  /// a fresh controller per frame, leaking one per keystroke.
+  late final TextEditingController _urlField;
 
   @override
   void initState() {
     super.initState();
+    _urlField = TextEditingController();
     _loadServerUrl();
   }
 
+  @override
+  void dispose() {
+    _disposed = true;
+    _ws?.close();
+    _urlField.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadServerUrl() async {
-    final file = File(await _serverFile());
-    if (file.existsSync()) {
-      final url = file.readAsStringSync().trim();
-      if (url.isNotEmpty) setState(() => _serverUrl = url);
+    try {
+      final path = await _serverFile().timeout(_httpTimeout);
+      final file = File(path);
+      if (await file.exists()) {
+        final url = (await file.readAsString()).trim();
+        if (url.isEmpty) return;
+        if (_disposed) return;
+        setState(() {
+          _serverUrl = url;
+          _urlField.text = url;
+        });
+      }
+    } catch (e) {
+      // A settings file that cannot be read is not worth a red screen: the
+      // user just retypes the URL. Logged, not shown.
+      print('[pair-sheet] could not read the saved server URL: $e');
     }
   }
 
@@ -47,45 +84,73 @@ class _PairSheetState extends State<PairSheet> {
   }
 
   Future<void> _saveServerUrl(String url) async {
-    final file = File(await _serverFile());
-    await file.writeAsString(url.trim());
+    try {
+      final path = await _serverFile().timeout(_httpTimeout);
+      await File(path).writeAsString(url.trim());
+    } catch (e) {
+      print('[pair-sheet] could not save the server URL: $e');
+      if (!_disposed) {
+        setState(() => _error = 'Could not save the server URL: $e');
+      }
+    }
+  }
+
+  /// Safe setState after any await — a disposed sheet never updates itself.
+  void _update(VoidCallback fn) {
+    if (_disposed) return;
+    setState(fn);
   }
 
   Future<void> _pair() async {
     final url = _serverUrl;
     if (url == null || url.trim().isEmpty) {
-      setState(() => _error = 'Set your DreamTX server URL first (deployed in M2).');
+      _update(() => _error =
+          'Set your DreamTX server URL first (deployed in M2).');
       return;
     }
-    setState(() {
+    _update(() {
       _error = null;
       _status = 'pairing…';
     });
+    final http = HttpClient()..connectionTimeout = _httpTimeout;
     try {
-      final http = HttpClient();
-      final req = await http.postUrl(Uri.parse('$url/pair'));
+      final req = await http.postUrl(Uri.parse('$url/pair')).timeout(_httpTimeout);
       req.headers.contentType = ContentType.json;
       req.write(jsonEncode({'deckId': widget.deck['id']}));
-      final resp = await req.close();
-      final body = jsonDecode(await resp.transform(utf8.decoder).join())
-          as Map<String, dynamic>;
+      final resp = await req.close().timeout(_httpTimeout);
+      final bodyText =
+          await resp.transform(utf8.decoder).join().timeout(_httpTimeout);
+      final decoded = jsonDecode(bodyText); // malformed JSON → the catch below
+      if (decoded is! Map<String, dynamic>) {
+        _update(() {
+          _error = 'pairing failed — the server sent an unexpected response';
+          _status = 'idle';
+        });
+        return;
+      }
+      final body = decoded;
       if (body['ok'] == true) {
-        setState(() {
+        _update(() {
           _pairing = body;
           _status = 'paired — waiting for your AI';
         });
         _connect(url);
       } else {
-        setState(() {
+        _update(() {
           _error = body['error']?.toString() ?? 'pairing failed';
           _status = 'idle';
         });
       }
     } catch (e) {
-      setState(() {
+      // Bounded and visible: a dead server is an error in seconds, not a
+      // permanent "pairing…" badge.
+      _update(() {
         _error = 'server unreachable: $e';
         _status = 'idle';
       });
+    } finally {
+      // The client is always released, success or failure.
+      http.close();
     }
   }
 
@@ -95,30 +160,38 @@ class _PairSheetState extends State<PairSheet> {
       scheme: Uri.parse(serverUrl).scheme == 'https' ? 'wss' : 'ws',
       path: '/decks/$deckId/ws',
     );
-    WebSocket.connect(wsUri.toString()).then((ws) {
+    WebSocket.connect(wsUri.toString()).timeout(_wsTimeout).then((ws) {
+      if (_disposed) {
+        // The sheet died mid-connect: own the socket just long enough to
+        // close it — never leak it.
+        ws.close();
+        return;
+      }
       _ws = ws;
       ws.add(jsonEncode({'type': 'subscribe', 'since_version': _lastVersion}));
       ws.listen(
         (msg) {
-          final data = jsonDecode(msg.toString()) as Map<String, dynamic>;
-          if (data['type'] == 'update' || data['type'] == 'snapshot') {
-            setState(() => _status = 'live — version ${data['version']}');
-          } else if (data['type'] == 'hello') {
-            setState(() => _status = 'connected');
+          try {
+            final data = jsonDecode(msg.toString()) as Map<String, dynamic>;
+            if (data['type'] == 'update' || data['type'] == 'snapshot') {
+              _update(() => _status = 'live — version ${data['version']}');
+            } else if (data['type'] == 'hello') {
+              _update(() => _status = 'connected');
+            }
+          } catch (e) {
+            print('[pair-sheet] unparseable ws message: $e');
           }
         },
-        onDone: () => setState(() => _status = 'disconnected — tap reconnect'),
-        onError: (_) => setState(() => _status = 'disconnected — tap reconnect'),
+        onDone: () => _update(() => _status = 'disconnected — tap reconnect'),
+        onError: (e) {
+          print('[pair-sheet] websocket error: $e');
+          _update(() => _status = 'disconnected — tap reconnect');
+        },
       );
     }).catchError((e) {
-      setState(() => _status = 'websocket failed: $e');
+      print('[pair-sheet] websocket connect failed: $e');
+      _update(() => _status = 'websocket failed: $e');
     });
-  }
-
-  @override
-  void dispose() {
-    _ws?.close();
-    super.dispose();
   }
 
   @override
@@ -152,7 +225,7 @@ class _PairSheetState extends State<PairSheet> {
               label: 'DreamTX server URL',
               hint: 'https://dreamtx.your-name.workers.dev',
             ),
-            controller: TextEditingController(text: _serverUrl ?? ''),
+            controller: _urlField,
             onChanged: (v) => _serverUrl = v,
             onSubmitted: _saveServerUrl,
           ),
