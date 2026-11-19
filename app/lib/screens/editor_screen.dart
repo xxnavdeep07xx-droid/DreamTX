@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -100,6 +101,40 @@ class _EditorScreenState extends State<EditorScreen> {
   Map<String, dynamic> _copy() =>
       jsonDecode(jsonEncode(_deck)) as Map<String, dynamic>;
 
+  /// Fire-and-forget by design — the editor never blocks on the disk — but
+  /// never *unhandled*: the store snapshots the deck at enqueue time and
+  /// serializes writes per deck, so rapid edits/undo/redo land in order with
+  /// the latest state always winning, and a failed write leaves the prior
+  /// valid file untouched and surfaces here (throttled toast). Later saves
+  /// recover automatically; the deck list shown on return is coordinated by
+  /// the dashboard's flush-then-scan reload.
+  Future<void> _persist() async {
+    try {
+      final store = await DeckStore.open();
+      await store.save(_deck);
+    } catch (e, st) {
+      print('[deck-store] editor save failed: $e\n$st');
+      _warnSaveFailed();
+    }
+  }
+
+  /// At most one save-failure toast per 10s — a broken disk must be visible,
+  /// not deafening. The message is actionable without being a stack trace.
+  DateTime? _lastSaveToastAt;
+  void _warnSaveFailed() {
+    if (!mounted) return;
+    final now = DateTime.now();
+    final last = _lastSaveToastAt;
+    if (last != null && now.difference(last) < const Duration(seconds: 10)) {
+      return;
+    }
+    _lastSaveToastAt = now;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text(
+            'Could not save this deck — your edits stay in memory and saving '
+            'retries automatically.')));
+  }
+
   /// Apply a new deck produced by the engine (or a local edit): push undo,
   /// wipe redo, persist, refresh.
   void _mutate(Map? newDeck) {
@@ -112,7 +147,7 @@ class _EditorScreenState extends State<EditorScreen> {
 
   void _setDeck(Map newDeck) {
     _deck = Map<String, dynamic>.from(newDeck);
-    DeckStore.open().then((s) => s.save(_deck));
+    unawaited(_persist());
     _refreshLayout();
   }
 
@@ -121,9 +156,9 @@ class _EditorScreenState extends State<EditorScreen> {
     setState(() {
       _redo.add(_copy());
       _deck = _undo.removeLast();
-      DeckStore.open().then((s) => s.save(_deck));
-      _refreshLayout();
     });
+    unawaited(_persist());
+    _refreshLayout();
   }
 
   void _redoStep() {
@@ -131,9 +166,9 @@ class _EditorScreenState extends State<EditorScreen> {
     setState(() {
       _undo.add(_copy());
       _deck = _redo.removeLast();
-      DeckStore.open().then((s) => s.save(_deck));
-      _refreshLayout();
     });
+    unawaited(_persist());
+    _refreshLayout();
   }
 
   void _refreshLayout() {
