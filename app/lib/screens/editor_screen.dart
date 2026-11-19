@@ -1221,17 +1221,17 @@ class _EditorScreenState extends State<EditorScreen> {
               // flat across the editor, then near the right edge a ramp up
               // into a short ledge that runs flush to the edge, with the
               // chevron centered in the pocket under the ledge. Collapsed, the
-              // same rule (directly above the ribbon) carries an up chevron; the
-              // cool-light-neutral line goes theme-purple while the strip is
-              // open — the app's own accent (kPurple), not a warm red: the
-              // user's verdict was that a red/orange rule reads off-theme next
-              // to the purple→pink signature family, and kPurple is the same
-              // interactive accent the app already uses for its cursor, focus
-              // rings, and progress marks, so the boundary belongs to the
-              // signature family instead of clashing with it. No detached
-              // floating chevron, no chrome panel, no left fade: the rail
-              // still floats on the app's pure black exactly as in 2.15,
-              // white miniatures and all.
+              // same rule (directly above the ribbon) carries an up chevron in
+              // the cool light neutral; open, the stroke wears the signature
+              // sweep — the same purple → magenta → orange stops as the + disc
+              // (kInkGradient's own colors), run left → right along the
+              // boundary so the line warms from quiet purple to orange exactly
+              // at the ramp and ledge, and the chevron repeats the disc's
+              // diagonal gradient over its glyph — the user's verdict after
+              // two single-color tries was that only the disc's own gradient
+              // reads on-theme. No detached floating chevron, no chrome
+              // panel, no left fade: the rail still floats on the app's pure
+              // black exactly as in 2.15, white miniatures and all.
               //
               // The reveal: the band itself never unmounts — it stays laid out
               // at the full 104dp inside a top-anchored Align/ClipRect pair
@@ -1869,14 +1869,20 @@ const double _navItemWidth = 66;
 /// carrying the state alone:
 ///
 /// * collapsed — a cool light neutral rule (kText2) and an up chevron;
-/// * expanded — the app's theme accent purple (kPurple) and a down chevron.
+/// * expanded — the signature gradient sweep and a down chevron that is a
+///   miniature of the + disc's own gradient.
 ///
-/// The accent question was settled by the user's eye: a warm red/orange
-/// rule reads off-theme against the app's purple→pink signature family
-/// (kInkGradient), so the open state wears kPurple — the same interactive
-/// accent the theme already spends on the text cursor, focus rings, and
-/// progress marks. It reinforces the state without ever reading as a
-/// warning: kAccent stays reserved for destructive/live semantics.
+/// The accent took three rounds to settle by the user's eye: a warm red
+/// (kAccent) read off-theme, and a flat single purple still read off — so
+/// the open boundary now wears the exact three stops the + disc wears
+/// (kPurple → kMagenta → kOrange): [ruleSweep] runs them left → right
+/// along the rule (quiet purple along the flat baseline, warming through
+/// magenta, arriving at orange exactly where the ramp lifts into the
+/// ledge), and the chevron glyph repeats the disc's own diagonal
+/// kInkGradient through a srcIn ShaderMask. The collapsed state stays the
+/// cool neutral — the boundary earns the signature colors only while the
+/// strip is worth looking at — and kAccent stays reserved for
+/// destructive/live semantics.
 ///
 /// The rule is drawn by [_FilmstripDividerPainter] from the same geometry
 /// constants that place the handle, so the chevron is always optically
@@ -1922,9 +1928,17 @@ class _FilmstripDivider extends StatelessWidget {
 
   static const double stroke = 1.8;
 
+  /// The open rule's sweep — the signature family's three stops run flat
+  /// along the boundary: quiet purple at the left edge, warming through
+  /// magenta, arriving at orange exactly where the ramp lifts into the
+  /// ledge and the chevron sits. Same three stops as the + disc's
+  /// kInkGradient, laid out horizontally for a wide thin rule.
+  static const LinearGradient ruleSweep = LinearGradient(
+    colors: [kPurple, kMagenta, kOrange],
+  );
+
   @override
   Widget build(BuildContext context) {
-    final Color line = expanded ? kPurple : kText2;
     final String label = expanded ? 'Collapse slides' : 'Expand slides';
     // Chevron center: horizontally the middle of the flat ledge (the ledge
     // spans the last rampFromRight - rampRun = 70dp), vertically the optical
@@ -1939,11 +1953,16 @@ class _FilmstripDivider extends StatelessWidget {
       child: Stack(
         children: [
           // The rule: one continuous baseline → ramp → ledge. Decorative
-          // painting only — no child, so it can never capture a tap.
+          // painting only — no child, so it can never capture a tap. Open,
+          // the stroke carries the signature sweep; collapsed, the same
+          // path wears the cool light neutral.
           Positioned.fill(
             child: CustomPaint(
               key: const ValueKey('filmstrip_divider'),
-              painter: _FilmstripDividerPainter(color: line),
+              painter: _FilmstripDividerPainter(
+                color: kText2,
+                sweep: expanded ? ruleSweep : null,
+              ),
             ),
           ),
           // The handle: the whole reserved 48×48 at the right edge toggles,
@@ -1971,13 +1990,26 @@ class _FilmstripDivider extends StatelessWidget {
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(
                           chevronLeft, chevronTop, 0, 0),
-                      child: Icon(
-                        expanded
-                            ? Icons.keyboard_arrow_down
-                            : Icons.keyboard_arrow_up,
-                        size: chevronSize,
-                        color: line,
-                      ),
+                      // Open, the chevron is a miniature of the + disc: the
+                      // disc's own diagonal kInkGradient applied to the glyph
+                      // through a srcIn ShaderMask (the white base supplies
+                      // only the alpha the shader fills). Collapsed it stays
+                      // the cool light neutral.
+                      child: expanded
+                          ? ShaderMask(
+                              shaderCallback: kInkGradient.createShader,
+                              blendMode: BlendMode.srcIn,
+                              child: const Icon(
+                                Icons.keyboard_arrow_down,
+                                size: chevronSize,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(
+                              Icons.keyboard_arrow_up,
+                              size: chevronSize,
+                              color: kText2,
+                            ),
                     ),
                   ),
                 ),
@@ -1993,10 +2025,19 @@ class _FilmstripDivider extends StatelessWidget {
 /// Draws the filmstrip's boundary: the flat baseline from the editor's left
 /// edge (no side padding), the ramp up near the right edge, and the ledge
 /// running flush to the right edge — one path, one stroke, rounded joins.
+///
+/// The stroke is the collapsed cool neutral ([color]) or, when the strip is
+/// open, the signature [sweep]: its shader spans the path's own bounds, so
+/// t maps purely to x — the three stops land the same at every width.
 class _FilmstripDividerPainter extends CustomPainter {
-  _FilmstripDividerPainter({required this.color});
+  _FilmstripDividerPainter({required this.color, this.sweep});
 
+  /// The collapsed stroke color.
   final Color color;
+
+  /// The open stroke's gradient (kPurple → kMagenta → kOrange); null when
+  /// collapsed.
+  final LinearGradient? sweep;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -2012,14 +2053,27 @@ class _FilmstripDividerPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = _FilmstripDivider.stroke
       ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..color = color;
+      ..strokeJoin = StrokeJoin.round;
+    final sweep = this.sweep;
+    if (sweep == null) {
+      paint.color = color;
+    } else {
+      // The shader rect is the path's own bounds (ledge top → baseline):
+      // over that rect the horizontal sweep maps t to x alone, so the left
+      // edge is purple and the ramp/ledge zone arrives at orange at any
+      // width or region height.
+      paint.shader = sweep.createShader(Rect.fromLTWH(
+          0,
+          _FilmstripDivider.ledgeY,
+          w,
+          _FilmstripDivider.baselineY - _FilmstripDivider.ledgeY));
+    }
     canvas.drawPath(path, paint);
   }
 
   @override
   bool shouldRepaint(_FilmstripDividerPainter oldDelegate) =>
-      oldDelegate.color != color;
+      oldDelegate.color != color || oldDelegate.sweep != sweep;
 }
 
 class _EditorNavBar extends StatelessWidget {
