@@ -83,7 +83,18 @@ export default {
       const deckId = deckMatch[1];
       const sub = deckMatch[2] ?? "/state";
       const stub = env.DECKS.get(env.DECKS.idFromName(deckId));
-      return stub.fetch(`https://deck${sub}${url.search}`);
+      // Forward the original request INTACT — method, headers, body. The old
+      // string-only forward silently downgraded every POST to GET (so /init,
+      // /op and /event answered the DO's own 404 fallback — dead since the
+      // M0 scaffold, caught by the e2e flow) and dropped the websocket
+      // Upgrade header from /ws. Websocket upgrades keep the header-only
+      // form so workerd performs the DO-side handshake.
+      if (request.headers.get("upgrade")?.toLowerCase() === "websocket") {
+        return stub.fetch(`https://deck${sub}${url.search}`, {
+          headers: request.headers,
+        });
+      }
+      return stub.fetch(new Request(`https://deck${sub}${url.search}`, request));
     }
 
     return json({ ok: false, error: "not found" }, 404);
