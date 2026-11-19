@@ -420,11 +420,19 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.getSize(reveal).height, 0);
 
-    // The + still works end to end (fake engine adds a blank slide).
+    // The + still works end to end (fake engine adds a blank slide). The new
+    // tile lives at the rail's far end — past the viewport's lazy-build cache
+    // — so drag the rail (on the row itself: its center is always on-screen
+    // however far the rail has scrolled) until the tile exists.
     await tester.tap(find.byKey(const ValueKey('filmstrip_handle')));
     await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.add));
     await tester.pumpAndSettle();
+    for (var i = 0; i < 12 && find.text('9. Blank').evaluate().isEmpty; i++) {
+      await tester.drag(
+          find.byKey(const ValueKey('filmstrip_row')), const Offset(-150, 0));
+      await tester.pumpAndSettle();
+    }
     expect(find.text('9. Blank'), findsOneWidget);
   });
 
