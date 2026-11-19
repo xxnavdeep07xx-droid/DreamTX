@@ -1017,14 +1017,7 @@ class _EditorScreenState extends State<EditorScreen> {
                   ),
                 ),
                 height: 48,
-                // The floating + disc owns the strip's left edge (it mounts
-                // on the seam below this band), so the tool row indents to
-                // the same 72dp origin as slide 0 — no control ever sits
-                // under the disc.
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 72),
-                  child: _contextualRow(),
-                ),
+                child: _contextualRow(),
               ),
             // ---- filmstrip (stories-style, gradient ring on the live slide) --
             // Its own chrome panel, not a black void: the strip sits on the
@@ -1032,14 +1025,16 @@ class _EditorScreenState extends State<EditorScreen> {
             // black — under a hairline divider, so the section reads as a
             // designed band and the white miniatures pop.
             //
-            // v0.2.18 — the + is a FLOATING disc, no longer a member of the
-            // band. It mounts on the panel's top-left seam, straddling the
-            // hairline so the divider passes UNDER it, and the miniature
-            // rail runs the full width behind it: slides glide under the
-            // disc and melt into a left fade. Nothing slices a miniature at
-            // a viewport edge, no wall stands between the disc and the
-            // first slide, and nothing can ever cut into the disc itself —
-            // it is painted last, outside every clip.
+            // The + is back home — exactly where it has always lived and at
+            // its original size: 14dp in from the strip's left edge, dead
+            // center on the rail vertically, 44dp across, original soft
+            // shadow. What survives from the floating rework is the layer
+            // order only: the rail runs the FULL width behind the disc, and
+            // the disc is painted LAST — above the rail and above the fade —
+            // so miniatures glide under it and melt into the left fade as
+            // they scroll in. No hard left wall (the invisible partition)
+            // between the disc and the first slide, and nothing can ever
+            // cut into the disc itself.
             Container(
               decoration: const BoxDecoration(
                 color: kSurface,
@@ -1051,12 +1046,12 @@ class _EditorScreenState extends State<EditorScreen> {
                   clipBehavior: Clip.none,
                   children: [
                     // The rail: full width, slides only. The leading inset
-                    // keeps slide 0 clear of the floating disc at rest, so
-                    // its border and rounded corners are fully visible —
-                    // never flush against the rail's left boundary.
+                    // puts slide 0 at the exact resting spot it always had
+                    // (first card at 74dp, a 16dp gap from the disc's right
+                    // edge), its border and rounded corners fully visible.
                     ListView.builder(
                       scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.fromLTRB(72, 6, 16, 6),
+                      padding: const EdgeInsets.fromLTRB(68, 6, 4, 6),
                       itemCount: n,
                       itemBuilder: (context, i) {
                         final selected = i == _index;
@@ -1124,14 +1119,17 @@ class _EditorScreenState extends State<EditorScreen> {
                         ),
                       ),
                     ),
-                    // The floating +: signature gradient disc with a soft
-                    // elevation shadow, straddling the panel's top hairline
-                    // (12dp above the seam, 32dp below). Painted LAST — the
-                    // rail passes behind it and no container clips it. Tap
-                    // adds a blank slide; long-press opens the layout list.
+                    // The floating +: the signature gradient disc, back at
+                    // its home spot and size — 14dp from the strip's left
+                    // edge, vertically centered (top 30 of the 104dp band),
+                    // 44dp across, original elevation shadow. It stays a
+                    // floating disc: painted LAST, above the rail and the
+                    // fade, so the miniatures glide under it as you scroll
+                    // and no container can ever clip it. Tap adds a blank
+                    // slide; long-press opens the layout list.
                     Positioned(
                       left: 14,
-                      top: -12,
+                      top: 30,
                       child: Material(
                         color: Colors.transparent,
                         child: InkWell(
@@ -1146,9 +1144,9 @@ class _EditorScreenState extends State<EditorScreen> {
                               shape: BoxShape.circle,
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.45),
-                                  blurRadius: 14,
-                                  offset: const Offset(0, 5),
+                                  color: Colors.black.withValues(alpha: 0.4),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
                                 ),
                               ],
                             ),
