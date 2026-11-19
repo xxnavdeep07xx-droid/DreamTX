@@ -59,9 +59,11 @@ class DeckStore {
     final dir =
         await getApplicationDocumentsDirectory().timeout(openBound);
     final decks = Directory('${dir.path}/decks');
-    if (!await decks.exists()) {
-      await decks.create(recursive: true);
-    }
+    // One metadata probe, deliberately synchronous — a bare stat is
+    // sub-millisecond and needs no interruptible bound; every byte-heavy
+    // startup IO (listing, stat-ing, reading decks) stays fully async in
+    // scan(). Same probe every release up to 0.2.15 used.
+    if (!decks.existsSync()) decks.createSync(recursive: true);
     final store = DeckStore._(decks);
     _cached = store;
     return store;

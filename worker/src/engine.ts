@@ -71,8 +71,25 @@ export function engineModeNow(): EngineMode {
 export async function runCommand(cmd: Record<string, Json>): Promise<EngineResult> {
   if (wasmCommand_) {
     try {
-      const resp = JSON.parse(wasmCommand_(JSON.stringify(cmd))) as EngineResult;
-      return resp;
+      const resp = JSON.parse(wasmCommand_(JSON.stringify(cmd))) as Record<
+        string,
+        unknown
+      >;
+      // The Rust core answers FLAT: { ok, deck?, layout?, ... } / { ok:false,
+      // error }. The TS fallback wraps its payload in `data`. Normalize the
+      // wasm shape into the EngineResult contract so callers never see two
+      // different response grammars.
+      if (resp.ok === true) {
+        const data = { ...(resp as Record<string, unknown>) };
+        delete data.ok;
+        return (Object.keys(data).length > 0
+          ? { ok: true, data }
+          : { ok: true }) as EngineResult;
+      }
+      return {
+        ok: false,
+        error: String(resp.error ?? "engine reported failure without an error"),
+      };
     } catch (e) {
       return { ok: false, error: `engine crashed: ${String(e)}` };
     }
