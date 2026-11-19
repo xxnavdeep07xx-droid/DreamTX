@@ -1228,12 +1228,15 @@ class _EditorScreenState extends State<EditorScreen> {
               // in 2.15, white miniatures and all.
               //
               // The reveal: the band itself never unmounts — it stays laid out
-              // at the full 104dp inside a vertical SizeTransition that clips
-              // paint and hit-testing down to nothing when collapsed (and
-              // ExcludeSemantics pulls it out of the a11y tree). That is what
-              // preserves the scroll offset and the selected slide across
-              // every fold/unfold, and one 200ms eased height transition —
-              // instant under reduced-motion — is the single coordinated move.
+              // at the full 104dp inside a top-anchored Align/ClipRect pair
+              // (Align.heightFactor drives the reveal height; the clip
+              // carries the same boundary to hit-testing) that collapses
+              // paint and taps down to nothing when collapsed (and
+              // ExcludeSemantics pulls it out of the a11y tree). That is
+              // what preserves the scroll offset and the selected slide
+              // across every fold/unfold, and one 200ms eased height
+              // transition — instant under reduced-motion — is the single
+              // coordinated move.
               _FilmstripDivider(
                 expanded: _filmOpen,
                 onToggle: _toggleFilmstrip,
@@ -1249,13 +1252,18 @@ class _EditorScreenState extends State<EditorScreen> {
                     curve: Curves.easeInOutCubic,
                     tween: Tween<double>(
                         begin: 1.0, end: _filmOpen ? 1.0 : 0.0),
-                    builder: (context, v, child) => SizeTransition(
+                    builder: (context, v, child) => ClipRect(
                       // Top-anchored: the band folds UP under the divider's
                       // baseline — its bottom edge rises to meet the rule —
-                      // and drops back down on unfold.
-                      axisAlignment: -1,
-                      sizeFactor: AlwaysStoppedAnimation<double>(v),
-                      child: child,
+                      // and drops back down on unfold. Align's heightFactor
+                      // drives the reveal height; the clip carries the same
+                      // boundary to hit-testing, so the hidden band cannot
+                      // be tapped.
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        heightFactor: v,
+                        child: child,
+                      ),
                     ),
                     child: SizedBox(
                       key: const ValueKey('filmstrip_row'),
@@ -1908,9 +1916,9 @@ class _FilmstripDivider extends StatelessWidget {
     // spans the last rampFromRight - rampRun = 70dp), vertically the optical
     // middle of the pocket between ledge and baseline — both expressed as
     // padding inside the 48×48 hit box at the right edge.
-    final double chevronLeft =
+    const double chevronLeft =
         hitSize - (rampFromRight - rampRun) / 2 - chevronSize / 2;
-    final double chevronTop =
+    const double chevronTop =
         (ledgeY + baselineY) / 2 - chevronSize / 2;
     return SizedBox(
       height: regionHeight,
