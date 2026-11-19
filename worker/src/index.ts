@@ -12,7 +12,7 @@
 import { PairingRegistry } from "./registry-do";
 import { DeckDO } from "./deck-do";
 import { TOOLS, toolToCommand } from "./tools";
-import { runCommand } from "./engine";
+import { ensureEngine, engineModeNow, runCommand } from "./engine";
 import type { Env, Json, RpcRequest, RpcResponse } from "./env";
 
 export { PairingRegistry, DeckDO };
@@ -21,11 +21,21 @@ const MCP_PROTOCOL_VERSION = "2025-03-26";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    // Every request enters with the Rust wasm engine wired (idempotent, one
+    // init per isolate, safe under concurrency). A failed init is logged and
+    // observable on /health — never silent.
+    const engine = await ensureEngine();
     const url = new URL(request.url);
 
     // ---- health / pairing (app-facing) -----------------------------------
     if (url.pathname === "/health") {
-      return json({ ok: true, service: "dreamtx-worker", mcp: "streamable-http+sse" });
+      return json({
+        ok: true,
+        service: "dreamtx-worker",
+        mcp: "streamable-http+sse",
+        engine,
+        engineReady: true,
+      });
     }
 
     // The app asks the registry for a pairing token for a deck.
@@ -130,23 +140,31 @@ async function mcpPost(request: Request, env: Env, deckId: string): Promise<Resp
         });
         const result = (await resp.json<Record<string, Json>>()) ?? {};
         if (result.ok) {
-          return rpcResult(rpc.id, { content: [{ type: "text", text: JSON.stringify(result.data ?? {}) }] });
+          return rpcResult(rpc.id, {
+            content: [{ type: "text", text: JSON.stringify(result.data ?? {}) }],
+            engine: engineModeNow(),
+          } as unknown as Json);
         }
         return rpcResult(rpc.id, {
           content: [{ type: "text", text: `Error: ${String(result.error ?? "unknown")}` }],
           isError: true,
-        });
+          engine: engineModeNow(),
+        } as unknown as Json);
       }
 
       const cmd = toolToCommand(name, args as Record<string, unknown>) ?? {};
       const result = await runCommand(cmd as Record<string, Json>);
       if (result.ok) {
-        return rpcResult(rpc.id, { content: [{ type: "text", text: JSON.stringify(result.data ?? {}) }] });
+        return rpcResult(rpc.id, {
+          content: [{ type: "text", text: JSON.stringify(result.data ?? {}) }],
+          engine: engineModeNow(),
+        } as unknown as Json);
       }
       return rpcResult(rpc.id, {
         content: [{ type: "text", text: `Error: ${String(result.error ?? "unknown")}` }],
         isError: true,
-      });
+        engine: engineModeNow(),
+      } as unknown as Json);
     }
     default:
       return rpcError(rpc.id, -32601, `method not found: ${rpc.method}`);

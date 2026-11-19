@@ -23,3 +23,20 @@ export interface RpcResponse {
   result?: Json;
   error?: { code: number; message: string; data?: Json };
 }
+
+// ---- wasm pkg module declarations ---------------------------------------------
+
+// worker/wasm/ is a BUILD artifact (wasm-pack --target web, produced by
+// `npm run build:wasm`), deliberately not committed. These wildcard
+// declarations keep `tsc --noEmit` green before the build has run; once
+// worker/wasm/dreamtx.d.ts exists, TypeScript prefers the real one.
+
+declare module "*dreamtx.js" {
+  export default function init(module_or_path?: unknown): Promise<unknown>;
+  export function command(req: string): string;
+}
+
+declare module "*.wasm" {
+  const wasmModule: WebAssembly.Module;
+  export default wasmModule;
+}

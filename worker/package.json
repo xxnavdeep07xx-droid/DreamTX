@@ -4,9 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build:wasm": "wasm-pack build ../core/crates/deck-core --target web --out-dir ../worker/wasm --release --features wasm",
     "typecheck": "tsc --noEmit",
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "test": "node --test test/",
+    "dev": "npm run build:wasm && wrangler dev",
+    "deploy": "npm run build:wasm && wrangler deploy"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241224.0",

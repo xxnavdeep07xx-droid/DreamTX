@@ -15,5 +15,9 @@ class_name = "DeckDO"
 tag = "v1"
 new_sqlite_classes = ["PairingRegistry", "DeckDO"]
 
-# The wasm engine (deck-core compiled with `--features wasm`) is wired in at
-# M1 via a bundled module import in src/engine.ts.
+# The Rust deck-core wasm module (built by `npm run build:wasm`, wasm-pack
+# --target web into worker/wasm/) is imported directly by src/engine.ts and
+# instantiated with a WebAssembly.Module — no network fetch at runtime.
+[[rules]]
+type = "CompiledWasm"
+globs = ["**/*.wasm"]

@@ -3,12 +3,18 @@
  * compiled to wasm, called from this Worker with the exact same JSON command
  * protocol the Flutter app speaks over FFI.
  *
- * M0 scaffold: the wasm module isn't bundled yet (build pipeline lands in
- * M1); structural commands fall back to a tiny pure-TS mirror so the MCP
- * surface is fully exercisable end-to-end before the wasm wiring arrives.
+ * The wasm module is bundled: `npm run build:wasm` (wasm-pack --target web)
+ * compiles deck-core into worker/wasm/, the generated JS glue is imported
+ * below, and [ensureEngine] wires it up exactly once per isolate. Until the
+ * glue is present the structural commands fall back to a tiny pure-TS
+ * mirror so the MCP surface is fully exercisable end-to-end even in a
+ * checkout without a Rust toolchain — but that fallback is observable
+ * ([engineModeNow], /health, a console.warn on init failure), never silent.
  * Layout/export/pacing require the Rust engine — they report a clean error
  * until then.
  */
+import init, { command as wasmCommand } from "../wasm/dreamtx.js";
+import wasmModule from "../wasm/dreamtx_bg.wasm";
 import type { Json } from "./env";
 
 export interface EngineResult {
@@ -17,25 +23,55 @@ export interface EngineResult {
   error?: string;
 }
 
-let wasmCommand: ((req: string) => string) | null = null;
+let wasmCommand_: ((req: string) => string) | null = null;
 
-/**
- * Wire the wasm engine once it is bundled (M1):
- *   import init, { command } from "../core/pkg/dreamtx_core.js";
- *   await init(...); setWasm(command);
- */
 export function setWasm(fn: (req: string) => string): void {
-  wasmCommand = fn;
+  wasmCommand_ = fn;
 }
 
 export function wasmAvailable(): boolean {
-  return wasmCommand !== null;
+  return wasmCommand_ !== null;
+}
+
+export type EngineMode = "wasm" | "ts-fallback";
+
+let engineInit: Promise<EngineMode> | null = null;
+
+/**
+ * Initialize the Rust wasm engine exactly once per isolate. Safe to await
+ * from every request (including concurrent ones — they share the single
+ * init) and from the Deck Durable Object. A failed init logs a warning and
+ * leaves the TS fallback active — visibly, via [engineModeNow] and /health.
+ */
+export function ensureEngine(): Promise<EngineMode> {
+  if (!engineInit) {
+    engineInit = (async () => {
+      try {
+        await init(wasmModule);
+        setWasm((req: string) => wasmCommand(req));
+        console.log("[dreamtx-engine] wasm engine ready (deck-core)");
+        return "wasm" as const;
+      } catch (e) {
+        console.warn(
+          "[dreamtx-engine] wasm init failed — TS fallback active:",
+          String(e),
+        );
+        return "ts-fallback" as const;
+      }
+    })();
+  }
+  return engineInit;
+}
+
+/** Which engine is answering commands in this isolate right now. */
+export function engineModeNow(): EngineMode {
+  return wasmAvailable() ? "wasm" : "ts-fallback";
 }
 
 export async function runCommand(cmd: Record<string, Json>): Promise<EngineResult> {
-  if (wasmCommand) {
+  if (wasmCommand_) {
     try {
-      const resp = JSON.parse(wasmCommand(JSON.stringify(cmd))) as EngineResult;
+      const resp = JSON.parse(wasmCommand_(JSON.stringify(cmd))) as EngineResult;
       return resp;
     } catch (e) {
       return { ok: false, error: `engine crashed: ${String(e)}` };

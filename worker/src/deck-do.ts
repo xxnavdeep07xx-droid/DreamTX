@@ -11,7 +11,7 @@
  * Pairing binds an MCP session to exactly one of these objects.
  */
 
-import { runCommand } from "./engine";
+import { ensureEngine, runCommand } from "./engine";
 import type { Json } from "./env";
 
 const LOG_CAP = 200;
@@ -44,6 +44,9 @@ export class DeckDO implements DurableObject {
 
   async fetch(request: Request): Promise<Response> {
     await this.load();
+    // DOs can live in a different isolate than the entry worker: each one
+    // wires the wasm engine for its own isolate, idempotently.
+    await ensureEngine();
     const url = new URL(request.url);
 
     if (url.pathname === "/ws") {
