@@ -1020,35 +1020,26 @@ class _EditorScreenState extends State<EditorScreen> {
                 child: _contextualRow(),
               ),
             // ---- filmstrip (stories-style, gradient ring on the live slide) --
-            // Its own chrome panel, not a black void: the strip sits on the
-            // elevated surface — a little lighter than the canvas's pure
-            // black — under a hairline divider, so the section reads as a
-            // designed band and the white miniatures pop.
-            //
-            // The + is back home — exactly where it has always lived and at
-            // its original size: 14dp in from the strip's left edge, dead
-            // center on the rail vertically, 44dp across, original soft
-            // shadow. What survives from the floating rework is the layer
-            // order only: the rail runs the FULL width behind the disc, and
-            // the disc is painted LAST — above the rail and above the fade —
-            // so miniatures glide under it and melt into the left fade as
-            // they scroll in. No hard left wall (the invisible partition)
-            // between the disc and the first slide, and nothing can ever
-            // cut into the disc itself.
-            Container(
-              decoration: const BoxDecoration(
-                color: kSurface,
-                border: Border(top: BorderSide(color: kHairline)),
-              ),
-              child: SizedBox(
-                height: 104,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
+            // Back to the 2.15 canvas: NO chrome panel, NO hairline divider,
+            // NO left fade — the strip floats on the app's pure black exactly
+            // as it always did, and the white miniatures pop on it. The only
+            // thing that survives from the floating rework is the LAYER
+            // ORDER: the rail runs the FULL width behind the + disc, and the
+            // disc (home spot, home 44dp size, home shadow) is painted LAST
+            // — over the slides, not on any background — so the miniatures
+            // it covers are SEEN behind it and the + reads as a floating
+            // button. At rest nothing overlaps: slide 0 sits at the same
+            // 74dp origin it has had since 2.15.
+            SizedBox(
+              height: 104,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
                     // The rail: full width, slides only. The leading inset
-                    // puts slide 0 at the exact resting spot it always had
-                    // (first card at 74dp, a 16dp gap from the disc's right
-                    // edge), its border and rounded corners fully visible.
+                    // puts slide 0 at the exact resting spot it has always
+                    // had since 2.15 (first card at 74dp, a 16dp gap from
+                    // the disc's right edge), its border and rounded
+                    // corners fully visible.
                     ListView.builder(
                       scrollDirection: Axis.horizontal,
                       padding: const EdgeInsets.fromLTRB(68, 6, 4, 6),
@@ -1098,35 +1089,15 @@ class _EditorScreenState extends State<EditorScreen> {
                         );
                       },
                     ),
-                    // Left fade, the PowerPoint-ribbon affordance: a
-                    // miniature melts into the surface as it passes under
-                    // the floating disc instead of being chopped at the
-                    // rail's hard edge — the invisible partition is gone.
-                    const Positioned(
-                      left: 0,
-                      top: 0,
-                      bottom: 0,
-                      width: 64,
-                      child: IgnorePointer(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.centerLeft,
-                              end: Alignment.centerRight,
-                              colors: [kSurface, Color(0x00141417)],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    // The floating +: the signature gradient disc, back at
-                    // its home spot and size — 14dp from the strip's left
-                    // edge, vertically centered (top 30 of the 104dp band),
-                    // 44dp across, original elevation shadow. It stays a
-                    // floating disc: painted LAST, above the rail and the
-                    // fade, so the miniatures glide under it as you scroll
-                    // and no container can ever clip it. Tap adds a blank
-                    // slide; long-press opens the layout list.
+                    // The floating +: the signature gradient disc, at its
+                    // home spot and size — 14dp from the strip's left edge,
+                    // vertically centered (top 30 of the 104dp band), 44dp
+                    // across, original soft shadow. Painted LAST, over the
+                    // rail: the slides it passes over are seen behind it,
+                    // which is what makes the + read as a floating button on
+                    // the black canvas rather than a chip on a panel. No
+                    // container clips it. Tap adds a blank slide; long-press
+                    // opens the layout list.
                     Positioned(
                       left: 14,
                       top: 30,
@@ -1158,7 +1129,6 @@ class _EditorScreenState extends State<EditorScreen> {
                   ],
                 ),
               ),
-            ),
             // ---- PowerPoint-style ribbon ----------------------------------------
             _EditorNavBar(active: _navTab, controller: _navScroll, onSelect: _onNavSelect),
           ],
