@@ -320,8 +320,9 @@ void main() {
     _mockStorage(dir: tmp.path);
     // Semantics on for this test: the handle's a11y contract (a button node
     // carrying the action label) is asserted through the real semantics tree.
+    // Disposed at the end of the body — the binding verifies handle disposal
+    // before it runs addTearDown callbacks.
     final semantics = tester.ensureSemantics();
-    addTearDown(semantics.dispose);
     // A phone-class surface (390×844 logical) — the divider's proportions
     // are right-edge-relative, so these geometry assertions are the real
     // spec numbers, not approximations.
@@ -434,6 +435,7 @@ void main() {
       await tester.pumpAndSettle();
     }
     expect(find.text('9. Blank'), findsOneWidget);
+    semantics.dispose();
   });
 
   testWidgets('filmstrip: reduced motion collapses instantly', (tester) async {
