@@ -361,8 +361,21 @@ void main() {
     expect(find.text('1. Slide 1'), findsOneWidget);
     expect(find.text('2. Slide 2'), findsOneWidget);
 
-    // The v faces DOWN while the strip is open — it signs "close".
+    // The v faces DOWN while the strip is open — it signs "close". The
+    // a11y contract: a button whose action label reads "Collapse slides"
+    // and whose value exposes the expanded state.
     expect(find.byIcon(Icons.keyboard_arrow_down), findsOneWidget);
+    expect(
+        find.byWidgetPredicate((w) =>
+            w is Tooltip && w.message == 'Collapse slides'),
+        findsOneWidget);
+    expect(
+        find.byWidgetPredicate((w) =>
+            w is Semantics &&
+            w.button == true &&
+            w.label == 'Collapse slides' &&
+            w.value == 'expanded'),
+        findsOneWidget);
 
     // Select slide 2 and scroll the rail — both must survive the round trip.
     await tester.tap(find.text('2. Slide 2'));
@@ -372,15 +385,25 @@ void main() {
     await tester.drag(find.text('2. Slide 2'), const Offset(-120, 0));
     await tester.pumpAndSettle();
     final tile1Scrolled = tester.getTopLeft(find.text('1. Slide 1')).dx;
-    expect(tile1Scrolled, lessThan(tile1AtRest - 100)); // the rail really scrolled
+    // (the drag gesture feeds ~20dp to touch slop — the rail still moved
+    // well past half the throw)
+    expect(tile1Scrolled, lessThan(tile1AtRest - 50));
 
     // Fold: the band collapses to nothing under the rule — the canvas gets
-    // the space, the v flips UP, and the hidden band leaves the a11y tree.
-    await tester.tap(find.byTooltip('Collapse slides'));
+    // the space, the v flips UP, the action label flips to "Expand slides",
+    // and the hidden band leaves the a11y tree.
+    await tester.tap(find.byKey(const ValueKey('filmstrip_handle')));
     await tester.pumpAndSettle();
     expect(tester.getSize(reveal).height, 0);
     expect(find.byIcon(Icons.keyboard_arrow_up), findsOneWidget);
     expect(find.byIcon(Icons.keyboard_arrow_down), findsNothing);
+    expect(
+        find.byWidgetPredicate((w) =>
+            w is Semantics &&
+            w.button == true &&
+            w.label == 'Expand slides' &&
+            w.value == 'collapsed'),
+        findsOneWidget);
     final exclude = find.descendant(
         of: reveal, matching: find.byType(ExcludeSemantics));
     expect(exclude, findsOneWidget);
@@ -388,7 +411,7 @@ void main() {
 
     // Unfold: back to the exact same geometry — same band, same disc spot,
     // same scroll offset, same selection.
-    await tester.tap(find.byTooltip('Expand slides'));
+    await tester.tap(find.byKey(const ValueKey('filmstrip_handle')));
     await tester.pumpAndSettle();
     expect(tester.getSize(reveal).height, 104);
     expect(discPos().left, 14);
@@ -402,12 +425,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.getSize(handle), const Size(48, 48));
     expect(tester.getTopRight(handle).dx, 844);
-    await tester.tap(find.byTooltip('Collapse slides'));
+    await tester.tap(find.byKey(const ValueKey('filmstrip_handle')));
     await tester.pumpAndSettle();
     expect(tester.getSize(reveal).height, 0);
 
     // The + still works end to end (fake engine adds a blank slide).
-    await tester.tap(find.byTooltip('Expand slides'));
+    await tester.tap(find.byKey(const ValueKey('filmstrip_handle')));
     await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.add));
     await tester.pumpAndSettle();
@@ -431,8 +454,10 @@ void main() {
     expect(tester.getSize(reveal).height, 104);
 
     // With animations disabled the 200ms height transition must not run:
-    // well before its natural end the band is already fully gone.
-    await tester.tap(find.byTooltip('Collapse slides'));
+    // well before its natural end the band is already fully gone. (The
+    // tap goes by key: the tooltip excludes itself from semantics, and on
+    // the pinned toolchain find.byTooltip matches the semantics tooltip.)
+    await tester.tap(find.byKey(const ValueKey('filmstrip_handle')));
     await tester.pump(const Duration(milliseconds: 50));
     expect(tester.getSize(reveal).height, 0);
   });
