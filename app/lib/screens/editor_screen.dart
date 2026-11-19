@@ -1955,7 +1955,8 @@ class _FilmstripDivider extends StatelessWidget {
                     behavior: HitTestBehavior.opaque,
                     onTap: onToggle,
                     child: Padding(
-                      padding: EdgeInsets.fromLTRB(chevronLeft, chevronTop, 0, 0),
+                      padding: const EdgeInsets.fromLTRB(
+                          chevronLeft, chevronTop, 0, 0),
                       child: Icon(
                         expanded
                             ? Icons.keyboard_arrow_down
