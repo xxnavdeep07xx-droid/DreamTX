@@ -1,3 +1,5 @@
+import 'dart:io' show exit;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../core/bridge.dart';
@@ -22,6 +24,16 @@ class _DecksScreenState extends State<DecksScreen> {
   /// retries in [_reload] — the body swaps the eternal spinner for an
   /// actionable error card with a Retry button. Never set while loading.
   String? _loadError;
+
+  /// True when the failure carries the classic in-place-update signature:
+  /// a Java ClassNotFoundException mentioning DexPathList. That means the
+  /// APK was installed over this still-alive process — the Flutter UI keeps
+  /// running (the engine and AOT Dart load from native code, not dex), but
+  /// the first Java class the storage bridge lazily loads is gone from the
+  /// stale dex path. No in-process code can repair a broken classloader, so
+  /// the error card swaps its Retry for a Restart-app button (exit(0)); the
+  /// next cold launch is healthy and the decks reappear untouched on disk.
+  bool _needsRestart = false;
 
   /// True while an input dialog (New deck / Rename) is on screen. The
   /// empty-state card recedes (fades) while a dialog is open — see
@@ -65,6 +77,7 @@ class _DecksScreenState extends State<DecksScreen> {
       setState(() {
         _loading = true;
         _loadError = null;
+        _needsRestart = false;
       });
     }
     const attempts = 3;
@@ -79,6 +92,7 @@ class _DecksScreenState extends State<DecksScreen> {
           _decks = decks;
           _loading = false;
           _loadError = null;
+          _needsRestart = false;
         });
         return;
       } catch (e) {
@@ -91,7 +105,9 @@ class _DecksScreenState extends State<DecksScreen> {
     if (!mounted) return;
     setState(() {
       _loading = false;
-      _loadError = 'Deck store did not respond — $lastError';
+      final msg = lastError.toString();
+      _needsRestart = msg.contains('ClassNotFound') || msg.contains('DexPath');
+      _loadError = 'Deck store did not respond — $msg';
     });
   }
 
@@ -246,7 +262,9 @@ class _DecksScreenState extends State<DecksScreen> {
                         ),
                         const SizedBox(height: 5),
                         Text(
-                          count == 0 ? 'DECKS · NONE YET' : 'DECKS · $count ON THIS DEVICE',
+                          _loadError != null
+                              ? 'DECKS · STORAGE OFFLINE'
+                              : (count == 0 ? 'DECKS · NONE YET' : 'DECKS · $count ON THIS DEVICE'),
                           style: const TextStyle(
                             fontSize: 10.5,
                             fontWeight: FontWeight.w600,
@@ -270,7 +288,7 @@ class _DecksScreenState extends State<DecksScreen> {
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
                   : _loadError != null
-                      ? _LoadErrorCard(message: _loadError!, onRetry: () => _reload())
+                      ? _LoadErrorCard(message: _loadError!, onRetry: () => _reload(), restart: _needsRestart)
                       : count == 0
                           ? _EmptyState(onCreate: _newDeck, dimmed: _dialogOpen)
                           : ListView.separated(
@@ -482,11 +500,26 @@ class _EmptyScreenState extends State<_EmptyState> {
 /// actionable card in the same visual language as the empty state, carrying
 /// the actual error text so a recurring cause is visible on screen, and a
 /// Retry button that runs the guarded load again.
+///
+/// The [restart] variant is the stale-classloader case (APK installed over a
+/// live process — see _needsRestart): a Retry would only fail again in this
+/// broken process, so the button becomes Restart app, which kills the
+/// process outright; the user reopens DreamTX and gets a healthy cold start.
 class _LoadErrorCard extends StatelessWidget {
-  const _LoadErrorCard({required this.message, required this.onRetry});
+  const _LoadErrorCard({required this.message, required this.onRetry, this.restart = false});
 
   final String message;
   final VoidCallback onRetry;
+
+  /// True when the failure is the in-place-update classloader casualty —
+  /// show the restart copy and the Restart-app button instead of Retry.
+  final bool restart;
+
+  /// Deliberate self-kill for the [restart] case: the dex classloader of
+  /// THIS process is stale and cannot be repaired in place, so a fresh
+  /// cold launch is the only cure. exit(0) is normally avoided in Flutter
+  /// apps; this is the exceptional case that justifies it.
+  void _exitApp() => exit(0);
 
   @override
   Widget build(BuildContext context) {
@@ -504,17 +537,23 @@ class _LoadErrorCard extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.warning_amber_outlined, size: 44, color: kAccent),
+              Icon(
+                restart ? Icons.restart_alt_outlined : Icons.warning_amber_outlined,
+                size: 44,
+                color: restart ? kPurple : kAccent,
+              ),
               const SizedBox(height: 14),
-              const Text(
-                'Could not read your decks',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: kText),
+              Text(
+                restart ? 'DreamTX needs a quick restart' : 'Could not read your decks',
+                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: kText),
               ),
               const SizedBox(height: 4),
-              const Text(
-                'Device storage did not answer. This can happen right after an app update — a retry usually fixes it.',
+              Text(
+                restart
+                    ? 'The app was updated while it was still running, so its storage bridge went stale. Your decks are safe on disk — nothing is lost. Tap Restart, then reopen DreamTX.'
+                    : 'Device storage did not answer. This can happen right after an app update — a retry usually fixes it.',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 13.5, color: kText2),
+                style: const TextStyle(fontSize: 13.5, color: kText2),
               ),
               const SizedBox(height: 10),
               Text(
@@ -526,9 +565,9 @@ class _LoadErrorCard extends StatelessWidget {
               ),
               const SizedBox(height: 20),
               _GradientButton(
-                icon: Icons.refresh,
-                label: 'Retry',
-                onPressed: onRetry,
+                icon: restart ? Icons.restart_alt : Icons.refresh,
+                label: restart ? 'Restart app' : 'Retry',
+                onPressed: restart ? _exitApp : onRetry,
                 height: 46,
               ),
             ],
