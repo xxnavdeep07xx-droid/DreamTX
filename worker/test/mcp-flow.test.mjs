@@ -175,5 +175,6 @@ test("wrong pairing token is rejected", async () => {
     params: {},
   });
   assert.equal(status, 401);
-  assert.equal(body.ok, false);
+  // The 401 body carries the reason, not an ok flag.
+  assert.ok(body.error, `expected an error body, got: ${JSON.stringify(body)}`);
 });

@@ -237,6 +237,29 @@ pub fn object_polygon(o: &Shape) -> Vec<(f64, f64)> {
     shapes::preset_polygon(&o.preset, o.w, o.h).into_iter().map(|(px, py)| (o.x + px, o.y + py)).collect()
 }
 
+/// Deck DNA seed. wasm32-unknown-unknown has no wall clock — `SystemTime::now`
+/// panics there, which took down the Worker's `new_deck` — so on wasm a
+/// per-process sequence mixed with the title length keeps seeds unique within
+/// one Worker isolate; native (Flutter FFI, tests) keeps the nanosecond clock
+/// and the exact same seed as before.
+fn fresh_seed(title: &str) -> u64 {
+    #[cfg(target_family = "wasm")]
+    {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static SEQ: AtomicU64 = AtomicU64::new(1);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed) as u64;
+        n.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ (title.len() as u64)
+    }
+    #[cfg(not(target_family = "wasm"))]
+    {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(42)
+            ^ (title.len() as u64)
+    }
+}
+
 /// Execute one JSON command, returning a JSON response object.
 pub fn execute(req: &str) -> Value {
     let cmd: Command = match serde_json::from_str(req) {
@@ -257,11 +280,7 @@ pub fn execute(req: &str) -> Value {
         }),
         Command::NewDeck { title, family } => {
             let fam = parse_family(&family).unwrap_or(DnaFamily::SwissEditorial);
-            let seed = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos() as u64)
-                .unwrap_or(42)
-                ^ title.len() as u64;
+            let seed = fresh_seed(&title);
             let mut deck = Deck {
                 id: format!("d{:x}", seed & 0xFFFF_FFFF),
                 title: title.clone(),
