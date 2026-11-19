@@ -318,6 +318,10 @@ void main() {
   testWidgets('filmstrip: the integrated edge handle folds the band without moving anything', (tester) async {
     Bridge.testOverride = _fakeEngine;
     _mockStorage(dir: tmp.path);
+    // Semantics on for this test: the handle's a11y contract (a button node
+    // carrying the action label) is asserted through the real semantics tree.
+    final semantics = tester.ensureSemantics();
+    addTearDown(semantics.dispose);
     // A phone-class surface (390×844 logical) — the divider's proportions
     // are right-edge-relative, so these geometry assertions are the real
     // spec numbers, not approximations.
@@ -361,21 +365,15 @@ void main() {
     expect(find.text('1. Slide 1'), findsOneWidget);
     expect(find.text('2. Slide 2'), findsOneWidget);
 
-    // The v faces DOWN while the strip is open — it signs "close". The
-    // a11y contract: a button whose action label reads "Collapse slides"
-    // and whose value exposes the expanded state.
+    // The v faces DOWN while the strip is open — it signs "close". The a11y
+    // contract: the tooltip carries the action label, and the real semantics
+    // tree exposes it as the button's label for assistive tech.
     expect(find.byIcon(Icons.keyboard_arrow_down), findsOneWidget);
     expect(
         find.byWidgetPredicate((w) =>
             w is Tooltip && w.message == 'Collapse slides'),
         findsOneWidget);
-    expect(
-        find.byWidgetPredicate((w) =>
-            w is Semantics &&
-            w.button == true &&
-            w.label == 'Collapse slides' &&
-            w.value == 'expanded'),
-        findsOneWidget);
+    expect(find.bySemanticsLabel('Collapse slides'), findsOneWidget);
 
     // Select slide 2 and scroll the rail — both must survive the round trip.
     await tester.tap(find.text('2. Slide 2'));
@@ -397,13 +395,7 @@ void main() {
     expect(tester.getSize(reveal).height, 0);
     expect(find.byIcon(Icons.keyboard_arrow_up), findsOneWidget);
     expect(find.byIcon(Icons.keyboard_arrow_down), findsNothing);
-    expect(
-        find.byWidgetPredicate((w) =>
-            w is Semantics &&
-            w.button == true &&
-            w.label == 'Expand slides' &&
-            w.value == 'collapsed'),
-        findsOneWidget);
+    expect(find.bySemanticsLabel('Expand slides'), findsOneWidget);
     final exclude = find.descendant(
         of: reveal, matching: find.byType(ExcludeSemantics));
     expect(exclude, findsOneWidget);
