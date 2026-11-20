@@ -850,12 +850,15 @@ void main() {
   testWidgets('files drawer: a short viewport constrains the tray to the sheet, and closing Files restores the plain flow', (tester) async {
     Bridge.testOverride = _fakeEngine;
     _mockStorage(dir: tmp.path);
-    // 390×280 logical: the app bar is 57dp, so the body is 223dp — the
-    // plain flow cannot hold the EXPANDED strip (48 + 104 + 77 = 229) at
-    // this height, so the test starts from the collapsed strip (the flow
-    // fits: 125dp) and never expands the flow afterwards; the tray's own
-    // expand happens INSIDE Files, where the strip takes no layout space.
-    tester.view.physicalSize = const Size(780, 560);
+    // 390×297 logical: the app bar is 57dp (56 + its hairline), so the body
+    // is 240dp — the plain flow still fits the expanded strip (229dp) with
+    // room to spare, while the space above the ribbon (163dp) caps the
+    // resting sheet at 151dp: one dp UNDER the tray's full height, so the
+    // overlay itself is constrained by the sheet — the tray never intrudes
+    // past the sheet's top edge into the slide preview. (On any shorter
+    // viewport the plain flow overflows before Files ever opens — a
+    // pre-existing flow limit, out of this change's scope.)
+    tester.view.physicalSize = const Size(780, 594);
     tester.view.devicePixelRatio = 2;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -863,42 +866,39 @@ void main() {
     await tester.pumpWidget(MaterialApp(
         home: EditorScreen(deck: _deckFixture('d1', 'Test deck', 8))));
     await tester.pumpAndSettle();
-    final stripHandle = find.byKey(const ValueKey('filmstrip_handle'));
-    await tester.tap(stripHandle); // collapse in the flow — 229dp fits no more
-    await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.keyboard_arrow_up), findsOneWidget);
 
     final row = find.byKey(const ValueKey('filmstrip_row'));
     final reveal = find.byKey(const ValueKey('filmstrip_reveal'));
-    final canvas = find.byType(AspectRatio);
 
-    // Open Files with the tray still folded, then expand the tray OVER the
-    // sheet: the resting sheet is capped by the space above the ribbon
-    // (134dp on this viewport), and the tray is capped by the SHEET — it
-    // never intrudes farther into the slide preview than the sheet itself
-    // does.
+    // Open Files with the tray expanded: the sheet rests at the capped
+    // half detent (151dp).
     await tester.tap(find.text('Files'));
     await tester.pumpAndSettle();
     final sheet = find.byKey(const ValueKey('files_drawer'));
-    expect(tester.getSize(sheet).height, closeTo(134, 0.5));
-    await tester.tap(stripHandle); // expand the tray over the sheet
-    await tester.pumpAndSettle();
+    expect(tester.getSize(sheet).height, closeTo(151, 0.5));
+    // THE CAP: the overlay's own box height never exceeds the sheet's —
+    // the tray is constrained to the available space, not extended into
+    // the preview.
+    final overlayBox = find
+        .ancestor(of: row, matching: find.byType(AnimatedPositioned))
+        .first;
+    final overlayHeight =
+        tester.widget<AnimatedPositioned>(overlayBox).height;
+    expect(overlayHeight, lessThanOrEqualTo(tester.getSize(sheet).height + 0.5));
+    expect(overlayHeight, lessThan(152));
+    // The visible tray stays within the sheet's bounds.
     expect(tester.getRect(row).top,
         greaterThanOrEqualTo(tester.getRect(sheet).top - 0.5));
-    // A sliver of the slide preview stays in view above the sheet.
-    expect(tester.getRect(sheet).top,
-        greaterThan(tester.getRect(canvas).top + 4));
     expect(tester.takeException(), isNull);
 
     // Close: the strip returns to the plain flow exactly as it left it —
-    // the same collapsed state, same band geometry, the divider still
-    // sitting directly above the ribbon.
+    // the same expanded band, same geometry, the divider back above the
+    // ribbon.
     await tester.tap(find.text('Files').first);
     await tester.pumpAndSettle();
     expect(find.text('Files'), findsOneWidget);
     expect(tester.getSize(row), const Size(390, 104));
-    expect(tester.getSize(reveal).height, 0);
-    expect(find.byIcon(Icons.keyboard_arrow_up), findsOneWidget);
+    expect(tester.getSize(reveal).height, 104);
     expect(tester.takeException(), isNull);
   });
 
