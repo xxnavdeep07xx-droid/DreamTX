@@ -496,7 +496,7 @@ void main() {
     expect(find.textContaining('pairing…'), findsNothing);
   });
 
-  testWidgets('files drawer: opens over the filmstrip with all six tools, and closing restores the strip exactly', (tester) async {
+  testWidgets('files drawer: floats over an intact filmstrip with all six tools — the strip stays laid out AND live while the sheet is open', (tester) async {
     Bridge.testOverride = _fakeEngine;
     _mockStorage(dir: tmp.path);
     tester.view.physicalSize = const Size(780, 1688);
@@ -509,16 +509,25 @@ void main() {
     await tester.pumpAndSettle();
 
     // Before: the ribbon's Files tab, a laid-out filmstrip, and a scrolled
-    // rail — the state the drawer owes back on close.
+    // rail — the state the sheet must never disturb.
     expect(find.text('Files'), findsOneWidget);
     final row = find.byKey(const ValueKey('filmstrip_row'));
     expect(tester.getSize(row), const Size(390, 104));
     await tester.drag(find.byKey(const ValueKey('filmstrip_row')),
         const Offset(-120, 0));
     await tester.pumpAndSettle();
-    final scrolled = tester.getTopLeft(find.text('1. Slide 1')).dx;
+    // The scroll marker is the CARD, not its text: selecting another slide
+    // mid-open legitimately swaps the card's selection-ring padding (2.5 →
+    // 1), which nudges the text INSIDE the card — the card's own position
+    // is the honest measure of the rail's scroll offset.
+    final slide1Card = find
+        .ancestor(
+            of: find.text('1. Slide 1'),
+            matching: find.byType(AnimatedContainer))
+        .first;
+    final scrolled = tester.getTopLeft(slide1Card).dx;
 
-    // Open: tapping Files in the ribbon docks the drawer above the ribbon.
+    // Open: tapping Files in the ribbon mounts the sheet as its own layer.
     await tester.tap(find.text('Files'));
     await tester.pumpAndSettle();
     // The drawer's heading joins the ribbon's tab — two 'Files' texts now.
@@ -535,30 +544,42 @@ void main() {
     expect(aspectC.dy, greaterThan(newC.dy));
     expect(aspectC.dx, lessThan(deckRes.dx));
     expect(deckRes.dx, lessThan(brandRes.dx));
-    // Supporting labels + the quiet footer.
+    // Supporting labels; the storage footer is gone by request.
     expect(find.text('Blank · Template'), findsOneWidget);
     expect(find.text('Recents · Browse'), findsOneWidget);
     expect(find.text('This deck only'), findsOneWidget);
     expect(find.text('All decks'), findsOneWidget);
-    expect(find.text('Resources stored on this device'), findsOneWidget);
-    // The slide and the ribbon both stay on screen.
+    expect(find.text('Resources stored on this device'), findsNothing);
+    // The slide's top sliver and the ribbon both stay on screen.
     expect(find.text('Slide 1 / 8'), findsOneWidget);
     expect(find.text('AI'), findsOneWidget);
-    // The filmstrip band is hidden (not laid out) while the drawer owns the
-    // space — its element stays alive, which the close below proves by
-    // restoring the scroll offset exactly.
+    // THE LAYER CONTRACT: the filmstrip never stopped being laid out —
+    // same geometry, same scroll, nothing unmounted, nothing hidden.
+    expect(tester.getSize(row), const Size(390, 104));
+    expect(tester.getTopLeft(slide1Card).dx, closeTo(scrolled, 0.5));
+    // And it stays LIVE: tapping a miniature while the sheet is open
+    // selects that slide — no closing required.
+    await tester.tap(find.text('2. Slide 2'));
+    await tester.pumpAndSettle();
+    expect(find.text('Slide 2 / 8'), findsOneWidget);
+    // The sheet never enters the chrome's region: its bottom edge sits on
+    // the filmstrip divider's top (the divider's 48dp region in between).
+    final sheet = find.byKey(const ValueKey('files_drawer'));
+    expect(tester.getRect(sheet).bottom,
+        lessThanOrEqualTo(tester.getRect(row).top - 48 + 0.5));
     expect(
         tester.takeException(), isNull, reason: 'no layout errors while open');
 
-    // Close: the ribbon's Files again (the last of the two in traversal).
-    await tester.tap(find.text('Files').last);
+    // Close: the ribbon's Files again — the FIRST of the two in tree order
+    // (the base Column renders before the sheet's overlay layer, so the
+    // tab is first and the drawer's own heading second).
+    await tester.tap(find.text('Files').first);
     await tester.pumpAndSettle();
     expect(find.text('Files'), findsOneWidget);
-    // Exact restoration: geometry, scroll offset, selection, and the + disc.
+    // The strip was never disturbed — geometry, scroll, selection, disc.
     expect(tester.getSize(row), const Size(390, 104));
-    expect(tester.getTopLeft(find.text('1. Slide 1')).dx,
-        closeTo(scrolled, 0.5));
-    expect(find.text('Slide 1 / 8'), findsOneWidget);
+    expect(tester.getTopLeft(slide1Card).dx, closeTo(scrolled, 0.5));
+    expect(find.text('Slide 2 / 8'), findsOneWidget);
     final disc = tester.widget<Positioned>(find
         .ancestor(of: find.byIcon(Icons.add), matching: find.byType(Positioned))
         .first);
@@ -609,6 +630,51 @@ void main() {
     expect(find.text('4:3'), findsOneWidget);
   });
 
+  testWidgets('files drawer: the header drags the sheet between its detents, and a deep downward drag dismisses it', (tester) async {
+    Bridge.testOverride = _fakeEngine;
+    _mockStorage(dir: tmp.path);
+    tester.view.physicalSize = const Size(780, 1688);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(MaterialApp(
+        home: EditorScreen(deck: _deckFixture('d1', 'Test deck', 8))));
+    await tester.pumpAndSettle();
+
+    final row = find.byKey(const ValueKey('filmstrip_row'));
+    await tester.tap(find.text('Files'));
+    await tester.pumpAndSettle();
+
+    // The resting detent: the lower half of the layer cake's space (this
+    // viewport leaves 559dp above the chrome; 45% floors at 296 so the
+    // whole grid fits).
+    final sheet = find.byKey(const ValueKey('files_drawer'));
+    final handle = find.byKey(const ValueKey('files_drawer_handle'));
+    expect(tester.getSize(sheet).height, closeTo(296, 0.1));
+
+    // A slow drag up (no fling): the edge tracks the finger, then settles
+    // to the NEAREST detent — tall, ~78% of the space above the chrome.
+    await tester.timedDrag(handle, const Offset(0, -180),
+        const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+    final tall = tester.getSize(sheet).height;
+    expect(tall, greaterThan(400));
+    expect(tall, lessThan(460));
+
+    // A slow deep drag down: past the dismiss zone (below ~70% of half),
+    // so the sheet closes outright — unmounted cleanly at its slot, and
+    // the Files tab releases with it. The filmstrip never knew any of it
+    // happened.
+    await tester.timedDrag(handle, const Offset(0, 340),
+        const Duration(milliseconds: 700));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('files_drawer')), findsNothing);
+    expect(find.text('Files'), findsOneWidget); // only the ribbon tab remains
+    expect(tester.getSize(row), const Size(390, 104));
+    expect(tester.takeException(), isNull);
+  });
+
   test('resources: the two scopes stay separate, and everything persists on disk', () async {
     _mockStorage(dir: tmp.path);
     final store = await ResourceStore.open();
@@ -646,6 +712,55 @@ void main() {
     final reopened = await ResourceStore.open();
     expect(await reopened.list(brand: false, deckId: 'd1'), hasLength(1));
     expect(await reopened.list(brand: true), isEmpty);
+
+    _clearStorageMock();
+  });
+
+  test('resources: a whole folder imports in one gesture — every file tagged with its folder, scopes still separate', () async {
+    _mockStorage(dir: tmp.path);
+    // A brand folder with a nested subfolder, one dot-file (skipped), and
+    // one library index (never imported back into itself).
+    final brand = Directory('${tmp.path}/BrandA');
+    final sub = Directory('${brand.path}/sub');
+    sub.createSync(recursive: true);
+    File('${brand.path}/logo.png').writeAsStringSync('logo');
+    File('${brand.path}/palette.json').writeAsStringSync('{}');
+    File('${sub.path}/font.ttf').writeAsStringSync('font');
+    File('${brand.path}/.DS_Store').writeAsStringSync('skip me');
+    File('${brand.path}/library.json').writeAsStringSync('[]');
+
+    final store = await ResourceStore.open();
+    final added = await store.addFilesFromDirectory(brand: true, dir: brand);
+    expect(added, hasLength(3));
+    expect(added.map((e) => e['name'].toString()).toSet(),
+        {'logo.png', 'palette.json', 'font.ttf'});
+    // Every entry carries the folder it arrived through.
+    expect(added.every((e) => e['folder'] == 'BrandA'), isTrue);
+    // Real files on real disk under the brand scope: 3 assets + the index.
+    expect(
+        Directory('${tmp.path}/resources/brand')
+            .listSync()
+            .whereType<File>()
+            .length,
+        4);
+
+    // Folder imports respect the scope walls exactly like single files.
+    final deck = Directory('${tmp.path}/DeckOnly')..createSync();
+    File('${deck.path}/note.txt').writeAsStringSync('n');
+    await store.addFilesFromDirectory(brand: false, deckId: 'd9', dir: deck);
+    expect(await store.list(brand: true), hasLength(3));
+    final deckItems = await store.list(brand: false, deckId: 'd9');
+    expect(deckItems, hasLength(1));
+    expect(deckItems.first['folder'], 'DeckOnly');
+    expect(await store.list(brand: false, deckId: 'd1'), isEmpty);
+
+    // A tight import loop mints unique ids: a second identical folder import
+    // doubles the entries instead of overwriting the first pass's files.
+    final again = await store.addFilesFromDirectory(brand: true, dir: brand);
+    expect(again, hasLength(3));
+    expect(await store.list(brand: true), hasLength(6));
+    final ids = (await store.list(brand: true)).map((e) => e['id']).toSet();
+    expect(ids, hasLength(6));
 
     _clearStorageMock();
   });
