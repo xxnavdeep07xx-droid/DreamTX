@@ -21,6 +21,7 @@ const Color kAccent = Color(0xFFFF3B30); // red accent (LIVE red in reference)
 const Color kPurple = Color(0xFFA855F7); // gradient start
 const Color kMagenta = Color(0xFFE1306C); // gradient middle
 const Color kOrange = Color(0xFFFF6B4A); // gradient end
+const Color kPurpleWash = Color(0x24A855F7); // icon-chip wash on tiles — kPurple at ~14% over the dark surfaces, so a tile's glyph sits in its own quiet field of the signature color
 
 /// The signature gradient: story rings, create buttons, selected thumbnail.
 const LinearGradient kInkGradient = LinearGradient(

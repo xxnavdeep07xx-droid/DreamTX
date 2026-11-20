@@ -69,6 +69,26 @@ class _EditorScreenState extends State<EditorScreen> {
   /// round trip (the band is revealed/clipped, never unmounted).
   bool _filmOpen = true;
 
+  /// Must stay in lockstep with the filmstrip band's own height below
+  /// (the `SizedBox(key: ValueKey('filmstrip_row'))` inside the reveal).
+  static const double _filmstripBandHeight = 104.0;
+
+  /// Must stay in lockstep with `_EditorNavBar`'s Material-3 band (the
+  /// 76dp trimmed NavigationBar anatomy).
+  static const double _navBarHeight = 76.0;
+
+  /// The Files drawer's live extent, in logical px — the sheet floats as
+  /// its own layer pinned above the filmstrip chrome. null = the resting
+  /// half detent (recomputed each build from the layer cake's actual
+  /// space); 0.0 = the one-frame mount before the grow-in; anything else
+  /// = a drag in flight or a snapped detent. The settle logic (fling one
+  /// detent, nearest-detent release, dismiss zone at the bottom) reads
+  /// the cached [_drawerHalf]/[_drawerTall], refreshed on every build.
+  double? _drawerExtent;
+  double _drawerHalf = 296;
+  double _drawerTall = 356;
+  bool _drawerDragging = false;
+
   /// Editor chrome mode (More menu): editing = the full toolkit, viewing =
   /// a chrome-free read-only pass over the deck.
   _Mode _mode = _Mode.editing;
@@ -235,6 +255,7 @@ class _EditorScreenState extends State<EditorScreen> {
   /// collapse. Tabs that work on the canvas overlay (Insert, Draw) double
   /// as design mode, so leaving them clears scribble/selection.
   void _setNavTab(_NavTab? tab) {
+    final wasFiles = _navTab == _NavTab.files;
     setState(() {
       _navTab = tab;
       _designMode = tab == _NavTab.insert || tab == _NavTab.draw;
@@ -242,7 +263,24 @@ class _EditorScreenState extends State<EditorScreen> {
         _scribbleMode = false;
         _selectedObjectId = null;
       }
+      // The drawer layer's lifecycle: leaving Files unmounts the sheet and
+      // resets its extent; arriving at Files mounts it at zero height for
+      // exactly one frame, then the post-frame callback below grows it to
+      // the resting detent — the sheet rises out of the boundary over the
+      // same 200ms family instead of popping in.
+      if (tab != _NavTab.files) {
+        _drawerExtent = null;
+        _drawerDragging = false;
+      } else if (!wasFiles) {
+        _drawerExtent = 0.0;
+      }
     });
+    if (tab == _NavTab.files && !wasFiles) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _navTab != _NavTab.files || _drawerDragging) return;
+        setState(() => _drawerExtent = null);
+      });
+    }
     if (tab != null) {
       // Keep the freshly-lit tab centered in the scrollable bar.
       WidgetsBinding.instance.addPostFrameCallback((_) => _centerNavTab(tab));
@@ -1396,7 +1434,47 @@ class _EditorScreenState extends State<EditorScreen> {
             const SizedBox(width: 4),
           ],
         ),
-        body: Column(
+        // ---- THE LAYER CAKE --------------------------------------------------
+        // The body is not one stacked flow but layers that cannot disturb
+        // each other: the base layer is the whole flow (canvas, contextual
+        // row, filmstrip chrome, ribbon), and the Files drawer floats as
+        // its OWN layer above the canvas — pinned to the filmstrip's top
+        // boundary, so it never touches the strip, the ribbon, or the top
+        // bar. Opening it reflows nothing (the canvas is simply covered,
+        // its aspect untouched); the filmstrip stays fully laid out,
+        // fully painted, fully tappable while the sheet is open — jumping
+        // to another slide never means closing anything first.
+        body: LayoutBuilder(
+          builder: (context, constraints) {
+            // The chrome the drawer never enters: the ribbon's band, the
+            // divider's hit region, and the revealed strip band (zero once
+            // collapsed — collapsing the strip re-anchors the sheet lower
+            // over the same 200ms family).
+            final chromeBelow = _navBarHeight +
+                _FilmstripDivider.regionHeight +
+                (_filmOpen ? _filmstripBandHeight : 0.0);
+            // The space the sheet may occupy: everything above the chrome
+            // inside this body. From it, the two detents the header's drag
+            // settles between — the resting HALF (floor 296 so the whole
+            // 3×2 grid always fits, ceiling 430) and the TALL sheet
+            // (~78%, leaving the slide's top sliver in view). The drag
+            // handlers run between builds, so both are cached per build.
+            final available =
+                math.max(64.0, constraints.maxHeight - chromeBelow);
+            final half = math.min(
+                math.min(430.0, math.max(296.0, available * 0.45)),
+                available - 12.0);
+            final tall =
+                math.min(math.max(available * 0.78, half + 60.0), available - 12.0);
+            _drawerHalf = half;
+            _drawerTall = tall;
+            return Stack(
+              children: [
+                // The base layer: the editor's whole flow. (The children
+                // below keep their historical indentation on purpose —
+                // nothing about them changed, only the wrapper grew a
+                // layer above them.)
+                Column(
           children: [
             // ---- canvas ----------------------------------------------------------
             Expanded(
@@ -1581,19 +1659,12 @@ class _EditorScreenState extends State<EditorScreen> {
               // across every fold/unfold, and one 200ms eased height
               // transition — instant under reduced-motion — is the single
               // coordinated move.
-              // While the Files drawer owns the lower half, the filmstrip
-              // region stays MOUNTED but takes no space and paints nothing:
-              // maintainState keeps the rail's scroll offset and the selected
-              // slide alive through every drawer open/close, so dismissing the
-              // drawer restores exactly what was there — visibility and
-              // scroll position included, with nothing lingering in between.
-              Visibility(
-                visible: _navTab != _NavTab.files,
-                maintainState: true,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-
+              // The Files drawer no longer hides the strip: the drawer is its
+              // own layer, pinned above the strip's boundary (see the
+              // layer-cake body below), so the filmstrip simply stays — laid
+              // out, painted, tappable. Every open/close of the drawer leaves
+              // it exactly as it was, scroll offset and selection included,
+              // because nothing ever unmounts, hides, or reflows it.
                   _FilmstripDivider(
                     expanded: _filmOpen,
                     onToggle: _toggleFilmstrip,
@@ -1625,7 +1696,7 @@ class _EditorScreenState extends State<EditorScreen> {
                         ),
                         child: SizedBox(
                           key: const ValueKey('filmstrip_row'),
-                          height: 104,
+                          height: _filmstripBandHeight,
                           child: Stack(
                             clipBehavior: Clip.none,
                             children: [
@@ -1763,34 +1834,6 @@ class _EditorScreenState extends State<EditorScreen> {
                       ),
                     ),
                   ),
-                  ],
-                ),
-              ),
-              // The Files drawer itself: docked directly above the ribbon —
-              // full width, roughly the lower half of the usable editor (the
-              // slide above keeps its true aspect through its own
-              // AspectRatio). It replaces the tab's old contextual tool row:
-              // the ribbon stays visible with Files lit, and the drawer's
-              // grab handle (drag down) or a second tap on Files dismisses
-              // it, restoring the filmstrip underneath untouched.
-              if (_navTab == _NavTab.files)
-                SizedBox(
-                  // Roughly the lower half of the usable editor, clamped so
-                  // short screens scroll the drawer's content (never clip)
-                  // and tall screens don't surrender the whole canvas: the
-                  // Expanded slide above absorbs the difference either way.
-                  height:
-                      (MediaQuery.of(context).size.height * 0.42).clamp(280.0, 430.0),
-                  child: FilesDrawer(
-                    aspect: _deckAspect,
-                    deckId: (_deck['id'] ?? '').toString(),
-                    onNew: _filesNewDeck,
-                    onOpen: _filesOpenDeck,
-                    onRename: _renameDeck,
-                    onAspect: _filesAspect,
-                    onDismiss: () => _setNavTab(null),
-                  ),
-                ),
 
               // ---- PowerPoint-style ribbon ----------------------------------------
               _EditorNavBar(
@@ -1803,6 +1846,53 @@ class _EditorScreenState extends State<EditorScreen> {
                   showTopRule: _filmOpen),
             ],
           ],
+                ),
+                // The drawer layer: the Files sheet floats ABOVE the canvas
+                // and BELOW the chrome — pinned to the filmstrip's top
+                // boundary (bottom offset = ribbon + divider + the revealed
+                // band), so it can never enter the strip's region. While the
+                // header's drag is live the duration is zero (the edge tracks
+                // the finger exactly); every grow, settle, and collapse runs
+                // the same 200ms eased family as the filmstrip's own reveal —
+                // instant under reduced motion. A drag that settles at zero
+                // height folds the sheet away and unmounts it on the
+                // animation's end; a re-grab mid-collapse leaves the extent
+                // above zero, so only a truly closed sheet ever unmounts.
+                if (_mode == _Mode.editing && _navTab == _NavTab.files)
+                  AnimatedPositioned(
+                    duration: _drawerDragging
+                        ? Duration.zero
+                        : (MediaQuery.of(context).disableAnimations
+                            ? Duration.zero
+                            : const Duration(milliseconds: 200)),
+                    curve: Curves.easeInOutCubic,
+                    left: 0,
+                    right: 0,
+                    bottom: chromeBelow,
+                    height: _drawerExtent ?? half,
+                    onEnd: () {
+                      // The collapse finished (or was interrupted): only a
+                      // fully closed sheet unmounts.
+                      if (_drawerExtent == 0.0 &&
+                          _navTab == _NavTab.files) {
+                        _setNavTab(null);
+                      }
+                    },
+                    child: FilesDrawer(
+                      aspect: _deckAspect,
+                      deckId: (_deck['id'] ?? '').toString(),
+                      onNew: _filesNewDeck,
+                      onOpen: _filesOpenDeck,
+                      onRename: _renameDeck,
+                      onAspect: _filesAspect,
+                      onDismiss: () => _setNavTab(null),
+                      onDragUpdate: _drawerDragUpdate,
+                      onDragSettle: _drawerDragSettle,
+                    ),
+                  ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -1816,6 +1906,74 @@ class _EditorScreenState extends State<EditorScreen> {
   /// nothing here touches them.
   void _toggleFilmstrip() {
     setState(() => _filmOpen = !_filmOpen);
+  }
+
+  // ---- the Files drawer's layer ---------------------------------------------
+
+  /// A live drag on the drawer's header: the sheet's top edge follows the
+  /// finger — down shrinks, up grows — clamped to the detent band. While the
+  /// drag is live the sheet tracks the finger exactly (the layer's duration
+  /// is zero mid-drag), so the settle below is where the detents do their
+  /// work.
+  void _drawerDragUpdate(double dy) {
+    final base = _drawerExtent ?? _drawerHalf;
+    setState(() {
+      _drawerDragging = true;
+      _drawerExtent = (base - dy).clamp(24.0, _drawerTall).toDouble();
+    });
+  }
+
+  /// The drag's settle: a fling moves one detent in its direction; a plain
+  /// release snaps to the NEAREST detent — with a dismiss zone below ~70%
+  /// of the half detent where the sheet folds away instead of snapping back
+  /// up.
+  void _drawerDragSettle(double velocityDy) {
+    final extent = _drawerExtent ?? _drawerHalf;
+    if (velocityDy > 700) {
+      // Fling down: tall → half, half-or-lower → dismissed.
+      if (extent > _drawerTall - 24) {
+        _snapDrawer(_drawerHalf);
+      } else {
+        _dismissDrawer();
+      }
+      return;
+    }
+    if (velocityDy < -700) {
+      // Fling up: below half → half, half-or-above → tall.
+      _snapDrawer(extent < _drawerHalf - 24 ? _drawerHalf : _drawerTall);
+      return;
+    }
+    if (extent < _drawerHalf * 0.7) {
+      _dismissDrawer();
+      return;
+    }
+    _snapDrawer((extent - _drawerHalf).abs() <= (extent - _drawerTall).abs()
+        ? _drawerHalf
+        : _drawerTall);
+  }
+
+  /// Snap to a detent: the settle animates over the 200ms family (the drag
+  /// itself was tracking the finger directly, no rubber-banding — the
+  /// detents stay honest).
+  void _snapDrawer(double target) {
+    setState(() {
+      _drawerDragging = false;
+      _drawerExtent = target;
+    });
+  }
+
+  /// Fold the sheet away: it collapses to zero over the settle animation
+  /// and unmounts on the animation's end. Without animations it unmounts
+  /// immediately; the tab-close path (Files re-tap) unmounts instantly
+  /// either way — a tab's chrome appears and disappears at its slot, only
+  /// the sheet's own DRAG folds it down.
+  void _dismissDrawer() {
+    if (!mounted) return;
+    if (MediaQuery.of(context).disableAnimations) {
+      _setNavTab(null);
+      return;
+    }
+    _snapDrawer(0.0);
   }
 
   void _onNavSelect(_NavTab tab) {

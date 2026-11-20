@@ -34,6 +34,14 @@ jobs:
           flutter create --org com.dreamtx --project-name dreamtx .
           flutter pub get
 
+      # ---- Android host: MainActivity carries the SAF channel ----------
+      # Folder import: Android's picker returns content:// tree URIs that
+      # dart:io cannot walk, so the host registers a dreamtx/saf channel
+      # (list + copyToCache). The android/ folder is regenerated above, so
+      # the host is rewritten from source on every run — never drift.
+      - name: Write the Android host (SAF channel for folder import)
+        run: python3 .github/scripts/write_android_host.py
+
       # ---- Dependency resolution is a contract, not a suggestion ----------
       - name: Verify resolved pins + enforce committed lock
         working-directory: app
