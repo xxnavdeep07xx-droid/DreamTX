@@ -516,7 +516,16 @@ void main() {
     await tester.drag(find.byKey(const ValueKey('filmstrip_row')),
         const Offset(-120, 0));
     await tester.pumpAndSettle();
-    final scrolled = tester.getTopLeft(find.text('1. Slide 1')).dx;
+    // The scroll marker is the CARD, not its text: selecting another slide
+    // mid-open legitimately swaps the card's selection-ring padding (2.5 →
+    // 1), which nudges the text INSIDE the card — the card's own position
+    // is the honest measure of the rail's scroll offset.
+    final slide1Card = find
+        .ancestor(
+            of: find.text('1. Slide 1'),
+            matching: find.byType(AnimatedContainer))
+        .first;
+    final scrolled = tester.getTopLeft(slide1Card).dx;
 
     // Open: tapping Files in the ribbon mounts the sheet as its own layer.
     await tester.tap(find.text('Files'));
@@ -547,8 +556,7 @@ void main() {
     // THE LAYER CONTRACT: the filmstrip never stopped being laid out —
     // same geometry, same scroll, nothing unmounted, nothing hidden.
     expect(tester.getSize(row), const Size(390, 104));
-    expect(tester.getTopLeft(find.text('1. Slide 1')).dx,
-        closeTo(scrolled, 0.5));
+    expect(tester.getTopLeft(slide1Card).dx, closeTo(scrolled, 0.5));
     // And it stays LIVE: tapping a miniature while the sheet is open
     // selects that slide — no closing required.
     await tester.tap(find.text('2. Slide 2'));
@@ -570,8 +578,7 @@ void main() {
     expect(find.text('Files'), findsOneWidget);
     // The strip was never disturbed — geometry, scroll, selection, disc.
     expect(tester.getSize(row), const Size(390, 104));
-    expect(tester.getTopLeft(find.text('1. Slide 1')).dx,
-        closeTo(scrolled, 0.5));
+    expect(tester.getTopLeft(slide1Card).dx, closeTo(scrolled, 0.5));
     expect(find.text('Slide 2 / 8'), findsOneWidget);
     final disc = tester.widget<Positioned>(find
         .ancestor(of: find.byIcon(Icons.add), matching: find.byType(Positioned))
