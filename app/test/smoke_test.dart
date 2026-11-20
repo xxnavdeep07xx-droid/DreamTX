@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
 
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -13,6 +15,7 @@ import 'package:dreamtx/core/store.dart';
 import 'package:dreamtx/screens/decks_screen.dart';
 import 'package:dreamtx/screens/editor_screen.dart';
 import 'package:dreamtx/screens/pair_sheet.dart';
+import 'package:dreamtx/theme.dart';
 
 /// Host smoke tests — the affordable self-test: no device, no emulator, the
 /// real app code under the real framework. The seams are [Bridge.testOverride]
@@ -990,5 +993,467 @@ void main() {
     expect(ids, hasLength(6));
 
     _clearStorageMock();
+  });
+
+  // ---- the sheet's entrance/exit slide + the preview lock ----------------------
+
+  testWidgets('files drawer: the sheet slides up from behind the navbar — the preview, the ribbon, and the tray never move', (tester) async {
+    Bridge.testOverride = _fakeEngine;
+    _mockStorage(dir: tmp.path);
+    tester.view.physicalSize = const Size(780, 1688);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(MaterialApp(
+        home: EditorScreen(deck: _deckFixture('d1', 'Test deck', 8))));
+    await tester.pumpAndSettle();
+
+    final sheet = find.byKey(const ValueKey('files_drawer'));
+    final row = find.byKey(const ValueKey('filmstrip_row'));
+    final canvas = find.byType(AspectRatio);
+    final ribbon = find.text('AI');
+
+    // THE PREVIEW LOCK, part one: the bounds before the sheet ever exists.
+    final preview0 = tester.getRect(canvas);
+    final ribbon0 = tester.getRect(ribbon);
+    final tray0 = tester.getRect(row); // the tray's flow spot
+
+    // THE FIRST FRAME: the sheet mounts at its FULL intended height (the
+    // resting half detent — never a mid-screen sliver), translated fully
+    // below the navbar's top edge. The tray is already mounted, expanded,
+    // and in place in the overlay — its box is the same one it had in the
+    // flow (the ribbon's band is a constant 77dp, hairline or not, so the
+    // reparent moves nothing).
+    await tester.tap(find.text('Files'));
+    await tester.pump();
+    final boundary = tester.getRect(row).bottom; // the navbar's top edge
+    final halfH = tester.getSize(sheet).height;
+    expect(halfH, closeTo(319.5, 0.1));
+    expect(tester.getRect(sheet).top, greaterThanOrEqualTo(boundary - 0.5),
+        reason: 'the mount frame is fully below the navbar\'s top edge');
+    expect(tester.getRect(sheet).bottom, greaterThanOrEqualTo(boundary - 0.5));
+    expect(tester.getRect(canvas), preview0,
+        reason: 'the preview never moved on the mount frame');
+    expect(tester.getRect(ribbon), ribbon0);
+    expect(tester.getRect(row).top, closeTo(tray0.top, 0.5));
+    expect(tester.getRect(row).bottom, closeTo(tray0.bottom, 0.5));
+
+    // THE SLIDE, frame by frame (60 FPS steps): the sheet emerges
+    // CONTINUOUSLY from behind the navbar — the top edge starts at the
+    // boundary and rises monotonically (no teleport: the eased cubic's
+    // steepest 16ms step is ~77dp), the bottom edge never lifts above the
+    // boundary, and the preview, the ribbon, and the tray never move a
+    // single pixel.
+    await tester.pump(const Duration(milliseconds: 16)); // the retarget frame
+    var lastTop = tester.getRect(sheet).top;
+    for (var i = 0; i < 13; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      final r = tester.getRect(sheet);
+      expect(r.top, lessThanOrEqualTo(lastTop + 0.25),
+          reason: 'frame $i: the sheet rises monotonically');
+      expect(r.top, greaterThan(lastTop - 90),
+          reason: 'frame $i: no teleport');
+      if (i == 0) {
+        expect(r.top, greaterThan(boundary - 50),
+            reason: 'the slide starts AT the navbar\'s edge, not mid-screen');
+      }
+      expect(r.bottom, greaterThanOrEqualTo(boundary - 0.5),
+          reason: 'frame $i: the sheet emerges from behind the navbar, '
+              'never above its edge');
+      expect(tester.getRect(canvas), preview0,
+          reason: 'frame $i: the preview stays locked through the slide');
+      expect(tester.getRect(ribbon), ribbon0);
+      expect(tester.getRect(row).top, closeTo(tray0.top, 0.5));
+      expect(tester.getRect(row).bottom, closeTo(tray0.bottom, 0.5));
+      lastTop = r.top;
+    }
+    // The first risen frame is barely off the boundary — the slide starts
+    // AT the navbar's edge, not mid-screen.
+    await tester.pumpAndSettle();
+    final settled = tester.getRect(sheet);
+    expect(settled.top, closeTo(boundary - halfH, 0.5));
+    expect(settled.bottom, closeTo(boundary, 0.5));
+    expect(tester.getRect(canvas), preview0);
+
+    // THE PREVIEW LOCK, part two: toggling the tray over the OPEN sheet
+    // moves nothing (the flow's spacer is frozen).
+    final stripHandle = find.byKey(const ValueKey('filmstrip_handle'));
+    await tester.tap(stripHandle);
+    await tester.pumpAndSettle();
+    expect(tester.getRect(canvas), preview0);
+    expect(tester.getRect(ribbon), ribbon0);
+    await tester.tap(stripHandle);
+    await tester.pumpAndSettle();
+    expect(tester.getRect(canvas), preview0);
+    expect(tester.getRect(ribbon), ribbon0);
+
+    // THE EXIT — the entrance's exact reverse: the sheet sinks back behind
+    // the navbar monotonically (its bottom edge never lifting above the
+    // boundary), and the layer unmounts when the slide completes. The
+    // preview and the ribbon still never move.
+    await tester.tap(find.text('Files').first);
+    await tester.pump();
+    lastTop = tester.getRect(sheet).top;
+    for (var i = 0; i < 11; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      final r = tester.getRect(sheet);
+      expect(r.top, greaterThanOrEqualTo(lastTop - 0.25),
+          reason: 'frame $i: the sheet sinks monotonically');
+      expect(r.bottom, greaterThanOrEqualTo(boundary - 0.5),
+          reason: 'frame $i: the sheet leaves behind the navbar');
+      expect(tester.getRect(canvas), preview0,
+          reason: 'frame $i: the preview stays locked through the exit');
+      expect(tester.getRect(ribbon), ribbon0);
+      lastTop = r.top;
+    }
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('files_drawer')), findsNothing);
+    // The strip is back in the plain flow — same expanded band, same spot
+    // — and the preview still has its original bounds after everything.
+    expect(tester.getRect(row).top, closeTo(tray0.top, 0.5));
+    expect(tester.getRect(row).bottom, closeTo(tray0.bottom, 0.5));
+    expect(tester.getRect(canvas), preview0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('files drawer: with the tray collapsed, the sheet still rises from behind the navbar behind the stationary divider', (tester) async {
+    Bridge.testOverride = _fakeEngine;
+    _mockStorage(dir: tmp.path);
+    tester.view.physicalSize = const Size(780, 1688);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(MaterialApp(
+        home: EditorScreen(deck: _deckFixture('d1', 'Test deck', 8))));
+    await tester.pumpAndSettle();
+
+    final sheet = find.byKey(const ValueKey('files_drawer'));
+    final divider = find.byKey(const ValueKey('filmstrip_divider'));
+    final canvas = find.byType(AspectRatio);
+    final ribbon = find.text('AI');
+
+    // Fold the tray in the plain flow first — the collapsed state the
+    // entrance must leave exactly as it found it.
+    await tester.tap(find.byKey(const ValueKey('filmstrip_handle')));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.keyboard_arrow_up), findsOneWidget);
+    final preview0 = tester.getRect(canvas);
+    final ribbon0 = tester.getRect(ribbon);
+    final divider0 = tester.getRect(divider);
+
+    // The entrance, with the tray collapsed: the sheet mounts fully below
+    // the navbar's top edge (the divider's own bottom edge rides the
+    // boundary), the collapsed divider is stationary from the first frame,
+    // and the preview never moved (the spacer froze the COLLAPSED
+    // footprint — the canvas never grew).
+    await tester.tap(find.text('Files'));
+    await tester.pump();
+    final boundary = tester.getRect(divider).bottom;
+    expect(tester.getRect(sheet).top, greaterThanOrEqualTo(boundary - 0.5));
+    expect(tester.getRect(canvas), preview0);
+    expect(tester.getRect(ribbon), ribbon0);
+    expect(tester.getRect(divider).top, closeTo(divider0.top, 0.5));
+    expect(tester.getRect(divider).bottom, closeTo(divider0.bottom, 0.5));
+
+    // The rise: monotone, from behind the boundary, with everything else
+    // fixed.
+    await tester.pump(const Duration(milliseconds: 16));
+    var lastTop = tester.getRect(sheet).top;
+    for (var i = 0; i < 13; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      final r = tester.getRect(sheet);
+      expect(r.top, lessThanOrEqualTo(lastTop + 0.25),
+          reason: 'frame $i: monotone rise');
+      expect(r.top, greaterThan(lastTop - 90),
+          reason: 'frame $i: no teleport');
+      expect(r.bottom, greaterThanOrEqualTo(boundary - 0.5));
+      expect(tester.getRect(canvas), preview0);
+      expect(tester.getRect(ribbon), ribbon0);
+      expect(tester.getRect(divider).top, closeTo(divider0.top, 0.5));
+      lastTop = r.top;
+    }
+    await tester.pumpAndSettle();
+    expect(tester.getRect(sheet).bottom, closeTo(boundary, 0.5));
+    expect(tester.getRect(canvas), preview0);
+    expect(find.byIcon(Icons.keyboard_arrow_up), findsOneWidget);
+
+    // Close: reverse the same motion, the divider stays put, and the strip
+    // returns to its flow spot still collapsed.
+    await tester.tap(find.text('Files').first);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('files_drawer')), findsNothing);
+    expect(find.byIcon(Icons.keyboard_arrow_up), findsOneWidget);
+    expect(tester.getRect(divider).top, closeTo(divider0.top, 0.5));
+    expect(tester.getRect(canvas), preview0);
+    expect(tester.getRect(ribbon), ribbon0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('files drawer: interrupted and reversed slides continue from the current visible position', (tester) async {
+    Bridge.testOverride = _fakeEngine;
+    _mockStorage(dir: tmp.path);
+    tester.view.physicalSize = const Size(780, 1688);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(MaterialApp(
+        home: EditorScreen(deck: _deckFixture('d1', 'Test deck', 8))));
+    await tester.pumpAndSettle();
+
+    final sheet = find.byKey(const ValueKey('files_drawer'));
+    final row = find.byKey(const ValueKey('filmstrip_row'));
+    await tester.tap(find.text('Files'));
+    await tester.pumpAndSettle();
+    final boundary = tester.getRect(row).bottom;
+    final halfH = tester.getSize(sheet).height;
+
+    // REVERSED EXIT: start closing, interrupt the slide mid-flight, reopen
+    // — the sheet continues UP from wherever it stands. The reversal
+    // registers one frame later (the exit keeps running through the input
+    // latency), so at most ONE 16ms exit-step passes between the interrupt
+    // and the retarget — but never a reset to the hidden mount, never a
+    // jump to the resting spot, and from there it rises monotonically home.
+    await tester.tap(find.text('Files').first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100)); // mid-slide-down
+    final mid = tester.getRect(sheet);
+    expect(mid.top, greaterThan(boundary - halfH + 0.5),
+        reason: 'the sheet has left its resting spot (its top sank)');
+    expect(mid.top, lessThan(boundary),
+        reason: 'and it is still visibly on screen, mid-flight');
+    // The ribbon's tab is the FIRST 'Files' in tree order (the base layer
+    // renders before the sheet's overlay, whose heading is the second).
+    await tester.tap(find.text('Files').first);
+    await tester.pump(const Duration(milliseconds: 16));
+    final resumed = tester.getRect(sheet);
+    expect(resumed.top, greaterThan(mid.top),
+        reason: 'one exit frame of input latency — the reversal is one '
+            'frame behind the tap');
+    expect(resumed.top, lessThan(mid.top + 90),
+        reason: 'at most one 16ms exit step — no teleport, no reset to the '
+            'hidden mount');
+    expect(resumed.top, lessThan(boundary), reason: 'never reset to hidden');
+    var lastRise = resumed.top;
+    for (var i = 0; i < 12; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      final t = tester.getRect(sheet).top;
+      expect(t, lessThanOrEqualTo(lastRise + 0.25),
+          reason: 'frame $i: rises monotonically home after the reversal');
+      lastRise = t;
+    }
+    await tester.pumpAndSettle();
+    expect(tester.getRect(sheet).top, closeTo(boundary - halfH, 0.5));
+
+    // THE NEVER-ROSE EDGE: a second tab tap landing before the entrance's
+    // post-frame flip (two taps inside one frame gap) hits the defensive
+    // branch — no pixel of the sheet was ever rendered, so there is
+    // nothing to animate out: the layer unmounts at once, no half-slide
+    // flash, and the Home tab lands live in its place.
+    await tester.tap(find.text('Home'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('files_drawer')), findsNothing);
+    await tester.tap(find.text('Files'));
+    await tester.tap(find.text('Home')); // before the entrance ever renders
+    await tester.pump();
+    expect(find.byKey(const ValueKey('files_drawer')), findsNothing,
+        reason: 'the never-rose sheet unmounts immediately — nothing shown, '
+            'nothing to animate');
+    await tester.pumpAndSettle();
+    expect(find.text('Home'), findsOneWidget);
+
+    // INTERRUPTED ENTRANCE: start a fresh entrance, switch tabs mid-rise —
+    // the sheet reverses from the position it had reached (plus at most
+    // one 16ms entrance step of input latency), never resetting to the
+    // hidden mount, and sinks monotonically away.
+    await tester.tap(find.text('Home'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('files_drawer')), findsNothing);
+    await tester.tap(find.text('Files'));
+    await tester.pump(); // the mount frame — fully below the navbar
+    await tester.pump(const Duration(milliseconds: 16)); // the retarget frame
+    await tester.pump(const Duration(milliseconds: 100)); // mid-rise
+    final rising = tester.getRect(sheet);
+    expect(rising.top, lessThan(boundary),
+        reason: 'the sheet is partially visible mid-rise');
+    expect(rising.top, greaterThan(boundary - halfH),
+        reason: 'but not yet in place');
+    await tester.tap(find.text('Home'));
+    await tester.pump(const Duration(milliseconds: 16));
+    final reversing = tester.getRect(sheet);
+    expect(reversing.top, lessThanOrEqualTo(rising.top + 0.25),
+        reason: 'at most one 16ms entrance step of latency past the '
+            'interrupt (no jump, no reset to hidden)');
+    expect(reversing.top, greaterThan(rising.top - 90),
+        reason: 'and never a teleport');
+    expect(reversing.top, greaterThan(boundary - halfH),
+        reason: 'still away from the resting spot — the reversal continues '
+            'from the current position');
+    var lastSink = reversing.top;
+    for (var i = 0; i < 12; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      final t = tester.getRect(sheet).top;
+      expect(t, greaterThanOrEqualTo(lastSink - 0.25),
+          reason: 'frame $i: sinks monotonically away after the reversal');
+      lastSink = t;
+    }
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('files_drawer')), findsNothing);
+    expect(find.text('Home'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('files drawer: toggling the tray over the open sheet, then closing, hands the space back without a jump', (tester) async {
+    Bridge.testOverride = _fakeEngine;
+    _mockStorage(dir: tmp.path);
+    tester.view.physicalSize = const Size(780, 1688);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(MaterialApp(
+        home: EditorScreen(deck: _deckFixture('d1', 'Test deck', 8))));
+    await tester.pumpAndSettle();
+
+    final canvas = find.byType(AspectRatio);
+    final ribbon = find.text('AI');
+    final stripHandle = find.byKey(const ValueKey('filmstrip_handle'));
+
+    // The two references the close must land on: the plain flow's
+    // collapsed preview bounds, and the expanded ones.
+    final expandedPreview = tester.getRect(canvas);
+    final ribbon0 = tester.getRect(ribbon);
+    await tester.tap(stripHandle);
+    await tester.pumpAndSettle();
+    final collapsedPreview = tester.getRect(canvas);
+    await tester.tap(stripHandle);
+    await tester.pumpAndSettle();
+
+    // Open Files with the tray expanded; toggle the tray over the sheet —
+    // the preview keeps its EXPANDED-flow bounds (the spacer is frozen);
+    // then close with the tray collapsed: the spacer hands the space back
+    // to the collapsed strip CONTINUOUSLY, and the preview settles at the
+    // collapsed-flow reference — no jump at any frame.
+    await tester.tap(find.text('Files'));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(canvas), expandedPreview);
+    await tester.tap(stripHandle);
+    await tester.pumpAndSettle();
+    expect(tester.getRect(canvas), expandedPreview,
+        reason: 'the frozen spacer: toggling the tray over the open sheet '
+            'never moves the preview');
+    expect(tester.getRect(ribbon), ribbon0);
+
+    await tester.tap(find.text('Files').first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
+    var lastTop = tester.getRect(canvas).top;
+    for (var i = 0; i < 11; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      final r = tester.getRect(canvas);
+      expect(r.top, greaterThanOrEqualTo(lastTop - 0.25),
+          reason: 'frame $i: the canvas reclaims continuously, no jump');
+      expect(lastTop - r.top, lessThan(30),
+          reason: 'frame $i: and smoothly');
+      // The ribbon rides the flow's bottom edge — fixed through the
+      // reclaim (the comparison carries a half-pixel tolerance for the
+      // floating-point artifacts of the spacer's mid-flight fractional
+      // heights).
+      expect(tester.getRect(ribbon).top, closeTo(ribbon0.top, 0.5));
+      expect(tester.getRect(ribbon).bottom, closeTo(ribbon0.bottom, 0.5));
+      lastTop = r.top;
+    }
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('files_drawer')), findsNothing);
+    expect(tester.getRect(canvas), collapsedPreview,
+        reason: 'the close lands on the plain collapsed-flow bounds');
+    expect(find.byIcon(Icons.keyboard_arrow_up), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('filmstrip divider: the raised tab is fully opaque — nothing behind it shows through', (tester) async {
+    Bridge.testOverride = _fakeEngine;
+    _mockStorage(dir: tmp.path);
+    tester.view.physicalSize = const Size(780, 1688);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    // The bright-icon-behind-the-tab probe, rendered: a full-screen raster
+    // at 1:1 logical resolution, sampled inside the tab zone (right of the
+    // ramp, clear of the chevron glyph and both stroked lines).
+    await tester.pumpWidget(RepaintBoundary(
+        key: const ValueKey('capture_root'),
+        child: MaterialApp(
+            home: EditorScreen(deck: _deckFixture('d1', 'Test deck', 8)))));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Files'));
+    await tester.pumpAndSettle();
+
+    final divider = find.byKey(const ValueKey('filmstrip_divider'));
+    final dRect = tester.getRect(divider);
+    final root =
+        tester.renderObject<RenderRepaintBoundary>(find.byKey(const ValueKey('capture_root')));
+    // The rasterization is a REAL engine call — runAsync is required inside
+    // the test binding's fake clock, or the future never completes.
+    late ui.Image image;
+    late ByteData bytes;
+    await tester.runAsync(() async {
+      image = await root.toImage(pixelRatio: 1);
+      bytes = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
+    });
+    Color px(double x, double y) {
+      final i = (y.round() * image.width + x.round()) * 4;
+      return Color.fromARGB(255, bytes.getUint8(i), bytes.getUint8(i + 1),
+          bytes.getUint8(i + 2));
+    }
+    // Component comparisons in the Color 0..1 domain (the legacy .red/.green
+    // accessors are deprecated in this SDK); a 0.02 window is ~5/255 —
+    // generous for an exact-token match, tight against the sheet's own
+    // palette (kSurface/kElevated sit 6+ counts away per channel).
+    void expectFilmstrip(Color got, String where) {
+      expect((got.r - kFilmstrip.r).abs(), lessThan(0.02), reason: where);
+      expect((got.g - kFilmstrip.g).abs(), lessThan(0.02), reason: where);
+      expect((got.b - kFilmstrip.b).abs(), lessThan(0.02), reason: where);
+    }
+
+    // The tab zone: x between the ramp's end (the ledge starts at 320) and
+    // the handle's 48-wide box (starting at 342) — the only tab real estate
+    // that no other layer ever paints in. The chevron's glyph itself is
+    // excluded: its Icon box is deflated by the handle's tight constraints
+    // (padding (3,22) in a forced 48×48), so the glyph centers near the
+    // handle's own middle — the exclusion is the whole icon box
+    // [345..390]×[22..48], covering the glyph wherever the font puts it.
+    // Every sample must be the tray's charcoal, so the sheet's tiles
+    // (bright icons included) can never show through the sloped ramp or the
+    // pocket behind the chevron.
+    for (final x in const [324, 332, 340]) {
+      for (final y in const [21, 27, 33, 39]) {
+        expectFilmstrip(
+            px(dRect.left + x, dRect.top + y), 'tab sample ($x, $y)');
+      }
+    }
+    // The ramp's interior (below the slope line, above the baseline) and
+    // the baseline's bridge (full width under the rule) — same charcoal,
+    // meeting the band's own fill flush at the region's floor.
+    expectFilmstrip(px(dRect.left + 310, dRect.top + 34), 'ramp interior');
+    expectFilmstrip(px(dRect.left + 200, dRect.top + 47), 'baseline bridge');
+    expectFilmstrip(px(dRect.left + 316, dRect.top + 47), 'bridge under the ramp');
+
+    // CONTROL — left of the ramp, ABOVE the baseline: not filled (the
+    // divider's transparent window is by design; only the raised tab
+    // projects above the line). Whatever surface sits behind the tray
+    // shows through there, and none of the sheet's palette is the tray's
+    // charcoal.
+    final control = px(dRect.left + 100, dRect.top + 30);
+    expect((control.r - kFilmstrip.r).abs() +
+            (control.g - kFilmstrip.g).abs() +
+            (control.b - kFilmstrip.b).abs(),
+        greaterThan(0.03),
+        reason: 'the zone left of the ramp stays transparent by design');
+    expect(tester.takeException(), isNull);
   });
 }

@@ -90,17 +90,45 @@ class _EditorScreenState extends State<EditorScreen> {
   /// The Files drawer's live extent, in logical px — the sheet floats as
   /// its own layer pinned directly to the ribbon's top edge. null = the
   /// resting half detent (recomputed each build from the layer cake's
-  /// actual space); [_drawerSliver] = the one-frame mount the grow-in rises
-  /// from; anything else = a drag in flight or a snapped detent. The settle
-  /// logic (fling one detent, nearest-detent release, dismiss zone at the
-  /// bottom) reads the cached [_drawerHalf]/[_drawerTall], refreshed on
-  /// every build. The sheet's extent is completely independent of the
-  /// filmstrip's state — the strip never takes layout space while the
-  /// sheet is open, so its toggles can never move the sheet's top edge.
+  /// actual space); anything else = a drag in flight or a snapped detent.
+  /// The settle logic (fling one detent, nearest-detent release, dismiss
+  /// zone at the bottom) reads the cached [_drawerHalf]/[_drawerTall],
+  /// refreshed on every build. The sheet's extent is completely
+  /// independent of the filmstrip's state — the strip never takes layout
+  /// space while the sheet is open, so its toggles can never move the
+  /// sheet's top edge.
   double? _drawerExtent;
   double _drawerHalf = 296;
   double _drawerTall = 356;
   bool _drawerDragging = false;
+
+  /// The sheet's entrance slide. Arriving at Files, the sheet is laid out
+  /// at its FULL intended height (the resting detent — never a mid-screen
+  /// sliver) but translated fully below the navbar's top edge, so its
+  /// first mounted frame paints nothing; the post-frame callback in
+  /// [_setNavTab] then translates it up into view over the same 200ms
+  /// family, clipped at the navbar boundary — the sheet emerges
+  /// continuously from behind the navbar, the navbar fixed in front.
+  bool _sheetEntering = false;
+
+  /// True while the sheet is translating back down behind the navbar on
+  /// its way out: the layer stays mounted (the flow's spacer and the tray
+  /// stay with it) until the slide completes — the AnimatedPositioned's
+  /// onEnd — so the exit is the entrance's exact reverse rather than a
+  /// vanish. Re-entering Files mid-slide simply retargets the same
+  /// animation, so interrupted or reversed slides continue from the
+  /// current visible position, never resetting.
+  bool _sheetClosing = false;
+
+  /// The filmstrip's flow footprint, frozen at the moment Files opens:
+  /// while the strip lives in the foreground overlay, the flow keeps
+  /// exactly this much space as an empty spacer, so the slide preview's
+  /// constraints cannot change with the sheet's visibility, its animation
+  /// progress, or the tray's toggles — opening or closing Files, or
+  /// toggling the tray over the open sheet, can never move, resize, or
+  /// recenter the preview. On close the spacer hands its height back to
+  /// the strip over the same 200ms family.
+  double? _frozenStripFootprint;
 
   /// The sheet's floor: a sliver of grab handle plus a breath of panel —
   /// never smaller, so the pinned header always fits and the drag surface
@@ -276,6 +304,10 @@ class _EditorScreenState extends State<EditorScreen> {
   /// as design mode, so leaving them clears scribble/selection.
   void _setNavTab(_NavTab? tab) {
     final wasFiles = _navTab == _NavTab.files;
+    // The strip's live height where it stands right now — read BEFORE the
+    // setState rebuild, so a fold caught mid-flight freezes at its real
+    // on-screen height, not its target.
+    final arrivingFootprint = _liveStripFlowHeight();
     setState(() {
       _navTab = tab;
       _designMode = tab == _NavTab.insert || tab == _NavTab.draw;
@@ -283,26 +315,54 @@ class _EditorScreenState extends State<EditorScreen> {
         _scribbleMode = false;
         _selectedObjectId = null;
       }
-      // The drawer layer's lifecycle: leaving Files unmounts the sheet and
-      // resets its extent; arriving at Files mounts it at the header-sliver
-      // detent (56dp — the grab handle plus a first breath of panel) for
-      // exactly one frame, then the post-frame callback below grows it to
-      // the resting detent — the sheet rises out of the boundary over the
-      // same 200ms family instead of popping in. It never passes BELOW the
-      // sliver: dismissal is an instant unmount (a tab's chrome appears
-      // and disappears at its slot), so no frame is ever too short for the
-      // pinned header.
+      // The drawer layer's lifecycle. ARRIVING at Files: the sheet mounts
+      // at its full intended height (the resting detent) translated fully
+      // below the navbar's top edge — the first frame paints nothing — and
+      // the post-frame callback below slides it up into view; the flow
+      // freezes the strip's footprint so the slide preview cannot move.
+      // Re-arriving mid-exit (the sheet still sliding down): the retarget
+      // simply reverses the slide from its current visible position.
+      // LEAVING Files: the sheet reverses the entrance — it translates back
+      // down behind the navbar, and the layer unmounts when the slide
+      // completes (onEnd below). Only if it never rose past its mount
+      // frame is there nothing on screen to animate out — then the layer
+      // unmounts at once.
       if (tab != _NavTab.files) {
-        _drawerExtent = null;
         _drawerDragging = false;
+        if (wasFiles) {
+          if (_sheetEntering) {
+            // Never rose: no pixels were ever shown — nothing to animate.
+            _sheetEntering = false;
+            _sheetClosing = false;
+            _drawerExtent = null;
+          } else {
+            _sheetClosing = true;
+            _drawerExtent ??= _drawerHalf; // hold the height it stands at
+          }
+        }
+        // (Leaving a non-files tab for another non-files tab while the
+        // exit slide already runs changes nothing — the slide continues
+        // to the same unmount.)
       } else if (!wasFiles) {
-        _drawerExtent = _drawerSliver;
+        final resumingExit = _sheetClosing;
+        _sheetClosing = false;
+        _sheetEntering = !resumingExit;
+        _drawerExtent = null;
+        _frozenStripFootprint = arrivingFootprint;
       }
     });
     if (tab == _NavTab.files && !wasFiles) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || _navTab != _NavTab.files || _drawerDragging) return;
-        setState(() => _drawerExtent = null);
+        if (!mounted ||
+            _navTab != _NavTab.files ||
+            _drawerDragging ||
+            !_sheetEntering) {
+          return;
+        }
+        // Flip the entrance: the sheet's bottom retargets from
+        // (anchor - height) to the anchor, and AnimatedPositioned slides
+        // it up over the 200ms family.
+        setState(() => _sheetEntering = false);
       });
     }
     if (tab != null) {
@@ -1460,24 +1520,42 @@ class _EditorScreenState extends State<EditorScreen> {
         ),
         // ---- THE LAYER CAKE --------------------------------------------------
         // The body is not one stacked flow but layers that cannot disturb
-        // each other. The base layer is the editor's whole flow — canvas,
-        // contextual row, filmstrip chrome, ribbon — and while the Files
-        // sheet is CLOSED the strip is simply one more row in that flow.
-        // While the sheet is OPEN the cake inverts: the sheet floats as its
-        // own layer pinned DIRECTLY to the ribbon's top edge (a constant
-        // anchor — see [sheetAnchor]), and the filmstrip becomes a
-        // bottom-aligned FOREGROUND layer riding the sheet's lower part,
-        // painted above it. The strip takes no layout space while the sheet
-        // is open, so the sheet's height is the user's choice alone: opening
-        // the sheet or toggling the strip can never push, shrink, or move
-        // the sheet, the canvas, or the ribbon. The tray may cover the
-        // sheet's lower part, but it is clip-constrained to the sheet's own
-        // live extent, so it can never reach past the sheet's top edge into
-        // the slide preview.
+        // each other, in one stable stacking order: main slide → Files
+        // sheet → filmstrip tray → bottom navbar. The base layer is the
+        // editor's whole flow — canvas, contextual row, filmstrip chrome,
+        // ribbon — and while the Files sheet is CLOSED the strip is simply
+        // one more row in that flow. While the sheet is OPEN the cake
+        // inverts: the sheet floats as its own layer pinned DIRECTLY to the
+        // ribbon's top edge (a constant anchor — see [sheetAnchor]) and
+        // SLIDES as a rigid body — in at full intended height from fully
+        // below the navbar's top edge, out the same way — and the filmstrip
+        // becomes a bottom-aligned FOREGROUND layer riding the sheet's
+        // lower part, painted above it, stationary through the sheet's
+        // whole lifecycle. The strip takes no layout space while the sheet
+        // is open (the flow keeps a frozen spacer of its exact footprint),
+        // so the sheet's height is the user's choice alone AND the slide
+        // preview's constraints are frozen: opening or closing the sheet,
+        // its animation progress, or toggling the strip can never push,
+        // shrink, move, or recenter the sheet, the preview, or the ribbon.
+        // The tray may cover the sheet's lower part, but it is
+        // clip-constrained to the sheet's own live extent, so it can never
+        // reach past the sheet's top edge into the slide preview; and the
+        // whole moving sheet is clip-constrained to the navbar boundary, so
+        // it can never paint over the navbar — the ribbon stays fixed in
+        // front while the sheet rises behind it.
         body: LayoutBuilder(
           builder: (context, constraints) {
             final filesOpen =
                 _mode == _Mode.editing && _navTab == _NavTab.files;
+            // The sheet's layer is alive while Files is active OR its exit
+            // slide is still running — the unmount lands when that slide
+            // completes (the AnimatedPositioned's onEnd below).
+            final sheetLive = filesOpen || _sheetClosing;
+            // The strip's flow footprint at its CURRENT state — what the
+            // spacer hands back to on close, and the fallback for a missing
+            // freeze.
+            final stripFlowHeight = _FilmstripDivider.regionHeight +
+                (_filmOpen ? _filmstripBandHeight : 0.0);
             // The sheet's anchor: the ribbon's top edge, full stop. While
             // the sheet is open the ribbon's own top hairline always shows
             // (both the open tray and the collapsed divider sit directly on
@@ -1681,14 +1759,35 @@ class _EditorScreenState extends State<EditorScreen> {
               // once by [_filmstripUnit] — lives in the flow ONLY while the
               // Files sheet is closed: canvas above, ribbon below, and the
               // canvas reclaims the 104dp when the band folds. While the
-              // sheet is open the SAME subtree is the bottom-aligned
-              // foreground layer over the sheet's lower part (see the layer
-              // cake below), so it takes no layout space here — which is
-              // what keeps the sheet, the canvas, and the ribbon immune to
-              // the strip's state. The move between the two slots happens
-              // under the reveal's reparent GlobalKey, so the rail's scroll
-              // offset and selection survive every Files open/close.
-              if (!filesOpen) _filmstripUnit(context),
+              // sheet (or its exit slide) is live the SAME subtree is the
+              // bottom-aligned foreground layer over the sheet's lower part
+              // (see the layer cake below), so it takes no layout space
+              // here — the frozen spacer below holds its exact footprint —
+              // which is what keeps the sheet, the slide preview, and the
+              // ribbon immune to the strip's state. The move between the
+              // two slots happens under the reveal's reparent GlobalKey,
+              // so the rail's scroll offset and selection survive every
+              // Files open/close.
+              if (!sheetLive)
+                _filmstripUnit(context)
+              else
+                // The frozen footprint: an EMPTY spacer of exactly the
+                // height the strip occupied in the flow when Files opened
+                // (frozen — never tracking the tray's toggles, so the slide
+                // preview's constraints cannot move while the sheet is
+                // open). On close it animates to the strip's current
+                // footprint over the same 200ms family, handing the space
+                // back as the strip returns to the flow — a continuous
+                // handoff, never a jump. Instant under reduced motion.
+                AnimatedContainer(
+                  duration: MediaQuery.of(context).disableAnimations
+                      ? Duration.zero
+                      : const Duration(milliseconds: 200),
+                  curve: Curves.easeInOutCubic,
+                  height: filesOpen
+                      ? (_frozenStripFootprint ?? stripFlowHeight)
+                      : stripFlowHeight,
+                ),
 
               // ---- PowerPoint-style ribbon ----------------------------------------
               _EditorNavBar(
@@ -1716,10 +1815,20 @@ class _EditorScreenState extends State<EditorScreen> {
                 // before the boundary but OUTSIDE it) keeps its accessibility
                 // contract: the Files tab stays reachable, the top bar stays
                 // reachable, and the tray's own semantics stay live.
-                if (filesOpen)
+                if (sheetLive)
                   Semantics(
                     container: true,
-                    child: Stack(
+                    // The slide's hard boundary: the sheet may translate
+                    // below the navbar's top edge while entering or leaving,
+                    // but it may never PAINT there — the clip keeps the
+                    // navbar fixed in front of the moving layer, and
+                    // hit-testing follows the same rect, so the hidden part
+                    // of the sheet is untappable at every instant of the
+                    // slide. (The tray's own box ends exactly at this edge,
+                    // so it is untouched by the clip.)
+                    child: ClipRect(
+                      clipper: _SheetPortalClipper(boundary: sheetAnchor),
+                      child: Stack(
                       children: [
                         // ---- the drawer layer -------------------------------------
                         // The Files sheet floats ABOVE the canvas and rides the
@@ -1729,15 +1838,18 @@ class _EditorScreenState extends State<EditorScreen> {
                         // the sheet's own kSurface fills the whole region down
                         // to the ribbon, and the tray overlays it in front
                         // (the layer above) with no spacer of any kind in
-                        // between. While the header's drag is live the
+                        // between. THE ENTRANCE/EXIT: the sheet is laid out at
+                        // its full intended height and translated as a rigid
+                        // body — arriving, its top edge starts exactly at the
+                        // navbar's top edge (fully below it) and slides up
+                        // into view; leaving, the same motion runs in reverse.
+                        // The origin is the navbar's edge alone, never the
+                        // filmstrip's. While the header's drag is live the
                         // duration is zero (the edge tracks the finger
-                        // exactly); the grow-in from the header sliver and
-                        // every settle run the same 200ms eased family as the
-                        // filmstrip's own reveal — instant under reduced
-                        // motion. Dismissal is an instant unmount (a tab's
-                        // chrome appears and disappears at its slot), so the
-                        // sheet is never animated through a height too short
-                        // for its pinned header.
+                        // exactly); every slide runs the same 200ms eased
+                        // family as the filmstrip's own reveal — instant under
+                        // reduced motion. The slide's ClipRect (above) keeps
+                        // the navbar fixed in front of the moving layer.
                         AnimatedPositioned(
                           duration: _drawerDragging
                               ? Duration.zero
@@ -1747,8 +1859,33 @@ class _EditorScreenState extends State<EditorScreen> {
                           curve: Curves.easeInOutCubic,
                           left: 0,
                           right: 0,
-                          bottom: sheetAnchor,
+                          // In place (open, dragging, settled) the sheet's
+                          // bottom sits on the anchor; entering or closing, it
+                          // is translated fully below the navbar's top edge —
+                          // bottom = anchor minus the sheet's own height, so
+                          // its top edge lands exactly on the boundary.
+                          // AnimatedPositioned retargets from its live value,
+                          // so interrupted or reversed slides continue from
+                          // the current visible position, never resetting.
+                          bottom: (_sheetEntering || _sheetClosing)
+                              ? sheetAnchor - (_drawerExtent ?? half)
+                              : sheetAnchor,
                           height: _drawerExtent ?? half,
+                          // The exit slide's bookend: when the translation
+                          // completes the layer unmounts at its slot (a
+                          // tab's chrome appears and disappears there).
+                          onEnd: () {
+                            if (!mounted ||
+                                !_sheetClosing ||
+                                _navTab == _NavTab.files) {
+                              return;
+                            }
+                            setState(() {
+                              _sheetClosing = false;
+                              _sheetEntering = false;
+                              _drawerExtent = null;
+                            });
+                          },
                           child: FilesDrawer(
                             aspect: _deckAspect,
                             deckId: (_deck['id'] ?? '').toString(),
@@ -1775,7 +1912,13 @@ class _EditorScreenState extends State<EditorScreen> {
                         // part: the SAME strip unit that lives in the flow
                         // while the sheet is closed (reparented here under
                         // its GlobalKey — scroll and selection survive), now
-                        // painted above the sheet. The box tracks the sheet's
+                        // painted above the sheet. The tray is STATIONARY
+                        // through the sheet's whole lifecycle — mounted,
+                        // expanded, and already in place from the sheet's
+                        // first frame, so the sheet's entrance rises behind
+                        // it without flashing, jumping, or briefly covering
+                        // the thumbnails (and the exit slide leaves the same
+                        // way). The box tracks the sheet's
                         // own live extent (min(stripH, extent), the same
                         // duration/curve as the sheet's layer, retargeted on
                         // the same rebuild — while dragging both are
@@ -1800,7 +1943,8 @@ class _EditorScreenState extends State<EditorScreen> {
                         // the tray is open. (The block rides INSIDE the
                         // positioned box — a Positioned cannot be wrapped by a
                         // render-owning widget on its way to the Stack.)
-                        AnimatedPositioned(
+                        if (_mode == _Mode.editing)
+                          AnimatedPositioned(
                           duration: _drawerDragging
                               ? Duration.zero
                               : (MediaQuery.of(context).disableAnimations
@@ -1842,6 +1986,7 @@ class _EditorScreenState extends State<EditorScreen> {
                           ),
                         ),
                       ],
+                      ),
                     ),
                   ),
               ],
@@ -2062,6 +2207,18 @@ class _EditorScreenState extends State<EditorScreen> {
 
   // ---- ribbon wiring ---------------------------------------------------------
 
+  /// The strip's live flow footprint: the divider region plus the reveal's
+  /// CURRENT height — read off the mounted reveal (works in both of the
+  /// unit's slots, the box under the reparent GlobalKey being the same
+  /// subtree), so a fold caught mid-flight reports its real on-screen
+  /// height, not its target. This is what gets frozen when Files opens and
+  /// what the spacer hands back to on close.
+  double _liveStripFlowHeight() {
+    final revealH = _filmstripRevealHost.currentContext?.size?.height ??
+        (_filmOpen ? _filmstripBandHeight : 0.0);
+    return _FilmstripDivider.regionHeight + revealH;
+  }
+
   /// The one toggle behind the integrated edge handle: the strip band folds
   /// up under the divider (the canvas reclaims the 104dp) and unfolds back.
   /// Selection, scroll offset, and the ribbon's own tab state are all kept —
@@ -2078,6 +2235,9 @@ class _EditorScreenState extends State<EditorScreen> {
   /// live the sheet tracks the finger exactly (the layer's duration is zero
   /// mid-drag), so the settle below is where the detents do their work.
   void _drawerDragUpdate(double dy) {
+    // The entrance/exit slide owns the layer's translation — a drag that
+    // lands mid-slide is dead until the sheet is in place.
+    if (_sheetEntering || _sheetClosing) return;
     final base = _drawerExtent ?? _drawerHalf;
     final floor = math.min(_drawerSliver, _drawerTall);
     setState(() {
@@ -2091,6 +2251,8 @@ class _EditorScreenState extends State<EditorScreen> {
   /// of the half detent where the sheet closes outright instead of snapping
   /// back up.
   void _drawerDragSettle(double velocityDy) {
+    // No drag can be in flight while a slide owns the layer.
+    if (_sheetEntering || _sheetClosing) return;
     final extent = _drawerExtent ?? _drawerHalf;
     if (velocityDy > 700) {
       // Fling down: tall → half, half-or-lower → dismissed.
@@ -2727,6 +2889,20 @@ class _FilmstripDivider extends StatelessWidget {
 /// edge (no side padding), the ramp up near the right edge, and the ledge
 /// running flush to the right edge — one path, one stroke, rounded joins.
 ///
+/// Beneath that same geometry the painter first fills the tray's SILHOUETTE
+/// with the tray's own charcoal (kFilmstrip): the full-width strip from the
+/// baseline down to the region's floor, plus the raised tab above it — the
+/// ramp's triangle and the ledge's pocket behind the chevron. The fill and
+/// the gradient stroke share one geometry, so there is no seam: the stroked
+/// boundary lies exactly on the fill's top edge, and the charcoal runs
+/// unbroken from the rule down into the band's own fill below the region.
+/// Only the raised tab projects above the baseline — the fill never paints a
+/// full-width rectangle above the line — so the divider keeps its transparent
+/// window left of the ramp (whatever surface sits behind the tray shows
+/// through there, by design), while the sloped ramp and the chevron's pocket
+/// are fully opaque: the Files sheet's tiles can never show through the tab.
+/// The chevron and the sweep ride on top of it all.
+///
 /// The stroke is the collapsed cool neutral ([color]) or, when the strip is
 /// open, the signature [sweep]: its shader spans the path's own bounds, so
 /// t maps purely to x — the three stops land the same at every width.
@@ -2743,6 +2919,27 @@ class _FilmstripDividerPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final w = size.width;
+    // The silhouette beneath the boundary path — the SAME geometry the
+    // stroke below traces, closed down to the region's floor so the fill
+    // and the stroke share one edge (no seam), and so the charcoal meets
+    // the band's own fill flush at the region's bottom edge.
+    final silhouette = Path()
+      ..moveTo(0, _FilmstripDivider.baselineY)
+      ..lineTo(
+          w - _FilmstripDivider.rampFromRight, _FilmstripDivider.baselineY)
+      ..lineTo(w - _FilmstripDivider.rampFromRight + _FilmstripDivider.rampRun,
+          _FilmstripDivider.ledgeY)
+      ..lineTo(w, _FilmstripDivider.ledgeY)
+      ..lineTo(w, _FilmstripDivider.regionHeight)
+      ..lineTo(0, _FilmstripDivider.regionHeight)
+      ..close();
+    canvas.drawPath(
+        silhouette,
+        Paint()
+          ..color = kFilmstrip
+          ..style = PaintingStyle.fill
+          ..isAntiAlias = true,
+    );
     final path = Path()
       ..moveTo(0, _FilmstripDivider.baselineY)
       ..lineTo(
@@ -2754,7 +2951,8 @@ class _FilmstripDividerPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = _FilmstripDivider.stroke
       ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
+      ..strokeJoin = StrokeJoin.round
+      ..isAntiAlias = true;
     final sweep = this.sweep;
     if (sweep == null) {
       paint.color = color;
@@ -2775,6 +2973,31 @@ class _FilmstripDividerPainter extends CustomPainter {
   @override
   bool shouldRepaint(_FilmstripDividerPainter oldDelegate) =>
       oldDelegate.color != color || oldDelegate.sweep != sweep;
+}
+
+/// Clips the sheet's moving layer at the navbar's top boundary: while the
+/// entrance or exit slide runs, the sheet is translated so that part of its
+/// body sits below the navbar's top edge — but it may never PAINT (or
+/// hit-test) there. The clip keeps the navbar fixed in front of the moving
+/// layer and the sheet emerging continuously from behind it.
+///
+/// [boundary] is the navbar's top edge measured up from the clip box's
+/// bottom (the same [sheetAnchor] the sheet rides) — a constant, so the clip
+/// never moves; the tray's own box ends exactly at this edge and is
+/// untouched by it.
+class _SheetPortalClipper extends CustomClipper<Rect> {
+  _SheetPortalClipper({required this.boundary});
+
+  /// The navbar's top edge, as an inset from the clip box's bottom.
+  final double boundary;
+
+  @override
+  Rect getClip(Size size) => Rect.fromLTWH(
+      0, 0, size.width, math.max(0.0, size.height - boundary));
+
+  @override
+  bool shouldReclip(_SheetPortalClipper oldClipper) =>
+      oldClipper.boundary != boundary;
 }
 
 class _EditorNavBar extends StatelessWidget {
@@ -2836,14 +3059,23 @@ class _EditorNavBar extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: kSurface,
-        border: showTopRule
-            ? const Border(top: BorderSide(color: kHairline))
-            : null,
+        // The hairline is a PAINT choice, never a layout one: the border's
+        // 1dp inset exists in EVERY state (transparent while the filmstrip
+        // divider's own rule owns the boundary) so the band's total height
+        // is a constant 77dp — nothing above it (the canvas's constraints,
+        // the sheet's anchor, the strip's flow spot) can ever move by the
+        // hairline's own pixel when a tab or the tray toggles it.
+        border: Border(
+          top: BorderSide(
+              color: showTopRule ? kHairline : Colors.transparent),
+        ),
       ),
       // Material-3 NavigationBar anatomy, trimmed 80 -> 76dp because our
       // labels are single-line: a 24dp icon in a stadium pill, an 11sp label
       // under it, real vertical breathing room — and the ribbon melts into
       // the surface at both ends instead of hard-clipping half an icon.
+      // (The 1dp border inset above brings the whole band to its constant
+      // 77dp.)
       child: SizedBox(
         height: 76,
         child: Stack(
