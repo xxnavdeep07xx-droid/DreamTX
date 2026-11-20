@@ -142,9 +142,9 @@ class FilesDrawer extends StatelessWidget {
             ),
           ),
           // The quiet footer: the storage truth, stated once.
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10, top: 2),
-            child: const Text(
+          const Padding(
+            padding: EdgeInsets.only(bottom: 10, top: 2),
+            child: Text(
               'Resources stored on this device',
               style: TextStyle(fontSize: 11, color: kText3),
             ),
@@ -386,10 +386,10 @@ Future<bool> _pickResource(
   required bool brand,
   String? deckId,
 }) async {
-  // file_picker 13.x: the static entry point returns the picked files
-  // directly (an empty list when the user dismisses the browser).
-  final files = await FilePicker.pickFiles(allowMultiple: false);
-  final path = files.isEmpty ? null : files.first.path;
+  // file_picker 13.x: pickFile() is the single-file entry point — a
+  // PlatformFile, or null when the user dismisses the browser.
+  final file = await FilePicker.pickFile();
+  final path = file?.path;
   if (path == null) return false; // the picker was dismissed — nothing to do
   try {
     final store = await ResourceStore.open();
