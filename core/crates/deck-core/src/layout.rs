@@ -4,6 +4,11 @@
 //! Rules baked in: 12-col grid, optical (not mathematical) centering, real
 //! font metrics, density floors (text never shrinks below readable; overflow
 //! is flagged for splitting instead).
+//!
+//! The frame's aspect travels with the deck: the design height is always
+//! 720, the width follows the deck's aspect (16:9 → 1280, 16:10 → 1152,
+//! 4:3 → 960, 1:1 → 720). All vertical math and the type scale are
+//! aspect-independent; every width flows from the Builder's frame width.
 
 use crate::dna::{resolve, FontRole, Motif, ResolvedDna};
 use crate::fonts::wrap;
@@ -65,11 +70,13 @@ pub enum Align {
     Right,
 }
 
-/// Entry point: lay out one slide with the deck's DNA.
-pub fn layout_slide(dna: &Dna, slide: &Slide) -> Layout {
-    let r = resolve(dna);
+/// Entry point: lay out one slide with the deck's DNA (family + frame
+/// aspect). Width math follows the deck's aspect; height math is constant.
+pub fn layout_slide(deck: &Deck, slide: &Slide) -> Layout {
+    let r = resolve(&deck.dna);
     let scale = r.scale;
-    let mut b = Builder::new(&r, scale);
+    let w = deck_dims(deck).0;
+    let mut b = Builder::new(&r, scale, w);
     match &slide.content {
         SlideContent::Cover { kicker, title, subtitle } => b.cover(kicker.as_deref(), title, subtitle.as_deref()),
         SlideContent::Agenda { title, items } => b.agenda(title, items),
@@ -90,13 +97,15 @@ pub fn layout_slide(dna: &Dna, slide: &Slide) -> Layout {
 struct Builder {
     r: ResolvedDna,
     scale: f64,
+    /// Frame width in design px (deck aspect; height is always SLIDE_H).
+    w: f64,
     elements: Vec<Element>,
     warnings: Vec<String>,
 }
 
 impl Builder {
-    fn new(r: &ResolvedDna, scale: f64) -> Self {
-        Builder { r: r.clone(), scale, elements: Vec::new(), warnings: Vec::new() }
+    fn new(r: &ResolvedDna, scale: f64, w: f64) -> Self {
+        Builder { r: r.clone(), scale, w, elements: Vec::new(), warnings: Vec::new() }
     }
 
     fn finish(mut self) -> Layout {
@@ -104,9 +113,9 @@ impl Builder {
         let bg = self.r.palette.bg.clone();
         self.elements.insert(
             0,
-            Element::Rect { x: 0.0, y: 0.0, w: SLIDE_W, h: SLIDE_H, color: bg, radius: 0.0 },
+            Element::Rect { x: 0.0, y: 0.0, w: self.w, h: SLIDE_H, color: bg, radius: 0.0 },
         );
-        Layout { w: SLIDE_W, h: SLIDE_H, elements: self.elements, warnings: self.warnings }
+        Layout { w: self.w, h: SLIDE_H, elements: self.elements, warnings: self.warnings }
     }
 
     fn serif(&self, role: FontRole) -> bool {
@@ -181,7 +190,7 @@ impl Builder {
 
     fn cover(&mut self, kicker: Option<&str>, title: &str, subtitle: Option<&str>) {
         let p = self.r.palette.clone();
-        let content_w = SLIDE_W - 2.0 * MARGIN;
+        let content_w = self.w - 2.0 * MARGIN;
         if let Some(k) = kicker {
             self.fit_text("kicker", k, MARGIN, MARGIN + 12.0, content_w, 48.0, 22.0, &p.accent, self.r.body_font, true, Align::Left, MIN_BODY);
             self.motif_stamp(MARGIN + 64.0);
@@ -194,7 +203,7 @@ impl Builder {
 
     fn agenda(&mut self, title: &str, items: &[String]) {
         let p = self.r.palette.clone();
-        let content_w = SLIDE_W - 2.0 * MARGIN;
+        let content_w = self.w - 2.0 * MARGIN;
         self.fit_text("title", title, MARGIN, MARGIN, content_w, 70.0, 44.0, &p.fg, self.r.display_font, true, Align::Left, 30.0);
         let rows = items.len().max(1);
         let two_col = rows > 5;
@@ -216,7 +225,7 @@ impl Builder {
     fn section(&mut self, index: u32, title: &str, blurb: Option<&str>) {
         let p = self.r.palette.clone();
         let ghost = format!("{index:02}");
-        let content_w = SLIDE_W - 2.0 * MARGIN;
+        let content_w = self.w - 2.0 * MARGIN;
         // Ghost numeral behind, low-contrast.
         self.elements.push(Element::Text {
             x: MARGIN,
@@ -241,7 +250,7 @@ impl Builder {
 
     fn statement(&mut self, text: &str, attribution: Option<&str>) {
         let p = self.r.palette.clone();
-        let content_w = SLIDE_W - 2.0 * MARGIN;
+        let content_w = self.w - 2.0 * MARGIN;
         self.motif_stamp(MARGIN + 150.0);
         self.fit_text("text", text, MARGIN, MARGIN + 170.0, content_w * 0.86, 320.0, 58.0, &p.fg, self.r.display_font, false, Align::Left, 26.0);
         if let Some(a) = attribution {
@@ -251,7 +260,7 @@ impl Builder {
 
     fn stat_wall(&mut self, title: Option<&str>, stats: &[Stat]) {
         let p = self.r.palette.clone();
-        let content_w = SLIDE_W - 2.0 * MARGIN;
+        let content_w = self.w - 2.0 * MARGIN;
         let mut top = MARGIN;
         if let Some(t) = title {
             self.fit_text("title", t, MARGIN, top, content_w, 60.0, 34.0, &p.fg, self.r.display_font, true, Align::Left, 24.0);
@@ -283,7 +292,7 @@ impl Builder {
 
     fn split(&mut self, title: &str, bullets: &[String], visual_label: Option<&str>) {
         let p = self.r.palette.clone();
-        let content_w = SLIDE_W - 2.0 * MARGIN;
+        let content_w = self.w - 2.0 * MARGIN;
         let left_w = content_w * 0.52 - GUTTER;
         let right_x = MARGIN + content_w * 0.52 + GUTTER / 2.0;
         let right_w = content_w - left_w - GUTTER;
@@ -312,7 +321,7 @@ impl Builder {
 
     fn comparison(&mut self, title: Option<&str>, left: &CompareSide, right: &CompareSide) {
         let p = self.r.palette.clone();
-        let content_w = SLIDE_W - 2.0 * MARGIN;
+        let content_w = self.w - 2.0 * MARGIN;
         let mut top = MARGIN;
         if let Some(t) = title {
             self.fit_text("title", t, MARGIN, top, content_w, 60.0, 34.0, &p.fg, self.r.display_font, true, Align::Left, 24.0);
@@ -340,7 +349,7 @@ impl Builder {
 
     fn chart_hero(&mut self, title: &str, chart: &ChartSpec, takeaway: Option<&str>) {
         let p = self.r.palette.clone();
-        let content_w = SLIDE_W - 2.0 * MARGIN;
+        let content_w = self.w - 2.0 * MARGIN;
         self.fit_text("title", title, MARGIN, MARGIN, content_w, 60.0, 36.0, &p.fg, self.r.display_font, true, Align::Left, 24.0);
         if let Some(t) = takeaway {
             let y = SLIDE_H - MARGIN - 52.0;
@@ -401,7 +410,7 @@ impl Builder {
 
     fn closing(&mut self, title: &str, subtitle: Option<&str>) {
         let p = self.r.palette.clone();
-        let content_w = SLIDE_W - 2.0 * MARGIN;
+        let content_w = self.w - 2.0 * MARGIN;
         self.motif_stamp(MARGIN + 200.0);
         self.fit_text("title", title, MARGIN, MARGIN + 230.0, content_w * 0.8, 200.0, 76.0, &p.fg, self.r.display_font, true, Align::Left, 34.0);
         if let Some(s) = subtitle {
@@ -418,16 +427,30 @@ fn format_value(v: &f64) -> String {
 mod tests {
     use super::*;
 
-    #[test]
-    fn cover_has_bg_and_text() {
-        let dna = Dna { family: DnaFamily::SwissEditorial, seed: 7 };
-        let slide = Slide {
+    fn deck_for(aspect: &str, slide: Slide) -> Deck {
+        Deck {
+            id: "d".into(),
+            title: "T".into(),
+            version: 1,
+            dna: Dna { family: DnaFamily::SwissEditorial, seed: 7 },
+            aspect: aspect.into(),
+            slides: vec![slide],
+            components: Vec::new(),
+        }
+    }
+
+    fn cover_slide() -> Slide {
+        Slide {
             id: "s1".into(),
             archetype: Archetype::Cover,
             content: SlideContent::Cover { kicker: Some("Q3 review".into()), title: "Revenue up".into(), subtitle: Some("FY26".into()) },
             objects: Vec::new(),
-        };
-        let l = layout_slide(&dna, &slide);
+        }
+    }
+
+    #[test]
+    fn cover_has_bg_and_text() {
+        let l = layout_slide(&deck_for("16:9", cover_slide()), &cover_slide());
         assert_eq!(l.w, SLIDE_W);
         assert!(l.elements.len() >= 3);
         assert!(l.elements.iter().any(|e| matches!(e, Element::Rect { .. })));
@@ -435,8 +458,24 @@ mod tests {
     }
 
     #[test]
+    fn aspect_drives_frame_width_and_background() {
+        // 4:3: 960-wide frame, full-bleed background matching, height fixed.
+        let deck = deck_for("4:3", cover_slide());
+        let l = layout_slide(&deck, &cover_slide());
+        assert_eq!((l.w, l.h), (960.0, 720.0));
+        match l.elements.first() {
+            Some(Element::Rect { w, .. }) => assert_eq!(*w, 960.0),
+            other => panic!("expected background rect, got {other:?}"),
+        }
+        // Old decks without a recognized aspect fall back to the classic frame.
+        let mut legacy = deck_for("weird", cover_slide());
+        legacy.aspect = "not-a-ratio".into();
+        let l2 = layout_slide(&legacy, &cover_slide());
+        assert_eq!(l2.w, SLIDE_W);
+    }
+
+    #[test]
     fn overflow_is_flagged_not_shrunk_forever() {
-        let dna = Dna { family: DnaFamily::SwissEditorial, seed: 1 };
         let long = "word ".repeat(400);
         let slide = Slide {
             id: "s".into(),
@@ -444,7 +483,7 @@ mod tests {
             content: SlideContent::Statement { text: long, attribution: None },
             objects: Vec::new(),
         };
-        let l = layout_slide(&dna, &slide);
+        let l = layout_slide(&deck_for("16:9", slide.clone()), &slide);
         let mut min_size = f64::MAX;
         for e in &l.elements {
             if let Element::Text { size, .. } = e {

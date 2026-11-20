@@ -3,10 +3,12 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:file_picker/file_picker.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../core/aspects.dart';
 import '../core/bridge.dart';
 import '../core/store.dart';
 import '../theme.dart';
@@ -14,6 +16,7 @@ import '../widgets/content_editor.dart';
 import '../widgets/design_sheets.dart';
 import '../widgets/shape_canvas.dart';
 import '../widgets/slide_canvas.dart';
+import 'files_drawer.dart';
 import 'pair_sheet.dart';
 
 /// Screen 2 — Editor. Canvas + filmstrip + a PowerPoint-style bottom ribbon —
@@ -276,11 +279,14 @@ class _EditorScreenState extends State<EditorScreen> {
       h = preset == 'line' ? 0.0 : (preset == 'wave' ? 80.0 : 60.0);
     }
     final n = _objects.length;
+    // New shapes center on the deck's actual frame — 4:3 and 1:1 decks drop
+    // them on-frame, not at the classic 1280-wide midpoint.
+    final (dw, dh) = deckDimsOf(_deck['aspect']?.toString());
     final shape = <String, dynamic>{
       'id': _newObjectId(),
       'preset': preset,
-      'x': (1280.0 - w) / 2 + (n % 5) * 24.0,
-      'y': (720.0 - h) / 2 + (n % 5) * 16.0,
+      'x': (dw - w) / 2 + (n % 5) * 24.0,
+      'y': (dh - h) / 2 + (n % 5) * 16.0,
       'w': w,
       'h': h,
       'rotation': 0.0,
@@ -956,6 +962,327 @@ class _EditorScreenState extends State<EditorScreen> {
     if (r['ok'] == true && r['deck'] is Map) _mutate(r['deck'] as Map);
   }
 
+  // ---- the Files drawer's deck-level tools --------------------------------------
+
+  /// The deck's declared frame aspect ("16:9" for every deck that predates
+  /// the field — the engine defaults the same way, so app and engine agree
+  /// without a round-trip).
+  String get _deckAspect => (_deck['aspect'] ?? '16:9').toString();
+
+  /// **New** — a fresh deck in its own file, never over the active one.
+  /// Blank starts with zero slides; Template asks for a design family and
+  /// the engine composes the deck in that DNA. Either way the result is a
+  /// new deck id under its own file, and the editor hands over to it.
+  Future<void> _filesNewDeck() async {
+    final kind = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
+          children: [
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20),
+              child: Text('New deck',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.note_add, color: kPurple),
+              title: const Text('Blank'),
+              subtitle: const Text('Starts empty — no template content'),
+              onTap: () => Navigator.pop(context, 'blank'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.auto_awesome, color: kPurple),
+              title: const Text('Template'),
+              subtitle: const Text('A design family composes the deck'),
+              onTap: () => Navigator.pop(context, 'template'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (kind == null) return;
+
+    final title = await dreamInputDialog(
+      context,
+      title: kind == 'blank' ? 'New blank deck' : 'New deck from a template',
+      hint: 'Deck name',
+      confirmLabel: 'Create',
+    );
+    if (title == null || title.trim().isEmpty) return;
+
+    var family = 'swiss_editorial';
+    if (kind == 'template') {
+      final fam = await showModalBottomSheet<String>(
+        context: context,
+        builder: (context) => SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
+            children: [
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 20),
+                child: Text('Design family',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+              ),
+              for (final (id, label) in _designFamilies)
+                ListTile(
+                  leading: const Icon(Icons.palette, color: kPurple),
+                  title: Text(label),
+                  onTap: () => Navigator.pop(context, id),
+                ),
+            ],
+          ),
+        ),
+      );
+      if (fam == null) return;
+      family = fam;
+    }
+
+    final r = Bridge.command({
+      'op': 'new_deck',
+      'title': title.trim(),
+      'family': family,
+      'blank': kind == 'blank',
+    });
+    if (r['ok'] != true || r['deck'] is! Map) {
+      _toast('Could not create the deck: ${r['error'] ?? 'engine error'}');
+      return;
+    }
+    final deck = Map<String, dynamic>.from(r['deck'] as Map);
+    // The active deck's file is never touched: the new deck saves under its
+    // own engine-issued id, and storage trouble here is never silent.
+    try {
+      final store = await DeckStore.open();
+      await store.save(deck);
+    } catch (e) {
+      print('[deck-store] new deck could not be written: $e');
+      _toast('Deck created, but storage is not answering — it will retry '
+          'on the next save.');
+    }
+    if (!mounted) return;
+    await Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+            builder: (_) => EditorScreen(deck: deck)));
+  }
+
+  /// **Open** — Recents (the decks on this device, newest first) or Browse
+  /// Files (the platform document browser). The app opens DreamTX deck
+  /// files (.json) — .pptx import is not supported and is not offered.
+  Future<void> _filesOpenDeck() async {
+    final kind = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
+          children: [
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20),
+              child: Text('Open a deck',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.history, color: kPurple),
+              title: const Text('Recents'),
+              subtitle: const Text('Decks saved on this device'),
+              onTap: () => Navigator.pop(context, 'recents'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.upload_file, color: kPurple),
+              title: const Text('Browse files'),
+              subtitle: const Text('DreamTX deck (.json) — .pptx import isn\u2019t supported'),
+              onTap: () => Navigator.pop(context, 'browse'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (kind == 'recents') {
+      await _openRecentDeck();
+    } else if (kind == 'browse') {
+      await _browseForDeck();
+    }
+  }
+
+  Future<void> _openRecentDeck() async {
+    List<Map<String, dynamic>> decks;
+    try {
+      final store = await DeckStore.open();
+      decks = await store.list();
+    } catch (e) {
+      print('[deck-store] recents failed: $e');
+      _toast('Storage is not answering — try again in a moment.');
+      return;
+    }
+    final currentId = _deck['id'].toString();
+    final choice = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.of(context).size.height * 0.6,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
+            children: [
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 20),
+                child: Text('Recents',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+              ),
+              for (final d in decks)
+                ListTile(
+                  leading: const Icon(Icons.layers_outlined, color: kPurple),
+                  title: Text((d['title'] ?? 'Untitled').toString(),
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(
+                    '${((d['slides'] as List?) ?? []).length} slides · '
+                    '${((d['dna'] ?? const {})['family'] ?? '').toString().replaceAll('_', ' ')}'
+                    '${d['id'].toString() == currentId ? ' · this deck' : ''}',
+                    style: const TextStyle(fontSize: 11.5),
+                  ),
+                  onTap: () => Navigator.pop(context, d),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    await Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+            builder: (_) => EditorScreen(
+                deck: Map<String, dynamic>.from(choice))));
+  }
+
+  Future<void> _browseForDeck() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['json'],
+      allowMultiple: false,
+    );
+    final file = result.files.isEmpty ? null : result.files.first;
+    final path = file?.path;
+    if (path == null) return; // dismissed — nothing to do
+    Map<String, dynamic>? deck;
+    try {
+      final decoded = jsonDecode(await File(path).readAsString());
+      if (decoded is Map<String, dynamic>) deck = decoded;
+    } catch (_) {}
+    if (deck == null ||
+        (deck['slides'] is! List) ||
+        (deck['dna'] is! Map && deck['dna'] == null)) {
+      _toast('That file is not a DreamTX deck (.json) — nothing was opened.');
+      return;
+    }
+    // Importing never overwrites: a colliding id gets a fresh one under its
+    // own file, the original deck on this device stays untouched.
+    final imported = Map<String, dynamic>.from(deck!);
+    final store = await DeckStore.open();
+    final ids = (await store.list()).map((d) => d['id'].toString()).toSet();
+    var id = imported['id'].toString();
+    if (id.isEmpty || ids.contains(id)) {
+      id = 'd${DateTime.now().millisecondsSinceEpoch}';
+      imported['id'] = id;
+    }
+    try {
+      await store.save(imported);
+    } catch (e) {
+      print('[deck-store] import could not be written: $e');
+      _toast('Storage is not answering — the deck was not opened.');
+      return;
+    }
+    if (!mounted) return;
+    await Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => EditorScreen(deck: imported)));
+  }
+
+  /// **Aspect ratio** — the current ratio plus the supported presets. The
+  /// change is applied to the deck (rendering AND export read the same
+  /// field; the engine re-frames drawn objects), never just the preview —
+  /// and when existing objects would move, that is stated up front and
+  /// confirmed before anything happens.
+  Future<void> _filesAspect() async {
+    final current = _deckAspect;
+    final meta = Bridge.command({'op': 'meta'});
+    final aspects =
+        ((meta['aspects'] as List?) ?? const ['16:9', '16:10', '4:3', '1:1'])
+            .map((e) => e.toString())
+            .toList();
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Aspect ratio',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 4),
+                  Text('Current: $current · ${dimsLabel(current)}',
+                      style: const TextStyle(fontSize: 12.5, color: kText2)),
+                ],
+              ),
+            ),
+            for (final a in aspects)
+              ListTile(
+                leading: Icon(
+                  a == current ? Icons.check_circle : Icons.crop_free,
+                  color: a == current ? kPurple : kText2,
+                ),
+                title: Text(a),
+                subtitle: Text(dimsLabel(a),
+                    style: const TextStyle(fontSize: 11.5)),
+                onTap: () => Navigator.pop(context, a),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || choice == current) return;
+
+    // Re-framing moves drawn objects: say so explicitly and get a yes first.
+    final hasDrawn = _slides.any(
+            (s) => ((s['objects'] as List?) ?? []).isNotEmpty) ||
+        ((_deck['components'] as List?) ?? []).isNotEmpty;
+    if (hasDrawn) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => dreamDialog(
+          title: Text('Re-frame to $choice?'),
+          content: Text(
+              'Drawn objects keep their height and vertical position; their '
+              'horizontal positions and widths scale to the new frame. '
+              'Layouts re-flow for the new width. This applies to the deck '
+              '— rendering and export both follow.'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Keep $current')),
+            FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Apply $choice')),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
+
+    final r = Bridge.command(
+        {'op': 'set_aspect', 'deck': _deck, 'aspect': choice});
+    if (r['ok'] == true && r['deck'] is Map) {
+      _mutate(r['deck'] as Map); // persists + re-renders at the new frame
+    } else {
+      _toast('Could not change the aspect: ${r['error']}');
+    }
+  }
+
   // ---- export -------------------------------------------------------------------
 
   Future<void> _export(String op, {String verb = 'Export'}) async {
@@ -1082,7 +1409,10 @@ class _EditorScreenState extends State<EditorScreen> {
                         children: [
                           Center(
                             child: AspectRatio(
-                              aspectRatio: 16 / 9,
+                              // The deck's true frame ratio — 16:9 for every
+                              // existing deck, and whatever the Files drawer's
+                              // Aspect tool has since applied.
+                              aspectRatio: aspectRatioOf(_deck['aspect']?.toString()),
                               child: DecoratedBox(
                                 decoration: BoxDecoration(
                                   borderRadius: BorderRadius.circular(12),
@@ -1197,10 +1527,12 @@ class _EditorScreenState extends State<EditorScreen> {
             ),
             // ---- editing chrome: tool row + filmstrip + ribbon nav ---------------
             if (_mode == _Mode.editing) ...[
-              // Tabs with no tools yet (transitions / animations / help) skip
-              // the band entirely — the canvas keeps the space until their
-              // toolboxes get spec'd.
+              // Tabs with no tools yet (transitions / animations / help)
+              // skip the band entirely, and Files' tools live in its docked
+              // drawer instead of a contextual row — the canvas keeps the
+              // space until their toolboxes get spec'd.
               if (_navTab != null &&
+                  _navTab != _NavTab.files &&
                   _navTab != _NavTab.transitions &&
                   _navTab != _NavTab.animations &&
                   _navTab != _NavTab.help)
@@ -1249,175 +1581,217 @@ class _EditorScreenState extends State<EditorScreen> {
               // across every fold/unfold, and one 200ms eased height
               // transition — instant under reduced-motion — is the single
               // coordinated move.
-              _FilmstripDivider(
-                expanded: _filmOpen,
-                onToggle: _toggleFilmstrip,
-              ),
-              KeyedSubtree(
-                key: const ValueKey('filmstrip_reveal'),
-                child: ExcludeSemantics(
-                  key: const ValueKey('filmstrip_strip_semantics'),
-                  excluding: !_filmOpen,
-                  child: TweenAnimationBuilder<double>(
-                    duration: MediaQuery.of(context).disableAnimations
-                        ? Duration.zero
-                        : const Duration(milliseconds: 200),
-                    curve: Curves.easeInOutCubic,
-                    tween: Tween<double>(
-                        begin: 1.0, end: _filmOpen ? 1.0 : 0.0),
-                    builder: (context, v, child) => ClipRect(
-                      // Top-anchored: the band folds UP under the divider's
-                      // baseline — its bottom edge rises to meet the rule —
-                      // and drops back down on unfold. Align's heightFactor
-                      // drives the reveal height; the clip carries the same
-                      // boundary to hit-testing, so the hidden band cannot
-                      // be tapped.
-                      child: Align(
-                        alignment: Alignment.topCenter,
-                        heightFactor: v,
-                        child: child,
-                      ),
-                    ),
-                    child: SizedBox(
-                      key: const ValueKey('filmstrip_row'),
-                      height: 104,
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          // The panel fill: one continuous charcoal surface
-                          // behind the whole expanded band — full width,
-                          // behind the + disc, behind the thumbnails, in every
-                          // gap and edge. It lives INSIDE the reveal's clip, so
-                          // it appears and folds with the row itself: nothing
-                          // lingers or flashes during the 200ms transition, and
-                          // collapsed the clip takes the fill to zero height —
-                          // no colored strip left above the navigation. Flat
-                          // kFilmstrip only (dedicated token, between the
-                          // black workspace and the nav's kSurface): no
-                          // border, no shadow, no gradient — the divider above
-                          // stays the only boundary. The fill's top edge meets
-                          // the divider's 2dp stroke guard under its baseline,
-                          // so the gradient rule reads as lying directly on the
-                          // panel's top edge; everything ON the fill — white
-                          // cards, selection ring, disc — keeps its own colors.
-                          const Positioned.fill(
-                            child: ColoredBox(color: kFilmstrip),
+              // While the Files drawer owns the lower half, the filmstrip
+              // region stays MOUNTED but takes no space and paints nothing:
+              // maintainState keeps the rail's scroll offset and the selected
+              // slide alive through every drawer open/close, so dismissing the
+              // drawer restores exactly what was there — visibility and
+              // scroll position included, with nothing lingering in between.
+              Visibility(
+                visible: _navTab != _NavTab.files,
+                maintainState: true,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+
+                  _FilmstripDivider(
+                    expanded: _filmOpen,
+                    onToggle: _toggleFilmstrip,
+                  ),
+                  KeyedSubtree(
+                    key: const ValueKey('filmstrip_reveal'),
+                    child: ExcludeSemantics(
+                      key: const ValueKey('filmstrip_strip_semantics'),
+                      excluding: !_filmOpen,
+                      child: TweenAnimationBuilder<double>(
+                        duration: MediaQuery.of(context).disableAnimations
+                            ? Duration.zero
+                            : const Duration(milliseconds: 200),
+                        curve: Curves.easeInOutCubic,
+                        tween: Tween<double>(
+                            begin: 1.0, end: _filmOpen ? 1.0 : 0.0),
+                        builder: (context, v, child) => ClipRect(
+                          // Top-anchored: the band folds UP under the divider's
+                          // baseline — its bottom edge rises to meet the rule —
+                          // and drops back down on unfold. Align's heightFactor
+                          // drives the reveal height; the clip carries the same
+                          // boundary to hit-testing, so the hidden band cannot
+                          // be tapped.
+                          child: Align(
+                            alignment: Alignment.topCenter,
+                            heightFactor: v,
+                            child: child,
                           ),
-                          // The rail: full width, slides only. The leading
-                          // inset puts slide 0 at the exact resting spot it
-                          // has always had since 2.15 (first card at 74dp, a
-                          // 16dp gap from the disc's right edge), its border
-                          // and rounded corners fully visible. The trailing
-                          // inset is the plain 4dp again — nothing reserves
-                          // the rail's end zone anymore (the old end chevron
-                          // is gone; the toggle lives in the divider above).
-                          ListView.builder(
-                            scrollDirection: Axis.horizontal,
-                            padding:
-                                const EdgeInsets.fromLTRB(68, 6, 4, 6),
-                            itemCount: n,
-                            itemBuilder: (context, i) {
-                              final selected = i == _index;
-                              final label = _slideTitle(_slides[i]);
-                              return Padding(
-                                padding: const EdgeInsets.all(6),
-                                child: InkWell(
-                                  borderRadius: BorderRadius.circular(10),
-                                  onTap: () {
-                                    setState(() {
-                                      _index = i;
-                                      _refreshLayout();
-                                    });
-                                  },
-                                  onLongPress: () => _slideActions(i),
-                                  child: AnimatedContainer(
-                                    duration:
-                                        const Duration(milliseconds: 150),
-                                    width: 124,
-                                    padding:
-                                        EdgeInsets.all(selected ? 2.5 : 1),
-                                    decoration: BoxDecoration(
-                                      gradient:
-                                          selected ? kInkGradient : null,
-                                      color: selected ? null : kHairline,
-                                      borderRadius:
-                                          BorderRadius.circular(10),
-                                    ),
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius:
-                                            BorderRadius.circular(8),
-                                      ),
-                                      child: Center(
-                                        child: Padding(
-                                          padding:
-                                              const EdgeInsets.symmetric(
-                                                  horizontal: 8),
-                                          child: Text(
-                                            '${i + 1}. $label',
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                                fontSize: 11,
-                                                color: Color(0xFF17181A),
-                                                fontWeight:
-                                                    FontWeight.w500),
+                        ),
+                        child: SizedBox(
+                          key: const ValueKey('filmstrip_row'),
+                          height: 104,
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              // The panel fill: one continuous charcoal surface
+                              // behind the whole expanded band — full width,
+                              // behind the + disc, behind the thumbnails, in every
+                              // gap and edge. It lives INSIDE the reveal's clip, so
+                              // it appears and folds with the row itself: nothing
+                              // lingers or flashes during the 200ms transition, and
+                              // collapsed the clip takes the fill to zero height —
+                              // no colored strip left above the navigation. Flat
+                              // kFilmstrip only (dedicated token, between the
+                              // black workspace and the nav's kSurface): no
+                              // border, no shadow, no gradient — the divider above
+                              // stays the only boundary. The fill's top edge meets
+                              // the divider's 2dp stroke guard under its baseline,
+                              // so the gradient rule reads as lying directly on the
+                              // panel's top edge; everything ON the fill — white
+                              // cards, selection ring, disc — keeps its own colors.
+                              const Positioned.fill(
+                                child: ColoredBox(color: kFilmstrip),
+                              ),
+                              // The rail: full width, slides only. The leading
+                              // inset puts slide 0 at the exact resting spot it
+                              // has always had since 2.15 (first card at 74dp, a
+                              // 16dp gap from the disc's right edge), its border
+                              // and rounded corners fully visible. The trailing
+                              // inset is the plain 4dp again — nothing reserves
+                              // the rail's end zone anymore (the old end chevron
+                              // is gone; the toggle lives in the divider above).
+                              ListView.builder(
+                                scrollDirection: Axis.horizontal,
+                                padding:
+                                    const EdgeInsets.fromLTRB(68, 6, 4, 6),
+                                itemCount: n,
+                                itemBuilder: (context, i) {
+                                  final selected = i == _index;
+                                  final label = _slideTitle(_slides[i]);
+                                  return Padding(
+                                    padding: const EdgeInsets.all(6),
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(10),
+                                      onTap: () {
+                                        setState(() {
+                                          _index = i;
+                                          _refreshLayout();
+                                        });
+                                      },
+                                      onLongPress: () => _slideActions(i),
+                                      child: AnimatedContainer(
+                                        duration:
+                                            const Duration(milliseconds: 150),
+                                        width: 124,
+                                        padding:
+                                            EdgeInsets.all(selected ? 2.5 : 1),
+                                        decoration: BoxDecoration(
+                                          gradient:
+                                              selected ? kInkGradient : null,
+                                          color: selected ? null : kHairline,
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                        ),
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                          child: Center(
+                                            child: Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 8),
+                                              child: Text(
+                                                '${i + 1}. $label',
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                    fontSize: 11,
+                                                    color: Color(0xFF17181A),
+                                                    fontWeight:
+                                                        FontWeight.w500),
+                                              ),
+                                            ),
                                           ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                          // The floating +: the signature gradient disc, at its
-                          // home spot and size — 14dp from the strip's left edge,
-                          // vertically centered (top 30 of the 104dp band), 44dp
-                          // across, original soft shadow. Painted LAST, over the
-                          // rail and the panel fill: the slides it passes over
-                          // are seen behind it, and nothing clips it — the +
-                          // still reads as a floating button, now riding the
-                          // charcoal panel instead of the bare black canvas.
-                          // Tap adds a blank slide; long-press opens the
-                          // layout list.
-                          Positioned(
-                            left: 14,
-                            top: 30,
-                            child: Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(22),
-                                onTap: _addSlide,
-                                onLongPress: _addLayoutSlide,
-                                child: Container(
-                                  width: 44,
-                                  height: 44,
-                                  decoration: BoxDecoration(
-                                    gradient: kInkGradient,
-                                    shape: BoxShape.circle,
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black
-                                            .withValues(alpha: 0.4),
-                                        blurRadius: 10,
-                                        offset: const Offset(0, 4),
+                                  );
+                                },
+                              ),
+                              // The floating +: the signature gradient disc, at its
+                              // home spot and size — 14dp from the strip's left edge,
+                              // vertically centered (top 30 of the 104dp band), 44dp
+                              // across, original soft shadow. Painted LAST, over the
+                              // rail and the panel fill: the slides it passes over
+                              // are seen behind it, and nothing clips it — the +
+                              // still reads as a floating button, now riding the
+                              // charcoal panel instead of the bare black canvas.
+                              // Tap adds a blank slide; long-press opens the
+                              // layout list.
+                              Positioned(
+                                left: 14,
+                                top: 30,
+                                child: Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(22),
+                                    onTap: _addSlide,
+                                    onLongPress: _addLayoutSlide,
+                                    child: Container(
+                                      width: 44,
+                                      height: 44,
+                                      decoration: BoxDecoration(
+                                        gradient: kInkGradient,
+                                        shape: BoxShape.circle,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black
+                                                .withValues(alpha: 0.4),
+                                            blurRadius: 10,
+                                            offset: const Offset(0, 4),
+                                          ),
+                                        ],
                                       ),
-                                    ],
+                                      child: const Icon(Icons.add,
+                                          color: Colors.white, size: 22),
+                                    ),
                                   ),
-                                  child: const Icon(Icons.add,
-                                      color: Colors.white, size: 22),
                                 ),
                               ),
-                            ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
+                  ],
                 ),
               ),
+              // The Files drawer itself: docked directly above the ribbon —
+              // full width, roughly the lower half of the usable editor (the
+              // slide above keeps its true aspect through its own
+              // AspectRatio). It replaces the tab's old contextual tool row:
+              // the ribbon stays visible with Files lit, and the drawer's
+              // grab handle (drag down) or a second tap on Files dismisses
+              // it, restoring the filmstrip underneath untouched.
+              if (_navTab == _NavTab.files)
+                SizedBox(
+                  // Roughly the lower half of the usable editor, clamped so
+                  // short screens scroll the drawer's content (never clip)
+                  // and tall screens don't surrender the whole canvas: the
+                  // Expanded slide above absorbs the difference either way.
+                  height:
+                      (MediaQuery.of(context).size.height * 0.42).clamp(280.0, 430.0),
+                  child: FilesDrawer(
+                    aspect: _deckAspect,
+                    deckId: (_deck['id'] ?? '').toString(),
+                    onNew: _filesNewDeck,
+                    onOpen: _filesOpenDeck,
+                    onRename: _renameDeck,
+                    onAspect: _filesAspect,
+                    onDismiss: () => _setNavTab(null),
+                  ),
+                ),
+
               // ---- PowerPoint-style ribbon ----------------------------------------
               _EditorNavBar(
                   active: _navTab,
@@ -1472,15 +1846,9 @@ class _EditorScreenState extends State<EditorScreen> {
           ],
         );
       case _NavTab.files:
-        return Row(
-          children: [
-            IconButton(
-              tooltip: 'Rename deck',
-              icon: const Icon(Icons.edit_outlined),
-              onPressed: _renameDeck,
-            ),
-          ],
-        );
+        // The Files tab's tools live in the docked drawer that replaces this
+        // band (see build) — the row itself never renders for Files.
+        return const SizedBox.shrink();
       case _NavTab.home:
         return Row(
           children: [

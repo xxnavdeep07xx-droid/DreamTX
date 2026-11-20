@@ -10,12 +10,49 @@ use serde::{Deserialize, Serialize};
 pub const SLIDE_W: f64 = 1280.0;
 pub const SLIDE_H: f64 = 720.0;
 
+/// Supported slide-frame aspects. The design HEIGHT stays 720 in every one;
+/// the width follows the ratio: 16:9 → 1280, 16:10 → 1152, 4:3 → 960,
+/// 1:1 → 720 (all in the same design-px space, so vertical layout math and
+/// type scale are untouched by a ratio change).
+pub const ASPECTS: [&str; 4] = ["16:9", "16:10", "4:3", "1:1"];
+
+/// (width, height) of the design space for a supported aspect; None for an
+/// unrecognized one (callers decide between rejecting and defaulting).
+pub fn aspect_dims(aspect: &str) -> Option<(f64, f64)> {
+    match aspect {
+        "16:9" => Some((1280.0, 720.0)),
+        "16:10" => Some((1152.0, 720.0)),
+        "4:3" => Some((960.0, 720.0)),
+        "1:1" => Some((720.0, 720.0)),
+        _ => None,
+    }
+}
+
+/// A deck's design-space dimensions — the deck's aspect when recognized,
+/// the classic 1280×720 otherwise (old decks predate the field).
+pub fn deck_dims(deck: &Deck) -> (f64, f64) {
+    aspect_dims(&deck.aspect).unwrap_or((SLIDE_W, SLIDE_H))
+}
+
+fn default_aspect() -> String {
+    "16:9".into()
+}
+
+fn is_default_aspect(a: &str) -> bool {
+    a == "16:9"
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Deck {
     pub id: String,
     pub title: String,
     pub version: u64,
     pub dna: Dna,
+    /// Slide-frame aspect (see [ASPECTS]). Old decks predate the field and
+    /// deserialize as the default; the classic width is omitted from
+    /// serialization so existing deck files stay byte-stable.
+    #[serde(default = "default_aspect", skip_serializing_if = "is_default_aspect")]
+    pub aspect: String,
     pub slides: Vec<Slide>,
     /// Reusable design components (logos, quote cards, badges). Instances on
     /// slides reference these by `Shape.component`; edits propagate globally
