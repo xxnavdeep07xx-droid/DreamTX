@@ -553,8 +553,12 @@ void main() {
     // The slide's top sliver and the ribbon both stay on screen.
     expect(find.text('Slide 1 / 8'), findsOneWidget);
     expect(find.text('AI'), findsOneWidget);
-    // THE LAYER CONTRACT: the filmstrip never stopped being laid out —
-    // same geometry, same scroll, nothing unmounted, nothing hidden.
+    // THE LAYER CONTRACT: the sheet rides the RIBBON's top edge — the
+    // exact line the tray's bottom edge rides — and the tray overlays the
+    // sheet's LOWER part: the strip is laid out INSIDE the sheet's bounds,
+    // same 390×104 geometry, same scroll, nothing unmounted, nothing
+    // hidden, and the sheet's surface fills the whole region behind the
+    // tray (no spacer of any kind between it and the ribbon).
     expect(tester.getSize(row), const Size(390, 104));
     expect(tester.getTopLeft(slide1Card).dx, closeTo(scrolled, 0.5));
     // And it stays LIVE: tapping a miniature while the sheet is open
@@ -562,11 +566,10 @@ void main() {
     await tester.tap(find.text('2. Slide 2'));
     await tester.pumpAndSettle();
     expect(find.text('Slide 2 / 8'), findsOneWidget);
-    // The sheet never enters the chrome's region: its bottom edge sits on
-    // the filmstrip divider's top (the divider's 48dp region in between).
     final sheet = find.byKey(const ValueKey('files_drawer'));
     expect(tester.getRect(sheet).bottom,
-        lessThanOrEqualTo(tester.getRect(row).top - 48 + 0.5));
+        closeTo(tester.getRect(row).bottom, 0.5));
+    expect(tester.getRect(row).top, greaterThan(tester.getRect(sheet).top));
     expect(
         tester.takeException(), isNull, reason: 'no layout errors while open');
 
@@ -610,6 +613,13 @@ void main() {
     // The tile's supporting label shows the live ratio.
     expect(find.text('16:9'), findsOneWidget);
 
+    // The tray overlays the sheet's lower part, so the resting second row
+    // of tiles sits under it — fold the tray before tapping the covered
+    // row's tile (the clearance path is the dedicated overlay test).
+    await tester.tap(find.byKey(const ValueKey('filmstrip_handle')));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.keyboard_arrow_up), findsOneWidget);
+
     await tester.tap(find.text('Aspect ratio'));
     await tester.pumpAndSettle();
     // The sheet states the current ratio and the supported presets.
@@ -646,21 +656,21 @@ void main() {
     await tester.tap(find.text('Files'));
     await tester.pumpAndSettle();
 
-    // The resting detent: the lower half of the layer cake's space (this
-    // viewport leaves 559dp above the chrome; 45% floors at 296 so the
-    // whole grid fits).
+    // The resting detent: the lower half of the space above the RIBBON
+    // (this viewport leaves 711dp there — the strip no longer takes layout
+    // space while the sheet is open; 45% of 711 is 320).
     final sheet = find.byKey(const ValueKey('files_drawer'));
     final handle = find.byKey(const ValueKey('files_drawer_handle'));
-    expect(tester.getSize(sheet).height, closeTo(296, 0.1));
+    expect(tester.getSize(sheet).height, closeTo(320, 0.1));
 
     // A slow drag up (no fling): the edge tracks the finger, then settles
-    // to the NEAREST detent — tall, ~78% of the space above the chrome.
+    // to the NEAREST detent — tall, ~78% of the space above the ribbon.
     await tester.timedDrag(handle, const Offset(0, -180),
         const Duration(milliseconds: 600));
     await tester.pumpAndSettle();
     final tall = tester.getSize(sheet).height;
-    expect(tall, greaterThan(400));
-    expect(tall, lessThan(460));
+    expect(tall, greaterThan(540));
+    expect(tall, lessThan(570));
 
     // A slow deep drag down: past the dismiss zone (below ~70% of half),
     // so the sheet closes outright — unmounted cleanly at its slot, and
@@ -672,6 +682,205 @@ void main() {
     expect(find.byKey(const ValueKey('files_drawer')), findsNothing);
     expect(find.text('Files'), findsOneWidget); // only the ribbon tab remains
     expect(tester.getSize(row), const Size(390, 104));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('files drawer: the filmstrip is an independent overlay over the sheet — toggling the tray moves nothing, covered tools stay inert, and the last row clears the tray', (tester) async {
+    Bridge.testOverride = _fakeEngine;
+    _mockStorage(dir: tmp.path);
+    tester.view.physicalSize = const Size(780, 1688);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    // Semantics on for the overlay's a11y contract: the tray blocks only
+    // the sheet it covers — the ribbon and the top bar keep their nodes.
+    final semantics = tester.ensureSemantics();
+
+    await tester.pumpWidget(MaterialApp(
+        home: EditorScreen(deck: _deckFixture('d1', 'Test deck', 8))));
+    await tester.pumpAndSettle();
+
+    final row = find.byKey(const ValueKey('filmstrip_row'));
+    final sheet = find.byKey(const ValueKey('files_drawer'));
+    final handle = find.byKey(const ValueKey('files_drawer_handle'));
+    final stripHandle = find.byKey(const ValueKey('filmstrip_handle'));
+    final canvas = find.byType(AspectRatio);
+
+    // Open Files — the strip becomes the foreground overlay over the
+    // sheet's lower part — then drag to a custom height (the tall detent).
+    await tester.tap(find.text('Files'));
+    await tester.pumpAndSettle();
+    expect(find.text('Files'), findsNWidgets(2));
+    await tester.timedDrag(handle, const Offset(0, -180),
+        const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+
+    // THE INDEPENDENCE CONTRACT: toggling the tray, repeatedly, never moves
+    // the sheet's top edge, the slide preview, or the bottom ribbon.
+    final sheetTop = tester.getRect(sheet).top;
+    final canvasRect = tester.getRect(canvas);
+    final ribbonMark = tester.getRect(find.text('AI'));
+    for (var i = 0; i < 2; i++) {
+      await tester.tap(stripHandle); // collapse
+      await tester.pumpAndSettle();
+      expect(tester.getRect(sheet).top, sheetTop);
+      expect(tester.getRect(canvas), canvasRect);
+      expect(tester.getRect(find.text('AI')), ribbonMark);
+      expect(find.byIcon(Icons.keyboard_arrow_up), findsOneWidget);
+      await tester.tap(stripHandle); // expand
+      await tester.pumpAndSettle();
+      expect(tester.getRect(sheet).top, sheetTop);
+      expect(tester.getRect(canvas), canvasRect);
+      expect(tester.getRect(find.text('AI')), ribbonMark);
+      expect(tester.getSize(row), const Size(390, 104));
+    }
+
+    // The rail's scroll survives the toggles — the reveal never unmounts.
+    final slide1Card = find
+        .ancestor(
+            of: find.text('1. Slide 1'),
+            matching: find.byType(AnimatedContainer))
+        .first;
+    final railAtRest = tester.getTopLeft(slide1Card).dx;
+    await tester.drag(row, const Offset(-120, 0));
+    await tester.pumpAndSettle();
+    final railScrolled = tester.getTopLeft(slide1Card).dx;
+    expect(railScrolled, lessThan(railAtRest - 50));
+    await tester.tap(stripHandle);
+    await tester.pumpAndSettle();
+    await tester.tap(stripHandle);
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(slide1Card).dx, closeTo(railScrolled, 0.5));
+
+    // Back down to the resting half detent — where the tray covers the
+    // sheet's lower part and the resting second row of tiles sits under it.
+    await tester.timedDrag(handle, const Offset(0, 240),
+        const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+    final sheetTopAtHalf = tester.getRect(sheet).top;
+
+    // Tap another slide mid-open: the preview, the counter, and the
+    // selection update — Files stays open, the tray stays open.
+    await tester.tap(find.text('2. Slide 2'));
+    await tester.pumpAndSettle();
+    expect(find.text('Slide 2 / 8'), findsOneWidget);
+    expect(find.text('Files'), findsNWidgets(2));
+    expect(find.byIcon(Icons.keyboard_arrow_down), findsOneWidget);
+
+    // THE HIT WALL: the covered 'Aspect ratio' tile cannot be triggered —
+    // the tap lands on the tray, and nothing happens at all.
+    expect(find.text('Current: 16:9 · 1280 × 720'), findsNothing);
+    await tester.tap(find.text('Aspect ratio'));
+    await tester.pumpAndSettle();
+    expect(find.text('Current: 16:9 · 1280 × 720'), findsNothing);
+    expect(find.text('Files'), findsNWidgets(2));
+    expect(find.byIcon(Icons.keyboard_arrow_down), findsOneWidget);
+
+    // The a11y contract: the tray's own handle stays live, and the block
+    // never leaks past the sheet's boundary — the top bar keeps its nodes.
+    expect(find.bySemanticsLabel('Collapse slides'), findsOneWidget);
+    expect(find.bySemanticsLabel('Undo'), findsOneWidget);
+
+    // THE CLEARANCE: scroll the grid's last row fully above the tray...
+    await tester.drag(sheet, const Offset(0, -320));
+    await tester.pumpAndSettle();
+    // ...all six tools clear the whole overlay — the raised handle's zone
+    // included (the divider's top edge IS the overlay's top).
+    final divider = find.byKey(const ValueKey('filmstrip_divider'));
+    for (final label in const [
+      'New',
+      'Open',
+      'Rename',
+      'Aspect ratio',
+      'Deck resources',
+      'Brand resources'
+    ]) {
+      final tile = find
+          .ancestor(of: find.text(label), matching: find.byType(Material))
+          .first;
+      expect(tester.getRect(tile).bottom,
+          lessThanOrEqualTo(tester.getRect(divider).top + 0.5),
+          reason: '$label clears the tray');
+    }
+    // ...and the last row actually works once it is above the tray.
+    await tester.tap(find.text('Brand resources'));
+    await tester.pumpAndSettle();
+    expect(find.text('Available from every deck on this device'), findsOneWidget);
+    await tester.tapAt(const Offset(195, 100)); // the modal barrier closes it
+    await tester.pumpAndSettle();
+
+    // Collapse: the covered area is revealed without a jump — the grid's
+    // scroll position and every tile's place are untouched, and the sheet
+    // never moved.
+    final before = <String, Rect>{
+      for (final label in const ['New', 'Aspect ratio', 'Brand resources'])
+        label: tester.getRect(find
+            .ancestor(of: find.text(label), matching: find.byType(Material))
+            .first),
+    };
+    await tester.tap(stripHandle);
+    await tester.pumpAndSettle();
+    for (final e in before.entries) {
+      expect(
+          tester.getRect(find
+              .ancestor(of: find.text(e.key), matching: find.byType(Material))
+              .first),
+          e.value);
+    }
+    expect(tester.getRect(sheet).top, sheetTopAtHalf);
+    expect(find.byIcon(Icons.keyboard_arrow_up), findsOneWidget);
+    // The collapsed divider sits immediately above the fixed bottom ribbon.
+    expect(tester.getRect(sheet).bottom,
+        closeTo(tester.getRect(divider).bottom, 0.5));
+    expect(tester.takeException(), isNull);
+    semantics.dispose();
+  });
+
+  testWidgets('files drawer: a short viewport constrains the tray to the sheet, and closing Files restores the plain flow', (tester) async {
+    Bridge.testOverride = _fakeEngine;
+    _mockStorage(dir: tmp.path);
+    tester.view.physicalSize = const Size(780, 560);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(MaterialApp(
+        home: EditorScreen(deck: _deckFixture('d1', 'Test deck', 8))));
+    await tester.pumpAndSettle();
+
+    final row = find.byKey(const ValueKey('filmstrip_row'));
+    final reveal = find.byKey(const ValueKey('filmstrip_reveal'));
+    final canvas = find.byType(AspectRatio);
+
+    // Open Files with the tray expanded: the resting sheet is capped by
+    // the space above the ribbon (135dp on this viewport), and the tray
+    // is capped by the SHEET — it never intrudes farther into the slide
+    // preview than the sheet itself does.
+    await tester.tap(find.text('Files'));
+    await tester.pumpAndSettle();
+    final sheet = find.byKey(const ValueKey('files_drawer'));
+    expect(tester.getSize(sheet).height, closeTo(135, 0.5));
+    expect(tester.getRect(row).top,
+        greaterThanOrEqualTo(tester.getRect(sheet).top - 0.5));
+    // A sliver of the slide preview stays in view above the sheet.
+    expect(tester.getRect(sheet).top,
+        greaterThan(tester.getRect(canvas).top + 4));
+    expect(tester.takeException(), isNull);
+
+    // Close: the strip returns to the plain flow — the same band geometry,
+    // the toggle still works, and the rail scrolls.
+    await tester.tap(find.text('Files').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Files'), findsOneWidget);
+    expect(tester.getSize(row), const Size(390, 104));
+    await tester.tap(find.byKey(const ValueKey('filmstrip_handle')));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(reveal).height, 0);
+    await tester.tap(find.byKey(const ValueKey('filmstrip_handle')));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(reveal).height, 104);
+    await tester.drag(row, const Offset(-120, 0));
+    await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
 

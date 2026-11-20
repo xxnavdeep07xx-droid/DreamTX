@@ -10,10 +10,14 @@ import '../theme.dart';
 
 /// The Files drawer — the Files tab's sheet, floating over the workspace
 /// as its own layer. The editor owns the layering; this widget owns the
-/// surface and its contents: pinned to the filmstrip's top boundary, the
-/// sheet covers only the slide, never the strip or the ribbon — both stay
-/// fully visible and fully tappable while the drawer is open, so jumping
-/// to another slide never means closing anything first.
+/// surface and its contents: the sheet rides the RIBBON's top edge (a
+/// constant anchor, so its height is the user's choice alone), and the
+/// filmstrip is the editor's foreground layer over the sheet's LOWER part
+/// — the sheet's own kSurface fills the whole region down to the ribbon
+/// behind the tray, with no spacer of any kind between them. The grid's
+/// scrollable carries [bottomInset] as bottom padding so its last row can
+/// always be scrolled fully above that overlay — scroll content, never
+/// chrome.
 ///
 /// Drag the header up or down to resize the sheet between its detents; a
 /// downward fling (or dragging it far down) dismisses it, as does tapping
@@ -46,6 +50,7 @@ class FilesDrawer extends StatelessWidget {
     required this.onRename,
     required this.onAspect,
     required this.onDismiss,
+    this.bottomInset = 0,
     this.onDragUpdate,
     this.onDragSettle,
   });
@@ -61,6 +66,15 @@ class FilesDrawer extends StatelessWidget {
   final VoidCallback onRename;
   final VoidCallback onAspect;
   final VoidCallback onDismiss;
+
+  /// The overlay clearance at the sheet's bottom: the editor's filmstrip
+  /// tray rides the sheet's lower part (the divider region plus the band,
+  /// raised handle included), and the grid's scrollable carries this as
+  /// bottom padding so the last row can always be scrolled fully above
+  /// it. It is scroll content, never chrome — the sheet's outer height is
+  /// the detents' alone, and the clearance is constant so the tray's
+  /// toggles never jump the scroll position.
+  final double bottomInset;
 
   /// Live drag forwarding from the header: the vertical deltas (positive =
   /// the finger moved down) and the settle velocity, both mapped by the
@@ -94,10 +108,14 @@ class FilesDrawer extends StatelessWidget {
           ),
           // The grid scrolls only when the sheet is too short for it
           // (short screens); at the resting detents the content fits
-          // whole, and the drag surface never scrolls away.
+          // whole, and the drag surface never scrolls away. The bottom
+          // inset is the overlay clearance — the filmstrip tray covers
+          // the sheet's lower part, and the last row must be able to
+          // scroll fully above it (constant, so the tray's toggles never
+          // jump the scroll position).
           Flexible(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(14, 4, 14, 10),
+              padding: EdgeInsets.fromLTRB(14, 4, 14, 10 + bottomInset),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [

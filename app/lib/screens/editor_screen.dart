@@ -73,18 +73,30 @@ class _EditorScreenState extends State<EditorScreen> {
   /// (the `SizedBox(key: ValueKey('filmstrip_row'))` inside the reveal).
   static const double _filmstripBandHeight = 104.0;
 
+  /// The reveal's reparent anchor. While the Files sheet is closed the strip
+  /// is a row in the editor's flow; while the sheet is open the SAME subtree
+  /// is the foreground overlay riding the sheet's lower part. Both slots
+  /// build the strip under this GlobalKey, so the move between them
+  /// reparents the element instead of remounting it — the rail's scroll
+  /// offset and the selection survive every Files open/close, exactly as
+  /// they survive the strip's own fold (the reveal clips, never unmounts).
+  final GlobalKey _filmstripRevealHost = GlobalKey();
+
   /// Must stay in lockstep with `_EditorNavBar`'s Material-3 band (the 76dp
   /// trimmed NavigationBar anatomy) — the ribbon's own 1px top hairline is
-  /// accounted separately wherever the anchor needs it (chromeBelow).
+  /// accounted separately wherever the anchor needs it (sheetAnchor).
   static const double _navBarHeight = 76.0;
 
   /// The Files drawer's live extent, in logical px — the sheet floats as
-  /// its own layer pinned above the filmstrip chrome. null = the resting
-  /// half detent (recomputed each build from the layer cake's actual
-  /// space); [_drawerSliver] = the one-frame mount the grow-in rises from;
-  /// anything else = a drag in flight or a snapped detent. The settle logic
-  /// (fling one detent, nearest-detent release, dismiss zone at the bottom)
-  /// reads the cached [_drawerHalf]/[_drawerTall], refreshed on every build.
+  /// its own layer pinned directly to the ribbon's top edge. null = the
+  /// resting half detent (recomputed each build from the layer cake's
+  /// actual space); [_drawerSliver] = the one-frame mount the grow-in rises
+  /// from; anything else = a drag in flight or a snapped detent. The settle
+  /// logic (fling one detent, nearest-detent release, dismiss zone at the
+  /// bottom) reads the cached [_drawerHalf]/[_drawerTall], refreshed on
+  /// every build. The sheet's extent is completely independent of the
+  /// filmstrip's state — the strip never takes layout space while the
+  /// sheet is open, so its toggles can never move the sheet's top edge.
   double? _drawerExtent;
   double _drawerHalf = 296;
   double _drawerTall = 356;
@@ -1448,34 +1460,40 @@ class _EditorScreenState extends State<EditorScreen> {
         ),
         // ---- THE LAYER CAKE --------------------------------------------------
         // The body is not one stacked flow but layers that cannot disturb
-        // each other: the base layer is the whole flow (canvas, contextual
-        // row, filmstrip chrome, ribbon), and the Files drawer floats as
-        // its OWN layer above the canvas — pinned to the filmstrip's top
-        // boundary, so it never touches the strip, the ribbon, or the top
-        // bar. Opening it reflows nothing (the canvas is simply covered,
-        // its aspect untouched); the filmstrip stays fully laid out,
-        // fully painted, fully tappable while the sheet is open — jumping
-        // to another slide never means closing anything first.
+        // each other. The base layer is the editor's whole flow — canvas,
+        // contextual row, filmstrip chrome, ribbon — and while the Files
+        // sheet is CLOSED the strip is simply one more row in that flow.
+        // While the sheet is OPEN the cake inverts: the sheet floats as its
+        // own layer pinned DIRECTLY to the ribbon's top edge (a constant
+        // anchor — see [sheetAnchor]), and the filmstrip becomes a
+        // bottom-aligned FOREGROUND layer riding the sheet's lower part,
+        // painted above it. The strip takes no layout space while the sheet
+        // is open, so the sheet's height is the user's choice alone: opening
+        // the sheet or toggling the strip can never push, shrink, or move
+        // the sheet, the canvas, or the ribbon. The tray may cover the
+        // sheet's lower part, but it is clip-constrained to the sheet's own
+        // live extent, so it can never reach past the sheet's top edge into
+        // the slide preview.
         body: LayoutBuilder(
           builder: (context, constraints) {
-            // The chrome the drawer never enters: the ribbon's band — plus
-            // its own 1px top hairline, which shows exactly while the strip
-            // is open (showTopRule tracks _filmOpen) — the divider's hit
-            // region, and the revealed strip band (zero once collapsed —
-            // collapsing the strip re-anchors the sheet lower over the same
-            // 200ms family).
-            final chromeBelow = _navBarHeight +
-                (_filmOpen ? 1.0 : 0.0) + // the ribbon's own top rule
-                _FilmstripDivider.regionHeight +
-                (_filmOpen ? _filmstripBandHeight : 0.0);
-            // The space the sheet may occupy: everything above the chrome
+            final filesOpen =
+                _mode == _Mode.editing && _navTab == _NavTab.files;
+            // The sheet's anchor: the ribbon's top edge, full stop. While
+            // the sheet is open the ribbon's own top hairline always shows
+            // (both the open tray and the collapsed divider sit directly on
+            // it, and the tray keeps the same boundary it has in the flow),
+            // so the band is a constant 77dp — which makes the anchor a
+            // constant: toggling the filmstrip never moves the sheet, the
+            // canvas, or the ribbon by a single pixel.
+            const sheetAnchor = _navBarHeight + 1.0;
+            // The space the sheet may occupy: everything above the ribbon
             // inside this body. From it, the two detents the header's drag
             // settles between — the resting HALF (floor 296 so the whole
             // 3×2 grid always fits, ceiling 430) and the TALL sheet
             // (~78%, leaving the slide's top sliver in view). The drag
             // handlers run between builds, so both are cached per build.
             final available =
-                math.max(64.0, constraints.maxHeight - chromeBelow);
+                math.max(64.0, constraints.maxHeight - sheetAnchor);
             final half = math.min(
                 math.min(430.0, math.max(296.0, available * 0.45)),
                 available - 12.0);
@@ -1483,12 +1501,30 @@ class _EditorScreenState extends State<EditorScreen> {
                 math.min(math.max(available * 0.78, half + 60.0), available - 12.0);
             _drawerHalf = half;
             _drawerTall = tall;
+            // The strip overlay's own box: the strip's live height target —
+            // the divider region plus the revealed band while open, just
+            // the divider region while collapsed — capped at the sheet's
+            // live extent. The cap is the whole "constrain the tray to the
+            // available space" contract: mid-drag (both layers track the
+            // finger at zero duration) and mid-grow-in/settle (both layers
+            // run the same 200ms curve retargeted on the same rebuild) the
+            // overlay's animated height stays at or under the sheet's
+            // animated height, so the tray can never poke above the
+            // sheet's top edge into the preview at any instant.
+            final stripH = _filmOpen
+                ? _FilmstripDivider.regionHeight + _filmstripBandHeight
+                : _FilmstripDivider.regionHeight;
+            final overlayH = math.min(stripH, _drawerExtent ?? half);
             return Stack(
               children: [
-                // The base layer: the editor's whole flow. (The children
-                // below keep their historical indentation on purpose —
-                // nothing about them changed, only the wrapper grew a
-                // layer above them.)
+                // The base layer: the editor's whole flow. While the Files
+                // sheet is open the filmstrip is NOT in this flow (it is the
+                // foreground overlay above the sheet — see the layer cake
+                // below), which is what keeps the canvas's geometry and the
+                // sheet's anchor completely independent of the strip's
+                // state. (The children below keep their historical
+                // indentation on purpose — only the strip's placement
+                // became conditional.)
                 Column(
           children: [
             // ---- canvas ----------------------------------------------------------
@@ -1641,260 +1677,171 @@ class _EditorScreenState extends State<EditorScreen> {
                   child: _contextualRow(),
                 ),
               // ---- filmstrip (stories-style, gradient ring on the live slide) --
-              // The strip's boundary is now the toggle itself: one continuous
-              // rule drawn by [_FilmstripDivider] directly above the band —
-              // flat across the editor, then near the right edge a ramp up
-              // into a short ledge that runs flush to the edge, with the
-              // chevron centered in the pocket under the ledge. Collapsed, the
-              // same rule (directly above the ribbon) carries an up chevron in
-              // the cool light neutral; open, the stroke wears the signature
-              // sweep — the same purple → magenta → orange stops as the + disc
-              // (kInkGradient's own colors), run left → right along the
-              // boundary so the line warms from quiet purple to orange exactly
-              // at the ramp and ledge, and the chevron repeats the disc's
-              // diagonal gradient over its glyph — the user's verdict after
-              // two single-color tries was that only the disc's own gradient
-              // reads on-theme. And the band itself is now a real panel: one
-              // continuous kFilmstrip charcoal fill (a dedicated token — a
-              // step lighter than the black workspace, a shade darker than
-              // the nav's kSurface) runs the full width of the expanded strip
-              // behind everything, so the strip reads as its own surface
-              // instead of melting into the black canvas — flat fill only, no
-              // border, no shadow, no left fade, and the divider still draws
-              // the boundary above it with the workspace staying pure black
-              // behind the raised chevron tab.
-              //
-              // The reveal: the band itself never unmounts — it stays laid out
-              // at the full 104dp inside a top-anchored Align/ClipRect pair
-              // (Align.heightFactor drives the reveal height; the clip
-              // carries the same boundary to hit-testing) that collapses
-              // paint and taps down to nothing when collapsed (and
-              // ExcludeSemantics pulls it out of the a11y tree). That is
-              // what preserves the scroll offset and the selected slide
-              // across every fold/unfold, and one 200ms eased height
-              // transition — instant under reduced-motion — is the single
-              // coordinated move.
-              // The Files drawer no longer hides the strip: the drawer is its
-              // own layer, pinned above the strip's boundary (see the
-              // layer-cake body below), so the filmstrip simply stays — laid
-              // out, painted, tappable. Every open/close of the drawer leaves
-              // it exactly as it was, scroll offset and selection included,
-              // because nothing ever unmounts, hides, or reflows it.
-                  _FilmstripDivider(
-                    expanded: _filmOpen,
-                    onToggle: _toggleFilmstrip,
-                  ),
-                  KeyedSubtree(
-                    key: const ValueKey('filmstrip_reveal'),
-                    child: ExcludeSemantics(
-                      key: const ValueKey('filmstrip_strip_semantics'),
-                      excluding: !_filmOpen,
-                      child: TweenAnimationBuilder<double>(
-                        duration: MediaQuery.of(context).disableAnimations
-                            ? Duration.zero
-                            : const Duration(milliseconds: 200),
-                        curve: Curves.easeInOutCubic,
-                        tween: Tween<double>(
-                            begin: 1.0, end: _filmOpen ? 1.0 : 0.0),
-                        builder: (context, v, child) => ClipRect(
-                          // Top-anchored: the band folds UP under the divider's
-                          // baseline — its bottom edge rises to meet the rule —
-                          // and drops back down on unfold. Align's heightFactor
-                          // drives the reveal height; the clip carries the same
-                          // boundary to hit-testing, so the hidden band cannot
-                          // be tapped.
-                          child: Align(
-                            alignment: Alignment.topCenter,
-                            heightFactor: v,
-                            child: child,
-                          ),
-                        ),
-                        child: SizedBox(
-                          key: const ValueKey('filmstrip_row'),
-                          height: _filmstripBandHeight,
-                          child: Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              // The panel fill: one continuous charcoal surface
-                              // behind the whole expanded band — full width,
-                              // behind the + disc, behind the thumbnails, in every
-                              // gap and edge. It lives INSIDE the reveal's clip, so
-                              // it appears and folds with the row itself: nothing
-                              // lingers or flashes during the 200ms transition, and
-                              // collapsed the clip takes the fill to zero height —
-                              // no colored strip left above the navigation. Flat
-                              // kFilmstrip only (dedicated token, between the
-                              // black workspace and the nav's kSurface): no
-                              // border, no shadow, no gradient — the divider above
-                              // stays the only boundary. The fill's top edge meets
-                              // the divider's 2dp stroke guard under its baseline,
-                              // so the gradient rule reads as lying directly on the
-                              // panel's top edge; everything ON the fill — white
-                              // cards, selection ring, disc — keeps its own colors.
-                              const Positioned.fill(
-                                child: ColoredBox(color: kFilmstrip),
-                              ),
-                              // The rail: full width, slides only. The leading
-                              // inset puts slide 0 at the exact resting spot it
-                              // has always had since 2.15 (first card at 74dp, a
-                              // 16dp gap from the disc's right edge), its border
-                              // and rounded corners fully visible. The trailing
-                              // inset is the plain 4dp again — nothing reserves
-                              // the rail's end zone anymore (the old end chevron
-                              // is gone; the toggle lives in the divider above).
-                              ListView.builder(
-                                scrollDirection: Axis.horizontal,
-                                padding:
-                                    const EdgeInsets.fromLTRB(68, 6, 4, 6),
-                                itemCount: n,
-                                itemBuilder: (context, i) {
-                                  final selected = i == _index;
-                                  final label = _slideTitle(_slides[i]);
-                                  return Padding(
-                                    padding: const EdgeInsets.all(6),
-                                    child: InkWell(
-                                      borderRadius: BorderRadius.circular(10),
-                                      onTap: () {
-                                        setState(() {
-                                          _index = i;
-                                          _refreshLayout();
-                                        });
-                                      },
-                                      onLongPress: () => _slideActions(i),
-                                      child: AnimatedContainer(
-                                        duration:
-                                            const Duration(milliseconds: 150),
-                                        width: 124,
-                                        padding:
-                                            EdgeInsets.all(selected ? 2.5 : 1),
-                                        decoration: BoxDecoration(
-                                          gradient:
-                                              selected ? kInkGradient : null,
-                                          color: selected ? null : kHairline,
-                                          borderRadius:
-                                              BorderRadius.circular(10),
-                                        ),
-                                        child: Container(
-                                          decoration: BoxDecoration(
-                                            color: Colors.white,
-                                            borderRadius:
-                                                BorderRadius.circular(8),
-                                          ),
-                                          child: Center(
-                                            child: Padding(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                      horizontal: 8),
-                                              child: Text(
-                                                '${i + 1}. $label',
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                    fontSize: 11,
-                                                    color: Color(0xFF17181A),
-                                                    fontWeight:
-                                                        FontWeight.w500),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                              // The floating +: the signature gradient disc, at its
-                              // home spot and size — 14dp from the strip's left edge,
-                              // vertically centered (top 30 of the 104dp band), 44dp
-                              // across, original soft shadow. Painted LAST, over the
-                              // rail and the panel fill: the slides it passes over
-                              // are seen behind it, and nothing clips it — the +
-                              // still reads as a floating button, now riding the
-                              // charcoal panel instead of the bare black canvas.
-                              // Tap adds a blank slide; long-press opens the
-                              // layout list.
-                              Positioned(
-                                left: 14,
-                                top: 30,
-                                child: Material(
-                                  color: Colors.transparent,
-                                  child: InkWell(
-                                    borderRadius: BorderRadius.circular(22),
-                                    onTap: _addSlide,
-                                    onLongPress: _addLayoutSlide,
-                                    child: Container(
-                                      width: 44,
-                                      height: 44,
-                                      decoration: BoxDecoration(
-                                        gradient: kInkGradient,
-                                        shape: BoxShape.circle,
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Colors.black
-                                                .withValues(alpha: 0.4),
-                                            blurRadius: 10,
-                                            offset: const Offset(0, 4),
-                                          ),
-                                        ],
-                                      ),
-                                      child: const Icon(Icons.add,
-                                          color: Colors.white, size: 22),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+              // The strip unit — the boundary divider plus the reveal, built
+              // once by [_filmstripUnit] — lives in the flow ONLY while the
+              // Files sheet is closed: canvas above, ribbon below, and the
+              // canvas reclaims the 104dp when the band folds. While the
+              // sheet is open the SAME subtree is the bottom-aligned
+              // foreground layer over the sheet's lower part (see the layer
+              // cake below), so it takes no layout space here — which is
+              // what keeps the sheet, the canvas, and the ribbon immune to
+              // the strip's state. The move between the two slots happens
+              // under the reveal's reparent GlobalKey, so the rail's scroll
+              // offset and selection survive every Files open/close.
+              if (!filesOpen) _filmstripUnit(context),
 
               // ---- PowerPoint-style ribbon ----------------------------------------
               _EditorNavBar(
                   active: _navTab,
                   controller: _navScroll,
                   onSelect: _onNavSelect,
-                  // The integrated divider already draws the boundary rule
-                  // directly above the ribbon while the strip is collapsed —
-                  // the ribbon's own hairline would double it.
-                  showTopRule: _filmOpen),
+                  // The ribbon's top hairline separates whatever sits directly
+                  // on it from the band. In the flow that is the strip's
+                  // business: the divider's own rule is the boundary while
+                  // collapsed (showing this too would double the line), and
+                  // the open band rides the hairline. While the Files sheet
+                  // is open the hairline ALWAYS shows — the overlay's tray
+                  // and collapsed divider both sit directly on it, and a
+                  // constant band keeps the sheet's anchor, the canvas, and
+                  // the ribbon itself frozen through every tray toggle.
+                  showTopRule: filesOpen || _filmOpen),
             ],
           ],
                 ),
-                // The drawer layer: the Files sheet floats ABOVE the canvas
-                // and BELOW the chrome — pinned to the filmstrip's top
-                // boundary (bottom offset = ribbon + divider + the revealed
-                // band), so it can never enter the strip's region. While the
-                // header's drag is live the duration is zero (the edge tracks
-                // the finger exactly); the grow-in from the header sliver and
-                // every settle run the same 200ms eased family as the
-                // filmstrip's own reveal — instant under reduced motion.
-                // Dismissal is an instant unmount (a tab's chrome appears
-                // and disappears at its slot), so the sheet is never animated
-                // through a height too short for its pinned header.
-                if (_mode == _Mode.editing && _navTab == _NavTab.files)
-                  AnimatedPositioned(
-                    duration: _drawerDragging
-                        ? Duration.zero
-                        : (MediaQuery.of(context).disableAnimations
-                            ? Duration.zero
-                            : const Duration(milliseconds: 200)),
-                    curve: Curves.easeInOutCubic,
-                    left: 0,
-                    right: 0,
-                    bottom: chromeBelow,
-                    height: _drawerExtent ?? half,
-                    child: FilesDrawer(
-                      aspect: _deckAspect,
-                      deckId: (_deck['id'] ?? '').toString(),
-                      onNew: _filesNewDeck,
-                      onOpen: _filesOpenDeck,
-                      onRename: _renameDeck,
-                      onAspect: _filesAspect,
-                      onDismiss: () => _setNavTab(null),
-                      onDragUpdate: _drawerDragUpdate,
-                      onDragSettle: _drawerDragSettle,
+                // The sheet + overlay layers, grouped behind ONE semantics
+                // boundary ([Semantics] with container: true): the filmstrip
+                // overlay's BlockSemantics drops the semantics of everything
+                // painted before it BELOW that boundary — the covered part of
+                // the sheet — while the base layer (ribbon included, painted
+                // before the boundary but OUTSIDE it) keeps its accessibility
+                // contract: the Files tab stays reachable, the top bar stays
+                // reachable, and the tray's own semantics stay live.
+                if (filesOpen)
+                  Semantics(
+                    container: true,
+                    child: Stack(
+                      children: [
+                        // ---- the drawer layer -------------------------------------
+                        // The Files sheet floats ABOVE the canvas and rides the
+                        // RIBBON's top edge (bottom offset = the constant
+                        // sheetAnchor), so the filmstrip's state can never
+                        // move it: the strip is not in the flow beneath it —
+                        // the sheet's own kSurface fills the whole region down
+                        // to the ribbon, and the tray overlays it in front
+                        // (the layer above) with no spacer of any kind in
+                        // between. While the header's drag is live the
+                        // duration is zero (the edge tracks the finger
+                        // exactly); the grow-in from the header sliver and
+                        // every settle run the same 200ms eased family as the
+                        // filmstrip's own reveal — instant under reduced
+                        // motion. Dismissal is an instant unmount (a tab's
+                        // chrome appears and disappears at its slot), so the
+                        // sheet is never animated through a height too short
+                        // for its pinned header.
+                        AnimatedPositioned(
+                          duration: _drawerDragging
+                              ? Duration.zero
+                              : (MediaQuery.of(context).disableAnimations
+                                  ? Duration.zero
+                                  : const Duration(milliseconds: 200)),
+                          curve: Curves.easeInOutCubic,
+                          left: 0,
+                          right: 0,
+                          bottom: sheetAnchor,
+                          height: _drawerExtent ?? half,
+                          child: FilesDrawer(
+                            aspect: _deckAspect,
+                            deckId: (_deck['id'] ?? '').toString(),
+                            onNew: _filesNewDeck,
+                            onOpen: _filesOpenDeck,
+                            onRename: _renameDeck,
+                            onAspect: _filesAspect,
+                            onDismiss: () => _setNavTab(null),
+                            // The overlay clearance: the tray (divider
+                            // region + band) rides the sheet's lower part,
+                            // so the grid's scrollable carries this as
+                            // bottom padding — the last row can always be
+                            // scrolled fully above the tray, including its
+                            // raised handle. Scroll content, never chrome:
+                            // the sheet's outer height is the detents' alone.
+                            bottomInset: _FilmstripDivider.regionHeight +
+                                _filmstripBandHeight,
+                            onDragUpdate: _drawerDragUpdate,
+                            onDragSettle: _drawerDragSettle,
+                          ),
+                        ),
+                        // ---- the filmstrip overlay layer --------------------------
+                        // The tray is a FOREGROUND layer over the sheet's lower
+                        // part: the SAME strip unit that lives in the flow
+                        // while the sheet is closed (reparented here under
+                        // its GlobalKey — scroll and selection survive), now
+                        // painted above the sheet. The box tracks the sheet's
+                        // own live extent (min(stripH, extent), the same
+                        // duration/curve as the sheet's layer, retargeted on
+                        // the same rebuild — while dragging both are
+                        // zero-duration), and the ClipRect clips BOTH paint
+                        // and hit-testing to it, so the tray may cover the
+                        // sheet but can never reach past the sheet's top edge
+                        // into the slide preview, and nothing above the box's
+                        // top ever falls through to the sheet underneath.
+                        // Inside the clip the OverflowBox lets the strip lay
+                        // out at its NATURAL height (divider + the revealed
+                        // band, bottom-anchored so the tray always rides the
+                        // ribbon), so the reveal's own 200ms fold works
+                        // verbatim with no reflow: the box and the strip
+                        // retarget on the same frame and share one curve, so
+                        // they stay in lockstep through every toggle. The hit
+                        // wall behind the strip makes the covered tools inert:
+                        // taps on the tray's background or the collapsed
+                        // divider's empty zone land on the wall (opaque, no
+                        // action) instead of the tools underneath, and the
+                        // BlockSemantics around the whole overlay keeps those
+                        // covered tools out of the accessibility tree while
+                        // the tray is open. (The block rides INSIDE the
+                        // positioned box — a Positioned cannot be wrapped by a
+                        // render-owning widget on its way to the Stack.)
+                        AnimatedPositioned(
+                          duration: _drawerDragging
+                              ? Duration.zero
+                              : (MediaQuery.of(context).disableAnimations
+                                  ? Duration.zero
+                                  : const Duration(milliseconds: 200)),
+                          curve: Curves.easeInOutCubic,
+                          left: 0,
+                          right: 0,
+                          bottom: sheetAnchor,
+                          height: overlayH,
+                          child: BlockSemantics(
+                            blocking: _filmOpen,
+                            child: ClipRect(
+                              child: OverflowBox(
+                                alignment: Alignment.bottomCenter,
+                                minHeight: 0,
+                                maxHeight: double.infinity,
+                                child: Stack(
+                                  children: [
+                                    // The hit wall: exactly the strip's own
+                                    // live footprint (the Stack sizes to the
+                                    // strip unit; the wall fills it) — a
+                                    // deliberately inert opaque region. Taps
+                                    // that miss every real control (the
+                                    // chevron pocket, the rail, the disc)
+                                    // stop here instead of triggering the
+                                    // sheet's tools underneath.
+                                    Positioned.fill(
+                                      child: GestureDetector(
+                                        behavior: HitTestBehavior.opaque,
+                                        onTap: () {},
+                                      ),
+                                    ),
+                                    _filmstripUnit(context),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
               ],
@@ -1904,6 +1851,214 @@ class _EditorScreenState extends State<EditorScreen> {
       ),
     );
   }
+
+  // ---- the filmstrip unit (one subtree, two slots) -----------------------------
+
+  /// The strip unit: the boundary divider plus the reveal, as ONE subtree —
+  /// identical in both of its slots. While the Files sheet is closed it is a
+  /// row in the editor's flow (canvas above, ribbon below); while the sheet
+  /// is open it is the bottom-aligned foreground layer over the sheet's
+  /// lower part. The reveal's outer [KeyedSubtree] carries the reparent
+  /// GlobalKey ([_filmstripRevealHost]), so the unit's moves between the two
+  /// slots preserve the rail's scroll offset and the selection — the element
+  /// is reparented, never remounted.
+  ///
+  /// The strip's boundary is the toggle itself: one continuous rule drawn by
+  /// [_FilmstripDivider] directly above the band — flat across the editor,
+  /// then near the right edge a ramp up into a short ledge that runs flush
+  /// to the edge, with the chevron centered in the pocket under the ledge.
+  /// Collapsed, the same rule carries an up chevron in the cool light
+  /// neutral; open, the stroke wears the signature sweep — the same purple
+  /// → magenta → orange stops as the + disc (kInkGradient's own colors),
+  /// run left → right along the boundary so the line warms from quiet
+  /// purple to orange exactly at the ramp and ledge, and the chevron
+  /// repeats the disc's diagonal gradient over its glyph — the user's
+  /// verdict after two single-color tries was that only the disc's own
+  /// gradient reads on-theme. And the band itself is a real panel: one
+  /// continuous kFilmstrip charcoal fill (a dedicated token — a step
+  /// lighter than the black workspace, a shade darker than the nav's
+  /// kSurface) runs the full width of the expanded strip behind
+  /// everything, so the strip reads as its own surface instead of melting
+  /// into the black canvas — flat fill only, no border, no shadow, no left
+  /// fade, and the divider still draws the boundary above it.
+  ///
+  /// The reveal: the band itself never unmounts — it stays laid out at the
+  /// full 104dp inside a top-anchored Align/ClipRect pair (Align's
+  /// heightFactor drives the reveal height; the clip carries the same
+  /// boundary to hit-testing) that collapses paint and taps down to nothing
+  /// when collapsed (and ExcludeSemantics pulls it out of the a11y tree).
+  /// That is what preserves the scroll offset and the selected slide
+  /// across every fold/unfold — and, in the overlay slot, across every
+  /// Files open/close — and one 200ms eased height transition, instant
+  /// under reduced-motion, is the single coordinated move.
+  Widget _filmstripUnit(BuildContext context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _FilmstripDivider(
+            expanded: _filmOpen,
+            onToggle: _toggleFilmstrip,
+          ),
+          KeyedSubtree(
+            key: _filmstripRevealHost,
+            child: KeyedSubtree(
+              key: const ValueKey('filmstrip_reveal'),
+              child: ExcludeSemantics(
+                key: const ValueKey('filmstrip_strip_semantics'),
+                excluding: !_filmOpen,
+                child: TweenAnimationBuilder<double>(
+                  duration: MediaQuery.of(context).disableAnimations
+                      ? Duration.zero
+                      : const Duration(milliseconds: 200),
+                  curve: Curves.easeInOutCubic,
+                  tween: Tween<double>(begin: 1.0, end: _filmOpen ? 1.0 : 0.0),
+                  builder: (context, v, child) => ClipRect(
+                    // Top-anchored: the band folds UP under the divider's
+                    // baseline — its bottom edge rises to meet the rule —
+                    // and drops back down on unfold. Align's heightFactor
+                    // drives the reveal height; the clip carries the same
+                    // boundary to hit-testing, so the hidden band cannot
+                    // be tapped.
+                    child: Align(
+                      alignment: Alignment.topCenter,
+                      heightFactor: v,
+                      child: child,
+                    ),
+                  ),
+                  child: SizedBox(
+                    key: const ValueKey('filmstrip_row'),
+                    height: _filmstripBandHeight,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        // The panel fill: one continuous charcoal surface
+                        // behind the whole expanded band — full width,
+                        // behind the + disc, behind the thumbnails, in every
+                        // gap and edge. It lives INSIDE the reveal's clip, so
+                        // it appears and folds with the row itself: nothing
+                        // lingers or flashes during the 200ms transition, and
+                        // collapsed the clip takes the fill to zero height —
+                        // no colored strip left above the navigation. Flat
+                        // kFilmstrip only (dedicated token, between the
+                        // black workspace and the nav's kSurface): no
+                        // border, no shadow, no gradient — the divider above
+                        // stays the only boundary. The fill's top edge meets
+                        // the divider's 2dp stroke guard under its baseline,
+                        // so the gradient rule reads as lying directly on the
+                        // panel's top edge; everything ON the fill — white
+                        // cards, selection ring, disc — keeps its own colors.
+                        const Positioned.fill(
+                          child: ColoredBox(color: kFilmstrip),
+                        ),
+                        // The rail: full width, slides only. The leading
+                        // inset puts slide 0 at the exact resting spot it
+                        // has always had since 2.15 (first card at 74dp, a
+                        // 16dp gap from the disc's right edge), its border
+                        // and rounded corners fully visible. The trailing
+                        // inset is the plain 4dp again — nothing reserves
+                        // the rail's end zone anymore (the old end chevron
+                        // is gone; the toggle lives in the divider above).
+                        ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.fromLTRB(68, 6, 4, 6),
+                          itemCount: _slides.length,
+                          itemBuilder: (context, i) {
+                            final selected = i == _index;
+                            final label = _slideTitle(_slides[i]);
+                            return Padding(
+                              padding: const EdgeInsets.all(6),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(10),
+                                onTap: () {
+                                  setState(() {
+                                    _index = i;
+                                    _refreshLayout();
+                                  });
+                                },
+                                onLongPress: () => _slideActions(i),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 150),
+                                  width: 124,
+                                  padding: EdgeInsets.all(selected ? 2.5 : 1),
+                                  decoration: BoxDecoration(
+                                    gradient: selected ? kInkGradient : null,
+                                    color: selected ? null : kHairline,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Center(
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 8),
+                                        child: Text(
+                                          '${i + 1}. $label',
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                              fontSize: 11,
+                                              color: Color(0xFF17181A),
+                                              fontWeight: FontWeight.w500),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                        // The floating +: the signature gradient disc, at its
+                        // home spot and size — 14dp from the strip's left edge,
+                        // vertically centered (top 30 of the 104dp band), 44dp
+                        // across, original soft shadow. Painted LAST, over the
+                        // rail and the panel fill: the slides it passes over
+                        // are seen behind it, and nothing clips it — the +
+                        // still reads as a floating button, now riding the
+                        // charcoal panel instead of the bare black canvas.
+                        // Tap adds a blank slide; long-press opens the
+                        // layout list.
+                        Positioned(
+                          left: 14,
+                          top: 30,
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(22),
+                              onTap: _addSlide,
+                              onLongPress: _addLayoutSlide,
+                              child: Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  gradient: kInkGradient,
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color:
+                                          Colors.black.withValues(alpha: 0.4),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: const Icon(Icons.add,
+                                    color: Colors.white, size: 22),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
 
   // ---- ribbon wiring ---------------------------------------------------------
 
