@@ -562,8 +562,10 @@ void main() {
     expect(
         tester.takeException(), isNull, reason: 'no layout errors while open');
 
-    // Close: the ribbon's Files again (the last of the two in traversal).
-    await tester.tap(find.text('Files').last);
+    // Close: the ribbon's Files again — the FIRST of the two in tree order
+    // (the base Column renders before the sheet's overlay layer, so the
+    // tab is first and the drawer's own heading second).
+    await tester.tap(find.text('Files').first);
     await tester.pumpAndSettle();
     expect(find.text('Files'), findsOneWidget);
     // The strip was never disturbed — geometry, scroll, selection, disc.
