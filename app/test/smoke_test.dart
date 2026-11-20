@@ -657,14 +657,16 @@ void main() {
     await tester.pumpAndSettle();
 
     // The resting detent: the lower half of the space above the RIBBON
-    // (this viewport leaves 711dp there — the strip no longer takes layout
-    // space while the sheet is open; 45% of 711 is 320).
+    // (this viewport leaves 710dp there — the app bar is 57dp with its
+    // hairline, so the body is 787; the strip no longer takes layout space
+    // while the sheet is open, and 45% of 710 is 319.5).
     final sheet = find.byKey(const ValueKey('files_drawer'));
     final handle = find.byKey(const ValueKey('files_drawer_handle'));
-    expect(tester.getSize(sheet).height, closeTo(320, 0.1));
+    expect(tester.getSize(sheet).height, closeTo(319.5, 0.1));
 
     // A slow drag up (no fling): the edge tracks the finger, then settles
-    // to the NEAREST detent — tall, ~78% of the space above the ribbon.
+    // to the NEAREST detent — tall, ~78% of the space above the ribbon
+    // (553.8 here).
     await tester.timedDrag(handle, const Offset(0, -180),
         const Duration(milliseconds: 600));
     await tester.pumpAndSettle();
@@ -768,18 +770,24 @@ void main() {
     expect(find.byIcon(Icons.keyboard_arrow_down), findsOneWidget);
 
     // THE HIT WALL: the covered 'Aspect ratio' tile cannot be triggered —
-    // the tap lands on the tray, and nothing happens at all.
+    // the tap lands on the tray, and nothing happens at all. (The tap aims
+    // at the covered tile's text on purpose and warns that the hit lands
+    // elsewhere — that is the contract under test, so the warning is
+    // silenced.)
     expect(find.text('Current: 16:9 · 1280 × 720'), findsNothing);
-    await tester.tap(find.text('Aspect ratio'));
+    await tester.tap(find.text('Aspect ratio'), warnIfMissed: false);
     await tester.pumpAndSettle();
     expect(find.text('Current: 16:9 · 1280 × 720'), findsNothing);
     expect(find.text('Files'), findsNWidgets(2));
     expect(find.byIcon(Icons.keyboard_arrow_down), findsOneWidget);
 
-    // The a11y contract: the tray's own handle stays live, and the block
-    // never leaks past the sheet's boundary — the top bar keeps its nodes.
+    // The a11y contract, both directions on one label: while the tray
+    // covers the sheet, the sheet's own heading ('Files') leaves the
+    // semantics tree and only the RIBBON's tab keeps it — the block
+    // dropped the covered sheet without leaking past the boundary to
+    // the base flow.
     expect(find.bySemanticsLabel('Collapse slides'), findsOneWidget);
-    expect(find.bySemanticsLabel('Undo'), findsOneWidget);
+    expect(find.bySemanticsLabel('Files'), findsOneWidget);
 
     // THE CLEARANCE: scroll the grid's last row fully above the tray...
     await tester.drag(sheet, const Offset(0, -320));
@@ -829,6 +837,9 @@ void main() {
     }
     expect(tester.getRect(sheet).top, sheetTopAtHalf);
     expect(find.byIcon(Icons.keyboard_arrow_up), findsOneWidget);
+    // ...and with the tray collapsed the block lifts: the sheet's own
+    // 'Files' heading is back in the semantics tree alongside the tab.
+    expect(find.bySemanticsLabel('Files'), findsNWidgets(2));
     // The collapsed divider sits immediately above the fixed bottom ribbon.
     expect(tester.getRect(sheet).bottom,
         closeTo(tester.getRect(divider).bottom, 0.5));
@@ -839,6 +850,11 @@ void main() {
   testWidgets('files drawer: a short viewport constrains the tray to the sheet, and closing Files restores the plain flow', (tester) async {
     Bridge.testOverride = _fakeEngine;
     _mockStorage(dir: tmp.path);
+    // 390×280 logical: the app bar is 57dp, so the body is 223dp — the
+    // plain flow cannot hold the EXPANDED strip (48 + 104 + 77 = 229) at
+    // this height, so the test starts from the collapsed strip (the flow
+    // fits: 125dp) and never expands the flow afterwards; the tray's own
+    // expand happens INSIDE Files, where the strip takes no layout space.
     tester.view.physicalSize = const Size(780, 560);
     tester.view.devicePixelRatio = 2;
     addTearDown(tester.view.resetPhysicalSize);
@@ -847,19 +863,26 @@ void main() {
     await tester.pumpWidget(MaterialApp(
         home: EditorScreen(deck: _deckFixture('d1', 'Test deck', 8))));
     await tester.pumpAndSettle();
+    final stripHandle = find.byKey(const ValueKey('filmstrip_handle'));
+    await tester.tap(stripHandle); // collapse in the flow — 229dp fits no more
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.keyboard_arrow_up), findsOneWidget);
 
     final row = find.byKey(const ValueKey('filmstrip_row'));
     final reveal = find.byKey(const ValueKey('filmstrip_reveal'));
     final canvas = find.byType(AspectRatio);
 
-    // Open Files with the tray expanded: the resting sheet is capped by
-    // the space above the ribbon (135dp on this viewport), and the tray
-    // is capped by the SHEET — it never intrudes farther into the slide
-    // preview than the sheet itself does.
+    // Open Files with the tray still folded, then expand the tray OVER the
+    // sheet: the resting sheet is capped by the space above the ribbon
+    // (134dp on this viewport), and the tray is capped by the SHEET — it
+    // never intrudes farther into the slide preview than the sheet itself
+    // does.
     await tester.tap(find.text('Files'));
     await tester.pumpAndSettle();
     final sheet = find.byKey(const ValueKey('files_drawer'));
-    expect(tester.getSize(sheet).height, closeTo(135, 0.5));
+    expect(tester.getSize(sheet).height, closeTo(134, 0.5));
+    await tester.tap(stripHandle); // expand the tray over the sheet
+    await tester.pumpAndSettle();
     expect(tester.getRect(row).top,
         greaterThanOrEqualTo(tester.getRect(sheet).top - 0.5));
     // A sliver of the slide preview stays in view above the sheet.
@@ -867,20 +890,15 @@ void main() {
         greaterThan(tester.getRect(canvas).top + 4));
     expect(tester.takeException(), isNull);
 
-    // Close: the strip returns to the plain flow — the same band geometry,
-    // the toggle still works, and the rail scrolls.
+    // Close: the strip returns to the plain flow exactly as it left it —
+    // the same collapsed state, same band geometry, the divider still
+    // sitting directly above the ribbon.
     await tester.tap(find.text('Files').first);
     await tester.pumpAndSettle();
     expect(find.text('Files'), findsOneWidget);
     expect(tester.getSize(row), const Size(390, 104));
-    await tester.tap(find.byKey(const ValueKey('filmstrip_handle')));
-    await tester.pumpAndSettle();
     expect(tester.getSize(reveal).height, 0);
-    await tester.tap(find.byKey(const ValueKey('filmstrip_handle')));
-    await tester.pumpAndSettle();
-    expect(tester.getSize(reveal).height, 104);
-    await tester.drag(row, const Offset(-120, 0));
-    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.keyboard_arrow_up), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
