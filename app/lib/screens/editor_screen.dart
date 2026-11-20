@@ -73,8 +73,9 @@ class _EditorScreenState extends State<EditorScreen> {
   /// (the `SizedBox(key: ValueKey('filmstrip_row'))` inside the reveal).
   static const double _filmstripBandHeight = 104.0;
 
-  /// Must stay in lockstep with `_EditorNavBar`'s Material-3 band (the
-  /// 76dp trimmed NavigationBar anatomy).
+  /// Must stay in lockstep with `_EditorNavBar`'s Material-3 band (the 76dp
+  /// trimmed NavigationBar anatomy) — the ribbon's own 1px top hairline is
+  /// accounted separately wherever the anchor needs it (chromeBelow).
   static const double _navBarHeight = 76.0;
 
   /// The Files drawer's live extent, in logical px — the sheet floats as
@@ -1457,11 +1458,14 @@ class _EditorScreenState extends State<EditorScreen> {
         // to another slide never means closing anything first.
         body: LayoutBuilder(
           builder: (context, constraints) {
-            // The chrome the drawer never enters: the ribbon's band, the
-            // divider's hit region, and the revealed strip band (zero once
-            // collapsed — collapsing the strip re-anchors the sheet lower
-            // over the same 200ms family).
+            // The chrome the drawer never enters: the ribbon's band — plus
+            // its own 1px top hairline, which shows exactly while the strip
+            // is open (showTopRule tracks _filmOpen) — the divider's hit
+            // region, and the revealed strip band (zero once collapsed —
+            // collapsing the strip re-anchors the sheet lower over the same
+            // 200ms family).
             final chromeBelow = _navBarHeight +
+                (_filmOpen ? 1.0 : 0.0) + // the ribbon's own top rule
                 _FilmstripDivider.regionHeight +
                 (_filmOpen ? _filmstripBandHeight : 0.0);
             // The space the sheet may occupy: everything above the chrome
