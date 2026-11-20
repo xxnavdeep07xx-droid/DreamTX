@@ -81,26 +81,25 @@ class FilesDrawer extends StatelessWidget {
         side: BorderSide(color: kHairline),
       ),
       child: Column(
-        // hardEdge: the sheet must survive ANY height — the grow-in mounts
-        // at zero, and a deep downward drag / the dismissal collapse pass
-        // through sliver heights where the content no longer fits. The
-        // Column stays top-anchored, so a shrinking sheet reads as sliding
-        // DOWN behind the chrome (rounded top and handle last to go),
-        // clipped instead of overflowing.
-        clipBehavior: Clip.hardEdge,
         children: [
           // The functional grab handle: the whole header is the drag
           // surface — up grows the sheet, down shrinks it toward closing.
+          // It stays PINNED: never inside the scrollable, so dragging it
+          // resizes the sheet (no arena contest with the list) and it is
+          // still on screen at every height the sheet can ever be at —
+          // the sheet's extent is floored above the header's own height.
           _DrawerHandle(
             onDragUpdate: onDragUpdate,
             onDragSettle: onDragSettle,
           ),
-          // Short screens scroll the drawer's content instead of clipping;
-          // at the resting detent the whole grid fits with room to spare.
+          // The grid scrolls only when the sheet is too short for it
+          // (short screens); at the resting detents the content fits
+          // whole, and the drag surface never scrolls away.
           Flexible(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(14, 4, 14, 10),
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Row(
                     children: [
@@ -158,8 +157,7 @@ class FilesDrawer extends StatelessWidget {
                           icon: Icons.public,
                           label: 'Brand resources',
                           sub: 'All decks',
-                          onTap: () =>
-                              showResourceLibrary(context, brand: true),
+                          onTap: () => showResourceLibrary(context, brand: true),
                         ),
                       ),
                     ],
@@ -630,6 +628,23 @@ void _toast(BuildContext context, String message) {
   if (!context.mounted) return;
   ScaffoldMessenger.of(context)
       .showSnackBar(SnackBar(content: Text(message)));
+}
+
+String _kb(dynamic size) {
+  final bytes = (size is num ? size : 0).toDouble();
+  if (bytes >= 1048576) return '${(bytes / 1048576).toStringAsFixed(1)} MB';
+  if (bytes >= 1024) return '${(bytes / 1024).toStringAsFixed(0)} KB';
+  return '${bytes.round()} B';
+}
+
+String _when(dynamic added) {
+  final ms = (added is num ? added : 0).toInt();
+  if (ms <= 0) return 'unknown';
+  final age = DateTime.now().millisecondsSinceEpoch - ms;
+  if (age < 60000) return 'just now';
+  if (age < 3600000) return '${(age / 60000).round()} min ago';
+  if (age < 86400000) return '${(age / 3600000).round()} h ago';
+  return '${(age / 86400000).round()} d ago';
 }
 
 Future<void> _confirmRemove(

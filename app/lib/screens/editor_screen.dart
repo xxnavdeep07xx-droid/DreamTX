@@ -80,14 +80,21 @@ class _EditorScreenState extends State<EditorScreen> {
   /// The Files drawer's live extent, in logical px — the sheet floats as
   /// its own layer pinned above the filmstrip chrome. null = the resting
   /// half detent (recomputed each build from the layer cake's actual
-  /// space); 0.0 = the one-frame mount before the grow-in; anything else
-  /// = a drag in flight or a snapped detent. The settle logic (fling one
-  /// detent, nearest-detent release, dismiss zone at the bottom) reads
-  /// the cached [_drawerHalf]/[_drawerTall], refreshed on every build.
+  /// space); [_drawerSliver] = the one-frame mount the grow-in rises from;
+  /// anything else = a drag in flight or a snapped detent. The settle logic
+  /// (fling one detent, nearest-detent release, dismiss zone at the bottom)
+  /// reads the cached [_drawerHalf]/[_drawerTall], refreshed on every build.
   double? _drawerExtent;
   double _drawerHalf = 296;
   double _drawerTall = 356;
   bool _drawerDragging = false;
+
+  /// The sheet's floor: a sliver of grab handle plus a breath of panel —
+  /// never smaller, so the pinned header always fits and the drag surface
+  /// is on screen at every height the sheet can be at. In ultra-cramped
+  /// layouts the detents themselves may sit below it, so the floor never
+  /// exceeds the tall detent.
+  double _drawerSliver = 56;
 
   /// Editor chrome mode (More menu): editing = the full toolkit, viewing =
   /// a chrome-free read-only pass over the deck.
@@ -264,15 +271,19 @@ class _EditorScreenState extends State<EditorScreen> {
         _selectedObjectId = null;
       }
       // The drawer layer's lifecycle: leaving Files unmounts the sheet and
-      // resets its extent; arriving at Files mounts it at zero height for
+      // resets its extent; arriving at Files mounts it at the header-sliver
+      // detent (56dp — the grab handle plus a first breath of panel) for
       // exactly one frame, then the post-frame callback below grows it to
       // the resting detent — the sheet rises out of the boundary over the
-      // same 200ms family instead of popping in.
+      // same 200ms family instead of popping in. It never passes BELOW the
+      // sliver: dismissal is an instant unmount (a tab's chrome appears
+      // and disappears at its slot), so no frame is ever too short for the
+      // pinned header.
       if (tab != _NavTab.files) {
         _drawerExtent = null;
         _drawerDragging = false;
       } else if (!wasFiles) {
-        _drawerExtent = 0.0;
+        _drawerExtent = _drawerSliver;
       }
     });
     if (tab == _NavTab.files && !wasFiles) {
@@ -1852,12 +1863,12 @@ class _EditorScreenState extends State<EditorScreen> {
                 // boundary (bottom offset = ribbon + divider + the revealed
                 // band), so it can never enter the strip's region. While the
                 // header's drag is live the duration is zero (the edge tracks
-                // the finger exactly); every grow, settle, and collapse runs
-                // the same 200ms eased family as the filmstrip's own reveal —
-                // instant under reduced motion. A drag that settles at zero
-                // height folds the sheet away and unmounts it on the
-                // animation's end; a re-grab mid-collapse leaves the extent
-                // above zero, so only a truly closed sheet ever unmounts.
+                // the finger exactly); the grow-in from the header sliver and
+                // every settle run the same 200ms eased family as the
+                // filmstrip's own reveal — instant under reduced motion.
+                // Dismissal is an instant unmount (a tab's chrome appears
+                // and disappears at its slot), so the sheet is never animated
+                // through a height too short for its pinned header.
                 if (_mode == _Mode.editing && _navTab == _NavTab.files)
                   AnimatedPositioned(
                     duration: _drawerDragging
@@ -1870,14 +1881,6 @@ class _EditorScreenState extends State<EditorScreen> {
                     right: 0,
                     bottom: chromeBelow,
                     height: _drawerExtent ?? half,
-                    onEnd: () {
-                      // The collapse finished (or was interrupted): only a
-                      // fully closed sheet unmounts.
-                      if (_drawerExtent == 0.0 &&
-                          _navTab == _NavTab.files) {
-                        _setNavTab(null);
-                      }
-                    },
                     child: FilesDrawer(
                       aspect: _deckAspect,
                       deckId: (_deck['id'] ?? '').toString(),
@@ -1911,22 +1914,23 @@ class _EditorScreenState extends State<EditorScreen> {
   // ---- the Files drawer's layer ---------------------------------------------
 
   /// A live drag on the drawer's header: the sheet's top edge follows the
-  /// finger — down shrinks, up grows — clamped to the detent band. While the
-  /// drag is live the sheet tracks the finger exactly (the layer's duration
-  /// is zero mid-drag), so the settle below is where the detents do their
-  /// work.
+  /// finger — down shrinks, up grows — clamped between the header sliver
+  /// (the pinned handle always fits) and the tall detent. While the drag is
+  /// live the sheet tracks the finger exactly (the layer's duration is zero
+  /// mid-drag), so the settle below is where the detents do their work.
   void _drawerDragUpdate(double dy) {
     final base = _drawerExtent ?? _drawerHalf;
+    final floor = math.min(_drawerSliver, _drawerTall);
     setState(() {
       _drawerDragging = true;
-      _drawerExtent = (base - dy).clamp(24.0, _drawerTall).toDouble();
+      _drawerExtent = (base - dy).clamp(floor, _drawerTall).toDouble();
     });
   }
 
   /// The drag's settle: a fling moves one detent in its direction; a plain
   /// release snaps to the NEAREST detent — with a dismiss zone below ~70%
-  /// of the half detent where the sheet folds away instead of snapping back
-  /// up.
+  /// of the half detent where the sheet closes outright instead of snapping
+  /// back up.
   void _drawerDragSettle(double velocityDy) {
     final extent = _drawerExtent ?? _drawerHalf;
     if (velocityDy > 700) {
@@ -1934,7 +1938,7 @@ class _EditorScreenState extends State<EditorScreen> {
       if (extent > _drawerTall - 24) {
         _snapDrawer(_drawerHalf);
       } else {
-        _dismissDrawer();
+        _setNavTab(null);
       }
       return;
     }
@@ -1944,7 +1948,7 @@ class _EditorScreenState extends State<EditorScreen> {
       return;
     }
     if (extent < _drawerHalf * 0.7) {
-      _dismissDrawer();
+      _setNavTab(null); // the dismiss zone: gone, cleanly, at its slot
       return;
     }
     _snapDrawer((extent - _drawerHalf).abs() <= (extent - _drawerTall).abs()
@@ -1960,20 +1964,6 @@ class _EditorScreenState extends State<EditorScreen> {
       _drawerDragging = false;
       _drawerExtent = target;
     });
-  }
-
-  /// Fold the sheet away: it collapses to zero over the settle animation
-  /// and unmounts on the animation's end. Without animations it unmounts
-  /// immediately; the tab-close path (Files re-tap) unmounts instantly
-  /// either way — a tab's chrome appears and disappears at its slot, only
-  /// the sheet's own DRAG folds it down.
-  void _dismissDrawer() {
-    if (!mounted) return;
-    if (MediaQuery.of(context).disableAnimations) {
-      _setNavTab(null);
-      return;
-    }
-    _snapDrawer(0.0);
   }
 
   void _onNavSelect(_NavTab tab) {

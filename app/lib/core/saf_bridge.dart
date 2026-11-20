@@ -46,7 +46,7 @@ class SafBridge {
     final raw =
         await _channel.invokeMapMethod<String, dynamic>('list', treeUri);
     if (raw == null) {
-      throw const MissingPluginException('dreamtx/saf returned no listing');
+      throw MissingPluginException('dreamtx/saf returned no listing');
     }
     final files = (raw['files'] as List? ?? const <Object>[])
         .whereType<Map>()
@@ -64,7 +64,7 @@ class SafBridge {
   static Future<String> copyToCache(String uri) async {
     final path = await _channel.invokeMethod<String>('copyToCache', uri);
     if (path == null || path.isEmpty) {
-      throw const MissingPluginException('dreamtx/saf returned no path');
+      throw MissingPluginException('dreamtx/saf returned no path');
     }
     return path;
   }

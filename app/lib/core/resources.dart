@@ -93,7 +93,7 @@ class ResourceStore {
       String? folder}) async {
     final dir = _scopeDir(brand: brand, deckId: deckId);
     if (!dir.existsSync()) dir.createSync(recursive: true);
-    final entry = _copyInto(dir, sourcePath,
+    final entry = await _copyInto(dir, sourcePath,
         folder: folder == null || folder.isEmpty ? null : folder);
     final items = [
       ...await list(brand: brand, deckId: deckId),

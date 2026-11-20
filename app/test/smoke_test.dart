@@ -557,8 +557,8 @@ void main() {
     // The sheet never enters the chrome's region: its bottom edge sits on
     // the filmstrip divider's top (the divider's 48dp region in between).
     final sheet = find.byKey(const ValueKey('files_drawer'));
-    expect(tester.getBottom(sheet),
-        lessThanOrEqualTo(tester.getTop(row) - 48 + 0.5));
+    expect(tester.getRect(sheet).bottom,
+        lessThanOrEqualTo(tester.getRect(row).top - 48 + 0.5));
     expect(
         tester.takeException(), isNull, reason: 'no layout errors while open');
 
@@ -654,8 +654,9 @@ void main() {
     expect(tall, lessThan(460));
 
     // A slow deep drag down: past the dismiss zone (below ~70% of half),
-    // so the sheet folds away and unmounts — and the Files tab releases
-    // with it. The filmstrip never knew any of it happened.
+    // so the sheet closes outright — unmounted cleanly at its slot, and
+    // the Files tab releases with it. The filmstrip never knew any of it
+    // happened.
     await tester.timedDrag(handle, const Offset(0, 340),
         const Duration(milliseconds: 700));
     await tester.pumpAndSettle();
