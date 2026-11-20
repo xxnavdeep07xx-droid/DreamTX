@@ -1,7 +1,7 @@
 name: dreamtx
 description: DreamTX — the presentation app that lets YOUR AI build the deck (MCP, no API keys).
 publish_to: "none"
-version: 0.2.28+33
+version: 0.2.29+34
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -19,6 +19,12 @@ dependencies:
   # implementation. CI verifies the *resolved* version from pubspec.lock,
   # not this declaration.
   path_provider_android: 2.2.23
+  # Pinned exact, same contract as path_provider_android: resolution is a
+  # contract, not a suggestion. 13.x is the federated line — the monolithic
+  # 9/10.x needs win32 ^5, which conflicts with share_plus's win32 ^6 —
+  # and the platform document browser behind the Files drawer's Open ·
+  # Browse and the resource libraries' Add-asset flows.
+  file_picker: 13.4.0
   share_plus: ^13.3.1
   cupertino_icons: ^1.0.8
 

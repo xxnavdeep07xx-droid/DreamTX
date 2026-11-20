@@ -3,10 +3,12 @@
 //! dropped (M2 ships embedded subset fonts + full Unicode).
 
 use crate::command::object_polygon;
-use crate::model::{Deck, Fill, Shape, SLIDE_H, SLIDE_W};
+use crate::model::{Deck, Fill, Shape, SLIDE_H, SLIDE_W, deck_dims};
 use crate::layout::{layout_slide, Element};
 
-/// Slightly oversize page for crispness in viewers; everything in points.
+/// Classic 16:9 page for crispness in viewers; everything in points. The
+/// design→page scale is uniform (KY) in every aspect, so the page WIDTH is
+/// the only per-deck value; PW/PH/KX below define the classic reference.
 const PW: f64 = 960.0;
 const PH: f64 = 540.0;
 const KX: f64 = PW / SLIDE_W;
@@ -374,9 +376,12 @@ fn object_pdf(o: &Shape, alphas: &mut Vec<(f64, String)>) -> String {
 pub fn to_pdf(deck: &Deck) -> Vec<u8> {
     let mut pages_content: Vec<String> = Vec::new();
     let mut alphas: Vec<(f64, String)> = Vec::new();
+    // Page width follows the deck's aspect: the design→page scale is uniform
+    // (KX == KY), so width-in-points is KY × design-width. Height stays PH.
+    let pw = KY * deck_dims(deck).0;
 
     for slide in &deck.slides {
-        let layout = layout_slide(&deck.dna, slide);
+        let layout = layout_slide(&deck, slide);
         let mut ops = String::new();
 
         for el in &layout.elements {
@@ -453,7 +458,7 @@ pub fn to_pdf(deck: &Deck) -> Vec<u8> {
         let page_num = objs.len() + 1;
         let content_num = page_num + 1;
         objs.push(format!(
-            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {PW} {PH}] /Resources {} /Contents {content_num} 0 R >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {pw:.0} {PH}] /Resources {} /Contents {content_num} 0 R >>",
             resources
         ));
         objs.push(format!("<< /Length {} >>\nstream\n{}\nendstream", content.len(), content));
@@ -496,6 +501,7 @@ mod tests {
             title: "T".into(),
             version: 1,
             dna: Dna { family: DnaFamily::MagazineSerif, seed: 9 },
+            aspect: "16:9".into(),
             slides: vec![
                 Slide {
                     id: "s1".into(),
@@ -517,6 +523,30 @@ mod tests {
         assert!(s.starts_with("%PDF-1.4"));
         assert!(s.contains("/Count 2"));
         assert!(s.contains("%%EOF"));
+        // 16:9 deck: the classic 960-point page.
+        assert!(s.contains("/MediaBox [0 0 960 540]"));
+    }
+
+    #[test]
+    fn page_width_follows_aspect() {
+        // 4:3 deck → 720-point page (same 540 height, same uniform scale).
+        let deck = Deck {
+            id: "d43".into(),
+            title: "T".into(),
+            version: 1,
+            dna: Dna { family: DnaFamily::SwissEditorial, seed: 5 },
+            aspect: "4:3".into(),
+            slides: vec![Slide {
+                id: "s1".into(),
+                archetype: Archetype::Cover,
+                content: SlideContent::Cover { kicker: None, title: "Square-ish".into(), subtitle: None },
+                objects: Vec::new(),
+            }],
+            components: Vec::new(),
+        };
+        let b = to_pdf(&deck);
+        let s = String::from_utf8_lossy(&b);
+        assert!(s.contains("/MediaBox [0 0 720 540]"), "4:3 page expected 720pt wide");
     }
 
     #[test]
@@ -526,6 +556,7 @@ mod tests {
             title: "T".into(),
             version: 1,
             dna: Dna { family: DnaFamily::SwissEditorial, seed: 3 },
+            aspect: "16:9".into(),
             slides: vec![Slide {
                 id: "s1".into(),
                 archetype: Archetype::Cover,

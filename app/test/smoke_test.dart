@@ -6,7 +6,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:dreamtx/core/aspects.dart';
 import 'package:dreamtx/core/bridge.dart';
+import 'package:dreamtx/core/resources.dart';
 import 'package:dreamtx/core/store.dart';
 import 'package:dreamtx/screens/decks_screen.dart';
 import 'package:dreamtx/screens/editor_screen.dart';
@@ -44,20 +46,27 @@ Map<String, dynamic> _deckFixture(String id, String title, int n) => {
     };
 
 /// In-memory deck engine for the editor screen: implements exactly the ops
-/// the build path touches (meta, get_layout) plus add_slide for the + smoke.
+/// the build path touches (meta, get_layout with the deck's frame dims) plus
+/// add_slide for the + smoke and set_aspect for the Files drawer's ratio
+/// tool.
 Map<String, dynamic> _fakeEngine(Map<String, dynamic> req) {
   switch (req['op']) {
     case 'meta':
       return {
         'ok': true,
         'object_presets': <Map<String, dynamic>>[],
-        'archetypes': <String>[]
+        'archetypes': <String>[],
+        'aspects': <String>['16:9', '16:10', '4:3', '1:1'],
       };
     case 'get_layout':
+      final deck = req['deck'] as Map?;
+      final (w, h) = deckDimsOf(deck?['aspect'] as String?);
       return {
         'ok': true,
         'layout': <String, dynamic>{
           'elements': <Map<String, dynamic>>[],
+          'w': w,
+          'h': h,
         },
       };
     case 'add_slide':
@@ -72,6 +81,10 @@ Map<String, dynamic> _fakeEngine(Map<String, dynamic> req) {
         'objects': <Map<String, dynamic>>[],
       });
       deck['slides'] = slides;
+      return {'ok': true, 'deck': deck};
+    case 'set_aspect':
+      final deck = Map<String, dynamic>.from(req['deck'] as Map);
+      deck['aspect'] = req['aspect'];
       return {'ok': true, 'deck': deck};
     default:
       return {
@@ -113,6 +126,7 @@ void main() {
     TestWidgetsFlutterBinding.ensureInitialized();
     tmp = Directory.systemTemp.createTempSync('dreamtx_smoke');
     DeckStore.debugResetForTest();
+    ResourceStore.debugResetForTest();
     // Production bounds restored for every test; timeout-specific tests
     // shrink them themselves. The scan seam is off unless a test sets it.
     DeckStore.openBound = const Duration(seconds: 8);
@@ -480,5 +494,159 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('Set your DreamTX server URL'), findsOneWidget);
     expect(find.textContaining('pairing…'), findsNothing);
+  });
+
+  testWidgets('files drawer: opens over the filmstrip with all six tools, and closing restores the strip exactly', (tester) async {
+    Bridge.testOverride = _fakeEngine;
+    _mockStorage(dir: tmp.path);
+    tester.view.physicalSize = const Size(780, 1688);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(MaterialApp(
+        home: EditorScreen(deck: _deckFixture('d1', 'Test deck', 8))));
+    await tester.pumpAndSettle();
+
+    // Before: the ribbon's Files tab, a laid-out filmstrip, and a scrolled
+    // rail — the state the drawer owes back on close.
+    expect(find.text('Files'), findsOneWidget);
+    final row = find.byKey(const ValueKey('filmstrip_row'));
+    expect(tester.getSize(row), const Size(390, 104));
+    await tester.drag(find.byKey(const ValueKey('filmstrip_row')),
+        const Offset(-120, 0));
+    await tester.pumpAndSettle();
+    final scrolled = tester.getTopLeft(find.text('1. Slide 1')).dx;
+
+    // Open: tapping Files in the ribbon docks the drawer above the ribbon.
+    await tester.tap(find.text('Files'));
+    await tester.pumpAndSettle();
+    // The drawer's heading joins the ribbon's tab — two 'Files' texts now.
+    expect(find.text('Files'), findsNWidgets(2));
+    // All six tools, in the spec's grid order (row-major position checks).
+    final newC = tester.getCenter(find.text('New'));
+    final openC = tester.getCenter(find.text('Open'));
+    final renameC = tester.getCenter(find.text('Rename'));
+    final aspectC = tester.getCenter(find.text('Aspect ratio'));
+    final deckRes = tester.getCenter(find.text('Deck resources'));
+    final brandRes = tester.getCenter(find.text('Brand resources'));
+    expect(newC.dx, lessThan(openC.dx));
+    expect(openC.dx, lessThan(renameC.dx));
+    expect(aspectC.dy, greaterThan(newC.dy));
+    expect(aspectC.dx, lessThan(deckRes.dx));
+    expect(deckRes.dx, lessThan(brandRes.dx));
+    // Supporting labels + the quiet footer.
+    expect(find.text('Blank · Template'), findsOneWidget);
+    expect(find.text('Recents · Browse'), findsOneWidget);
+    expect(find.text('This deck only'), findsOneWidget);
+    expect(find.text('All decks'), findsOneWidget);
+    expect(find.text('Resources stored on this device'), findsOneWidget);
+    // The slide and the ribbon both stay on screen.
+    expect(find.text('Slide 1 / 8'), findsOneWidget);
+    expect(find.text('AI'), findsOneWidget);
+    // The filmstrip band is hidden (not laid out) while the drawer owns the
+    // space — its element stays alive, which the close below proves by
+    // restoring the scroll offset exactly.
+    expect(
+        tester.takeException(), isNull, reason: 'no layout errors while open');
+
+    // Close: the ribbon's Files again (the last of the two in traversal).
+    await tester.tap(find.text('Files').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Files'), findsOneWidget);
+    // Exact restoration: geometry, scroll offset, selection, and the + disc.
+    expect(tester.getSize(row), const Size(390, 104));
+    expect(tester.getTopLeft(find.text('1. Slide 1')).dx,
+        closeTo(scrolled, 0.5));
+    expect(find.text('Slide 1 / 8'), findsOneWidget);
+    final disc = tester.widget<Positioned>(find
+        .ancestor(of: find.byIcon(Icons.add), matching: find.byType(Positioned))
+        .first);
+    expect(disc.left, 14);
+    expect(disc.top, 30);
+  });
+
+  testWidgets('files drawer: the Aspect tile applies the ratio to the deck, and the canvas frame follows', (tester) async {
+    Bridge.testOverride = _fakeEngine;
+    _mockStorage(dir: tmp.path);
+    tester.view.physicalSize = const Size(780, 1688);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(MaterialApp(
+        home: EditorScreen(deck: _deckFixture('d1', 'Test deck', 8))));
+    await tester.pumpAndSettle();
+
+    // The canvas starts at the classic ratio.
+    final canvasAspect = find.byType(AspectRatio);
+    expect(canvasAspect, findsOneWidget);
+    expect(tester.widget<AspectRatio>(canvasAspect).aspectRatio,
+        closeTo(16 / 9, 0.001));
+
+    await tester.tap(find.text('Files'));
+    await tester.pumpAndSettle();
+    // The tile's supporting label shows the live ratio.
+    expect(find.text('16:9'), findsOneWidget);
+
+    await tester.tap(find.text('Aspect ratio'));
+    await tester.pumpAndSettle();
+    // The sheet states the current ratio and the supported presets.
+    expect(find.text('Current: 16:9 · 1280 × 720'), findsOneWidget);
+    expect(find.text('16:10'), findsOneWidget);
+    expect(find.text('4:3'), findsOneWidget);
+    expect(find.text('1:1'), findsOneWidget);
+    // These slides have no drawn objects → no re-framing dialog, the choice
+    // applies directly.
+    await tester.tap(find.text('4:3').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Current: 16:9 · 1280 × 720'), findsNothing);
+
+    // The deck carries the ratio: the canvas frame re-ratios, and the
+    // drawer's tile now reads 4:3.
+    expect(tester.widget<AspectRatio>(canvasAspect).aspectRatio,
+        closeTo(4 / 3, 0.001));
+    expect(find.text('4:3'), findsOneWidget);
+  });
+
+  test('resources: the two scopes stay separate, and everything persists on disk', () async {
+    _mockStorage(dir: tmp.path);
+    final store = await ResourceStore.open();
+    final src = File('${tmp.path}/source.bin')..writeAsStringSync('payload');
+    await store.add(brand: true, sourcePath: src.path);
+    await store.add(brand: false, deckId: 'd1', sourcePath: src.path);
+    await store.add(brand: false, deckId: 'd2', sourcePath: src.path);
+
+    // Scope separation: brand never lists deck assets, a deck never lists
+    // another deck's or the brand's.
+    final brandItems = await store.list(brand: true);
+    expect(brandItems, hasLength(1));
+    expect(await store.list(brand: false, deckId: 'd1'), hasLength(1));
+    expect(await store.list(brand: false, deckId: 'd2'), hasLength(1));
+
+    // Real files on real disk, under the app's own documents tree.
+    expect(
+        Directory('${tmp.path}/resources/brand')
+            .listSync()
+            .whereType<File>()
+            .length,
+        2, // library.json + the copied asset
+        reason: 'brand scope stores its index + asset files');
+    expect(File('${tmp.path}/resources/decks/d1/library.json').existsSync(),
+        isTrue);
+
+    // Removal is scoped: the brand item goes, both deck libraries intact.
+    await store.remove(brand: true, id: brandItems.first['id'].toString());
+    expect(await store.list(brand: true), isEmpty);
+    expect(await store.list(brand: false, deckId: 'd1'), hasLength(1));
+
+    // Persistence across a "restart": a fresh store instance over the same
+    // documents directory reads the same libraries back.
+    ResourceStore.debugResetForTest();
+    final reopened = await ResourceStore.open();
+    expect(await reopened.list(brand: false, deckId: 'd1'), hasLength(1));
+    expect(await reopened.list(brand: true), isEmpty);
+
+    _clearStorageMock();
   });
 }

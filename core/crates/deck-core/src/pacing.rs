@@ -141,6 +141,7 @@ mod tests {
             title: "T".into(),
             version: 1,
             dna: Dna { family: DnaFamily::SwissEditorial, seed: 1 },
+            aspect: "16:9".into(),
             slides: vec![slide(Archetype::Statement), slide(Archetype::Statement)],
             components: Vec::new(),
         };

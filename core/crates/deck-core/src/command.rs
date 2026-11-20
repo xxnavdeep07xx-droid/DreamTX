@@ -26,6 +26,10 @@ pub enum Command {
         title: String,
         #[serde(default = "default_family")]
         family: String,
+        /// Blank start: no cover slide, no template content — an empty
+        /// stage the user builds on (the Files drawer's "New · Blank").
+        #[serde(default)]
+        blank: bool,
     },
     AddSlide {
         deck: Deck,
@@ -52,6 +56,16 @@ pub enum Command {
         deck: Deck,
         /// "next_variant" | "next_family" | a family name.
         change: String,
+    },
+    /// Change the deck's slide-frame aspect. Objects re-frame with the
+    /// change: x and w scale to the new frame width (y and h are untouched —
+    /// the design height is the same 720 in every aspect). The caller shows
+    /// that re-framing explicitly before invoking; the response reports
+    /// whether geometry actually moved.
+    SetAspect {
+        deck: Deck,
+        /// One of [ASPECTS]: "16:9" | "16:10" | "4:3" | "1:1".
+        aspect: String,
     },
     // ---- vector overlay layer (manual studio tools) ----------------------
     AddObject {
@@ -271,6 +285,7 @@ pub fn execute(req: &str) -> Value {
             "ok": true,
             "archetypes": Archetype::all().iter().map(|a| a.label()).collect::<Vec<_>>(),
             "families": ["swiss_editorial", "cinematic", "magazine_serif"],
+            "aspects": ASPECTS,
             "object_presets": shapes::presets().iter().map(|p| json!({
                 "name": p.name,
                 "label": p.label,
@@ -278,7 +293,7 @@ pub fn execute(req: &str) -> Value {
                 "open": p.open,
             })).collect::<Vec<_>>(),
         }),
-        Command::NewDeck { title, family } => {
+        Command::NewDeck { title, family, blank } => {
             let fam = parse_family(&family).unwrap_or(DnaFamily::SwissEditorial);
             let seed = fresh_seed(&title);
             let mut deck = Deck {
@@ -286,9 +301,16 @@ pub fn execute(req: &str) -> Value {
                 title: title.clone(),
                 version: 1,
                 dna: Dna { family: fam, seed },
+                aspect: "16:9".into(),
                 slides: Vec::new(),
                 components: Vec::new(),
             };
+            if blank {
+                // Blank start: zero slides, no template content — the editor
+                // already handles the empty deck ("No slide here yet") and
+                // the + adds the first slide.
+                return json!({ "ok": true, "deck": deck });
+            }
             let cover = Slide {
                 id: next_slide_id(&deck),
                 archetype: Archetype::Cover,
@@ -364,6 +386,35 @@ pub fn execute(req: &str) -> Value {
             };
             deck.version += 1;
             json!({ "ok": true, "deck": deck, "dna": resolve(&deck.dna) })
+        }
+        Command::SetAspect { mut deck, aspect } => {
+            let Some((w, _)) = aspect_dims(&aspect) else {
+                return json!({ "ok": false, "error": format!("unknown aspect '{aspect}' — supported: {}", ASPECTS.join(", ")) });
+            };
+            let old_w = deck_dims(&deck).0;
+            let k = w / old_w;
+            let reframed = (k - 1.0).abs() > 1e-9;
+            if reframed {
+                // Re-frame existing geometry to the new width: x and w scale
+                // by the width ratio; y and h are untouched (the design height
+                // is 720 in every aspect). Normalized polygon points are
+                // bbox-local, so they ride along inside each new bbox.
+                for s in deck.slides.iter_mut() {
+                    for o in s.objects.iter_mut() {
+                        o.x *= k;
+                        o.w *= k;
+                    }
+                }
+                for c in deck.components.iter_mut() {
+                    for o in c.objects.iter_mut() {
+                        o.x *= k;
+                        o.w *= k;
+                    }
+                }
+            }
+            deck.aspect = aspect;
+            deck.version += 1;
+            json!({ "ok": true, "deck": deck, "reframed": reframed })
         }
         // ---- vector overlay ops --------------------------------------------------
         Command::AddObject { mut deck, slide_id, shape } => {
@@ -532,14 +583,15 @@ pub fn execute(req: &str) -> Value {
             let Some(slide) = deck.slides.iter_mut().find(|s| s.id == slide_id) else {
                 return json!({ "ok": false, "error": "slide not found" });
             };
+            let dw = deck_dims(&deck).0;
             for o in slide.objects.iter_mut() {
                 if !ids.contains(&o.id) {
                     continue;
                 }
                 match mode.as_str() {
                     "left" => o.x = 0.0,
-                    "center" => o.x = (SLIDE_W - o.w) / 2.0,
-                    "right" => o.x = SLIDE_W - o.w,
+                    "center" => o.x = (dw - o.w) / 2.0,
+                    "right" => o.x = dw - o.w,
                     "top" => o.y = 0.0,
                     "middle" => o.y = (SLIDE_H - o.h) / 2.0,
                     "bottom" => o.y = SLIDE_H - o.h,
@@ -576,6 +628,7 @@ pub fn execute(req: &str) -> Value {
                 return json!({ "ok": false, "error": "component is empty" });
             }
             // center the copy on the slide
+            let dw = deck_dims(&deck).0;
             let (mut minx, mut miny, mut maxx, mut maxy) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
             for o in &comp.objects {
                 minx = minx.min(o.x);
@@ -583,7 +636,7 @@ pub fn execute(req: &str) -> Value {
                 maxx = maxx.max(o.x + o.w);
                 maxy = maxy.max(o.y + o.h);
             }
-            let dx = (SLIDE_W - (maxx - minx)) / 2.0 - minx;
+            let dx = (dw - (maxx - minx)) / 2.0 - minx;
             let dy = (SLIDE_H - (maxy - miny)) / 2.0 - miny;
             // pre-generate ids before the mutable slide borrow
             let base = object_id_counter(&deck);
@@ -677,7 +730,7 @@ pub fn execute(req: &str) -> Value {
             let Some(slide) = deck.slides.get(slide_index) else {
                 return json!({ "ok": false, "error": "slide_index out of range" });
             };
-            json!({ "ok": true, "layout": layout_slide(&deck.dna, slide) })
+            json!({ "ok": true, "layout": layout_slide(&deck, slide) })
         }
         Command::Pacing { deck } => json!({ "ok": true, "issues": pacing::audit(&deck), "next_suggested": pacing::suggest_next(&deck) }),
         Command::ExportPptx { deck } => {
@@ -703,5 +756,123 @@ fn archetype_of(c: &SlideContent) -> Archetype {
         SlideContent::ChartHero { .. } => Archetype::ChartHero,
         SlideContent::Closing { .. } => Archetype::Closing,
         SlideContent::Blank => Archetype::Blank,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn deck_with_object() -> Deck {
+        Deck {
+            id: "d_test".into(),
+            title: "T".into(),
+            version: 3,
+            dna: Dna { family: DnaFamily::SwissEditorial, seed: 11 },
+            aspect: "16:9".into(),
+            slides: vec![Slide {
+                id: "s1".into(),
+                archetype: Archetype::Blank,
+                content: SlideContent::Blank,
+                objects: vec![Shape {
+                    id: "o1".into(),
+                    preset: "rect".into(),
+                    x: 640.0,
+                    y: 100.0,
+                    w: 320.0,
+                    h: 80.0,
+                    rotation: 0.0,
+                    opacity: 1.0,
+                    locked: false,
+                    group: None,
+                    component: None,
+                    fill: Fill::None,
+                    stroke: Stroke::default(),
+                    effects: Effects::default(),
+                    points: None,
+                    holes: None,
+                    closed: false,
+                }],
+            }],
+            components: vec![],
+        }
+    }
+
+    #[test]
+    fn new_deck_blank_starts_empty() {
+        let r = execute(r#"{"op":"new_deck","title":"B","blank":true}"#);
+        assert_eq!(r["ok"], true);
+        assert_eq!(r["deck"]["slides"].as_array().map(Vec::len), Some(0));
+        assert_eq!(r["deck"]["aspect"], "16:9");
+    }
+
+    #[test]
+    fn new_deck_classic_still_carries_a_cover() {
+        let r = execute(r#"{"op":"new_deck","title":"C"}"#);
+        assert_eq!(r["ok"], true);
+        assert_eq!(r["deck"]["slides"].as_array().map(Vec::len), Some(1));
+        assert_eq!(r["deck"]["slides"][0]["archetype"], "cover");
+    }
+
+    #[test]
+    fn set_aspect_reframes_objects() {
+        let req = r#"{"op":"set_aspect","deck":__DECK__,"aspect":"4:3"}"#
+            .replace("__DECK__", &serde_json::to_string(&deck_with_object()).unwrap());
+        let r = execute(&req);
+        assert_eq!(r["ok"], true);
+        assert_eq!(r["reframed"], true);
+        let deck: Deck = serde_json::from_value(r["deck"].clone()).unwrap();
+        assert_eq!(deck.aspect, "4:3");
+        assert_eq!(deck.version, 4);
+        let o = &deck.slides[0].objects[0];
+        // x/w scale by 960/1280 = 0.75; y/h untouched.
+        assert!((o.x - 480.0).abs() < 1e-9, "x = {}", o.x);
+        assert!((o.w - 240.0).abs() < 1e-9, "w = {}", o.w);
+        assert!((o.y - 100.0).abs() < 1e-9);
+        assert!((o.h - 80.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn set_aspect_rejects_unknown() {
+        let req = r#"{"op":"set_aspect","deck":__DECK__,"aspect":"21:9"}"#
+            .replace("__DECK__", &serde_json::to_string(&deck_with_object()).unwrap());
+        let r = execute(&req);
+        assert_eq!(r["ok"], false);
+        assert!(r["error"].as_str().unwrap().contains("21:9"));
+    }
+
+    #[test]
+    fn set_aspect_same_ratio_moves_nothing() {
+        let req = r#"{"op":"set_aspect","deck":__DECK__,"aspect":"16:9"}"#
+            .replace("__DECK__", &serde_json::to_string(&deck_with_object()).unwrap());
+        let r = execute(&req);
+        assert_eq!(r["ok"], true);
+        assert_eq!(r["reframed"], false);
+        let deck: Deck = serde_json::from_value(r["deck"].clone()).unwrap();
+        let o = &deck.slides[0].objects[0];
+        assert!((o.x - 640.0).abs() < 1e-9);
+        assert!((o.w - 320.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn get_layout_honors_aspect() {
+        let mut deck = deck_with_object();
+        deck.aspect = "1:1".into();
+        let req = r#"{"op":"get_layout","deck":__DECK__,"slide_index":0}"#
+            .replace("__DECK__", &serde_json::to_string(&deck).unwrap());
+        let r = execute(&req);
+        assert_eq!(r["ok"], true);
+        assert_eq!(r["layout"]["w"].as_f64(), Some(720.0));
+        assert_eq!(r["layout"]["h"].as_f64(), Some(720.0));
+    }
+
+    #[test]
+    fn meta_lists_aspects() {
+        let r = execute(r#"{"op":"meta"}"#);
+        assert_eq!(r["ok"], true);
+        assert_eq!(
+            r["aspects"].as_array().map(|a| a.len()),
+            Some(ASPECTS.len())
+        );
     }
 }

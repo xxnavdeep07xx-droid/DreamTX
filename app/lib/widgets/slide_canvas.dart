@@ -19,20 +19,24 @@ class SlideCanvas extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The frame follows the deck's aspect: the layout JSON carries w/h
+    // (the classic 1280×720 when the field is absent — old decks).
+    final w = (layout['w'] as num?)?.toDouble() ?? designW;
+    final h = (layout['h'] as num?)?.toDouble() ?? designH;
     return LayoutBuilder(builder: (context, constraints) {
       final scale =
-          constraints.biggest.width / constraints.biggest.height > designW / designH
-              ? constraints.biggest.height / designH
-              : constraints.biggest.width / designW;
+          constraints.biggest.width / constraints.biggest.height > w / h
+              ? constraints.biggest.height / h
+              : constraints.biggest.width / w;
       return GestureDetector(
         onTapUp: (details) => _handleTap(details.localPosition * (1 / scale)),
         child: SizedBox(
-          width: designW * scale,
-          height: designH * scale,
+          width: w * scale,
+          height: h * scale,
           child: FittedBox(
             fit: BoxFit.fill,
             child: CustomPaint(
-              size: const Size(designW, designH),
+              size: Size(w, h),
               painter: _SlidePainter(layout),
             ),
           ),

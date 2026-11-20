@@ -5,7 +5,7 @@
 
 use crate::dna::resolve;
 use crate::layout::{layout_slide, Element};
-use crate::model::{ArrowHead, DashStyle, Deck, Fill, Shape, SLIDE_H, SLIDE_W};
+use crate::model::{ArrowHead, DashStyle, Deck, Fill, Shape, SLIDE_H, deck_dims};
 use crate::shapes;
 use std::io::Write;
 
@@ -250,6 +250,11 @@ pub fn to_pptx(deck: &Deck) -> Vec<u8> {
 
     let n = deck.slides.len();
     let r = resolve(&deck.dna);
+    // Slide size follows the deck's aspect: design px × EMU. Height is the
+    // constant 720; width follows the ratio (16:9 → the classic 12192000).
+    let (dw, _) = deck_dims(deck);
+    let sld_cx = (dw * EMU).round() as i64;
+    let sld_cy = (SLIDE_H * EMU).round() as i64;
 
     macro_rules! put {
         ($path:expr, $data:expr) => {
@@ -291,7 +296,7 @@ pub fn to_pptx(deck: &Deck) -> Vec<u8> {
     put!(
         "ppt/presentation.xml",
         format!(
-            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:presentation xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:sldMasterIdLst><p:sldMasterId id="1" r:id="rId1"/></p:sldMasterIdLst><p:sldIdLst>{}</p:sldIdLst><p:sldSz cx="12192000" cy="6858000"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>"#,
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:presentation xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:sldMasterIdLst><p:sldMasterId id="1" r:id="rId1"/></p:sldMasterIdLst><p:sldIdLst>{}</p:sldIdLst><p:sldSz cx="{sld_cx}" cy="{sld_cy}"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>"#,
             sld_ids
         )
     );
@@ -321,7 +326,7 @@ pub fn to_pptx(deck: &Deck) -> Vec<u8> {
     put!("ppt/theme/theme1.xml", theme);
 
     for (i, slide) in deck.slides.iter().enumerate() {
-        let layout = layout_slide(&deck.dna, slide);
+        let layout = layout_slide(&deck, slide);
         let mut shapes = String::new();
         let mut id = 2u32;
         for el in &layout.elements {
@@ -350,7 +355,6 @@ pub fn to_pptx(deck: &Deck) -> Vec<u8> {
         );
     }
 
-    let _ = SLIDE_W * SLIDE_H; // scale is handled by the EMU constant
     match zip.finish() {
         Ok(cursor) => cursor.into_inner(),
         Err(_) => Vec::new(),
@@ -368,6 +372,7 @@ mod tests {
             title: "T".into(),
             version: 1,
             dna: Dna { family: DnaFamily::SwissEditorial, seed: 3 },
+            aspect: "16:9".into(),
             slides: vec![Slide {
                 id: "s1".into(),
                 archetype: Archetype::Cover,
