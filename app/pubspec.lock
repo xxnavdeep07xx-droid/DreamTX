@@ -157,7 +157,7 @@ packages:
     dependency: transitive
     description:
       name: file_picker_linux
-      sha256: "9215ee8c672508cdd9a325202669f849e1baac883658626b3abed5777e6a4b"
+      sha256: "9215ee8c672508cdd9a325202669f849e1baac883658626b3abed5d7777e6a4b"
       url: "https://pub.dev"
     source: hosted
     version: "2.0.4"
