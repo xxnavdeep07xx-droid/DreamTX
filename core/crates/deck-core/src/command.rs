@@ -806,7 +806,12 @@ mod tests {
         let r = execute(r#"{"op":"new_deck","title":"B","blank":true}"#);
         assert_eq!(r["ok"], true);
         assert_eq!(r["deck"]["slides"].as_array().map(Vec::len), Some(0));
-        assert_eq!(r["deck"]["aspect"], "16:9");
+        // The default aspect round-trips through the struct: the raw JSON
+        // omits "16:9" (skip_serializing_if) so old deck files stay
+        // byte-stable — deserialization restores the default.
+        let deck: Deck = serde_json::from_value(r["deck"].clone()).unwrap();
+        assert_eq!(deck.aspect, "16:9");
+        assert!(deck.slides.is_empty());
     }
 
     #[test]
