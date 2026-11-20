@@ -1109,7 +1109,7 @@ class _EditorScreenState extends State<EditorScreen> {
     List<Map<String, dynamic>> decks;
     try {
       final store = await DeckStore.open();
-      decks = await store.list();
+      decks = (await store.scan()).decks;
     } catch (e) {
       print('[deck-store] recents failed: $e');
       _toast('Storage is not answering — try again in a moment.');
@@ -1157,13 +1157,14 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   Future<void> _browseForDeck() async {
-    final result = await FilePicker.platform.pickFiles(
+    // file_picker 13.x: the static entry point returns the picked files
+    // directly (an empty list when the user dismisses the browser).
+    final files = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['json'],
       allowMultiple: false,
     );
-    final file = result.files.isEmpty ? null : result.files.first;
-    final path = file?.path;
+    final path = files.isEmpty ? null : files.first.path;
     if (path == null) return; // dismissed — nothing to do
     Map<String, dynamic>? deck;
     try {
@@ -1178,9 +1179,9 @@ class _EditorScreenState extends State<EditorScreen> {
     }
     // Importing never overwrites: a colliding id gets a fresh one under its
     // own file, the original deck on this device stays untouched.
-    final imported = Map<String, dynamic>.from(deck!);
+    final imported = Map<String, dynamic>.from(deck);
     final store = await DeckStore.open();
-    final ids = (await store.list()).map((d) => d['id'].toString()).toSet();
+    final ids = (await store.scan()).decks.map((d) => d['id'].toString()).toSet();
     var id = imported['id'].toString();
     if (id.isEmpty || ids.contains(id)) {
       id = 'd${DateTime.now().millisecondsSinceEpoch}';
@@ -1256,7 +1257,7 @@ class _EditorScreenState extends State<EditorScreen> {
         context: context,
         builder: (context) => dreamDialog(
           title: Text('Re-frame to $choice?'),
-          content: Text(
+          content: const Text(
               'Drawn objects keep their height and vertical position; their '
               'horizontal positions and widths scale to the new frame. '
               'Layouts re-flow for the new width. This applies to the deck '
@@ -1264,10 +1265,10 @@ class _EditorScreenState extends State<EditorScreen> {
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(context, false),
-                child: const Text('Keep $current')),
+                child: Text('Keep $current')),
             FilledButton(
                 onPressed: () => Navigator.pop(context, true),
-                child: const Text('Apply $choice')),
+                child: Text('Apply $choice')),
           ],
         ),
       );

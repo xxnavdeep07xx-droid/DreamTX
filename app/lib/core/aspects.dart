@@ -3,6 +3,7 @@
 /// only the width follows the ratio. The editor's canvas frame, the Files
 /// drawer's Aspect tile, and object placement all read from here so the app
 /// and the engine agree on the frame without a round-trip.
+library;
 
 /// Supported aspects → design-space (width, height) in px.
 const Map<String, (double, double)> kDeckAspects = {
@@ -27,6 +28,7 @@ double aspectRatioOf(String? aspect) {
 /// The aspect's frame size as a display string ("1280 × 720").
 String dimsLabel(String aspect) {
   final (w, h) = deckDimsOf(aspect);
-  final whole = (v) => v.round() == v ? v.toInt().toString() : v.toString();
+  String whole(double v) =>
+      v.round() == v ? v.toInt().toString() : v.toString();
   return '${whole(w)} × ${whole(h)}';
 }
