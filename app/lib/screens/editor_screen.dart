@@ -94,7 +94,7 @@ class _EditorScreenState extends State<EditorScreen> {
   /// is on screen at every height the sheet can be at. In ultra-cramped
   /// layouts the detents themselves may sit below it, so the floor never
   /// exceeds the tall detent.
-  double _drawerSliver = 56;
+  static const double _drawerSliver = 56;
 
   /// Editor chrome mode (More menu): editing = the full toolkit, viewing =
   /// a chrome-free read-only pass over the deck.
