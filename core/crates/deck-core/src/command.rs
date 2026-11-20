@@ -580,10 +580,13 @@ pub fn execute(req: &str) -> Value {
             json!({ "ok": true, "deck": deck })
         }
         Command::AlignObjects { mut deck, slide_id, ids, mode } => {
+            // The frame width is read before the mutable slide borrow —
+            // the deck's aspect (16:9 unless changed) decides what
+            // center/right mean here.
+            let dw = deck_dims(&deck).0;
             let Some(slide) = deck.slides.iter_mut().find(|s| s.id == slide_id) else {
                 return json!({ "ok": false, "error": "slide not found" });
             };
-            let dw = deck_dims(&deck).0;
             for o in slide.objects.iter_mut() {
                 if !ids.contains(&o.id) {
                     continue;

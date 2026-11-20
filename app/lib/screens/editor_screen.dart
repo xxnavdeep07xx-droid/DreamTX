@@ -1157,14 +1157,13 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   Future<void> _browseForDeck() async {
-    // file_picker 13.x: the static entry point returns the picked files
-    // directly (an empty list when the user dismisses the browser).
-    final files = await FilePicker.pickFiles(
+    // file_picker 13.x: pickFile() is the single-file entry point — a
+    // PlatformFile, or null when the user dismisses the browser.
+    final file = await FilePicker.pickFile(
       type: FileType.custom,
       allowedExtensions: const ['json'],
-      allowMultiple: false,
     );
-    final path = files.isEmpty ? null : files.first.path;
+    final path = file?.path;
     if (path == null) return; // dismissed — nothing to do
     Map<String, dynamic>? deck;
     try {
