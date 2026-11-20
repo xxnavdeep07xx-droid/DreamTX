@@ -57,6 +57,12 @@ pub enum Command {
         /// "next_variant" | "next_family" | a family name.
         change: String,
     },
+    /// Resolve the deck's DNA to its concrete palette (bg/surface/fg/muted/
+    /// accent + type families) WITHOUT mutating the deck — a read for the
+    /// app's color pickers ("deck colors").
+    ResolveDna {
+        deck: Deck,
+    },
     /// Change the deck's slide-frame aspect. Objects re-frame with the
     /// change: x and w scale to the new frame width (y and h are untouched —
     /// the design height is the same 720 in every aspect). The caller shows
@@ -387,6 +393,12 @@ pub fn execute(req: &str) -> Value {
             deck.version += 1;
             json!({ "ok": true, "deck": deck, "dna": resolve(&deck.dna) })
         }
+        // Resolve the deck's DNA palette without mutating anything — the
+        // app's color pickers ("deck colors") read the same bg/surface/fg/
+        // muted/accent the layouts render with.
+        Command::ResolveDna { deck } => {
+            json!({ "ok": true, "dna": resolve(&deck.dna) })
+        }
         Command::SetAspect { mut deck, aspect } => {
             let Some((w, _)) = aspect_dims(&aspect) else {
                 return json!({ "ok": false, "error": format!("unknown aspect '{aspect}' — supported: {}", ASPECTS.join(", ")) });
@@ -535,6 +547,7 @@ pub fn execute(req: &str) -> Value {
                 points: Some(pts),
                 holes,
                 closed: true,
+                content: None,
             };
             let Some(slide) = deck.slides.iter_mut().find(|s| s.id == slide_id) else {
                 return json!({ "ok": false, "error": "slide not found" });
@@ -795,6 +808,7 @@ mod tests {
                     points: None,
                     holes: None,
                     closed: false,
+                    content: None,
                 }],
             }],
             components: vec![],

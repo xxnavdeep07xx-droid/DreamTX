@@ -1,7 +1,7 @@
 name: dreamtx
 description: DreamTX — the presentation app that lets YOUR AI build the deck (MCP, no API keys).
 publish_to: "none"
-version: 0.2.32+37
+version: 0.2.33+38
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -27,6 +27,7 @@ dependencies:
   file_picker: 13.4.0
   share_plus: ^13.3.1
   cupertino_icons: ^1.0.8
+  image_picker: ^1.2.4
 
 dev_dependencies:
   flutter_test:

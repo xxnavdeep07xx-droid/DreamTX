@@ -30,6 +30,25 @@ const LinearGradient kInkGradient = LinearGradient(
   colors: [kPurple, kMagenta, kOrange],
 );
 
+/// The studio's standard color swatches — the universal row that follows
+/// the deck's own colors in every palette (toolbar + panels).
+const List<Color> kSwatchPalette = [
+  Color(0xFFF5F5F7), // white
+  Color(0xFF17181A), // ink
+  Color(0xFFFF3B30), // live red
+  Color(0xFF8A3FFC), // violet
+  Color(0xFF0F62FE), // blue
+  Color(0xFF42BE65), // green
+  Color(0xFFFFD400), // yellow
+  Color(0xFFFF7847), // orange
+  Color(0xFFE1306C), // magenta
+  Color(0xFF8D8D8D), // gray
+];
+
+/// A text box's default design-space body size — "back to the slide
+/// theme" renders text at this size in the deck DNA's body font/foreground.
+const double kTextBoxBaseSize = 32;
+
 ThemeData buildDreamTheme() {
   final scheme = ColorScheme.fromSeed(
     seedColor: kMagenta,

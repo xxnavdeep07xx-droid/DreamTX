@@ -56,7 +56,26 @@ class ResourceStore {
   /// Test seam — the smoke tests point the platform channel at a temp dir.
   static void debugResetForTest() {
     _cached = null;
+    debugAddOverride = null;
   }
+
+  /// Test seam: replaces [add] wholesale (the widget-test runner cannot
+  /// complete real file IO inside the fake-async zone). Production never
+  /// sets it.
+  static Future<Map<String, dynamic>> Function({
+    required bool brand,
+    String? deckId,
+    required String sourcePath,
+    String? folder,
+  })? debugAddOverride;
+
+  /// The cached instance without opening storage (null when not yet
+  /// opened) — for sync path building where the root is already known.
+  static ResourceStore? peek() => _cached;
+
+  /// The scope directory's path, public for sync path building.
+  String scopeDirPath({required bool brand, String? deckId}) =>
+      _scopeDir(brand: brand, deckId: deckId).path;
 
   Directory _scopeDir({required bool brand, String? deckId}) => Directory(
       '${_root.path}/${brand ? 'brand' : 'decks/${_sanitize(deckId ?? '')}'}');
@@ -81,6 +100,21 @@ class ResourceStore {
     return const [];
   }
 
+  /// Resolve an asset id to its readable file path in the scope, or null
+  /// when it is gone — the object layer's image rendering.
+  Future<String?> resolve(
+      {required bool brand, String? deckId, required String id}) async {
+    final items = await list(brand: brand, deckId: deckId);
+    for (final e in items) {
+      if (e['id'].toString() == id) {
+        final f = File(
+            '${_scopeDir(brand: brand, deckId: deckId).path}/${e['file']}');
+        return f.existsSync() ? f.path : null;
+      }
+    }
+    return null;
+  }
+
   /// Copy a picked file into the scope and record it in the index.
   /// [sourcePath] is the platform picker's local copy — its bytes are
   /// duplicated into the app's documents folder so the original can be
@@ -91,6 +125,12 @@ class ResourceStore {
       String? deckId,
       required String sourcePath,
       String? folder}) async {
+    final override = debugAddOverride;
+    if (override != null) {
+      return override(
+          brand: brand, deckId: deckId, sourcePath: sourcePath,
+          folder: folder);
+    }
     final dir = _scopeDir(brand: brand, deckId: deckId);
     if (!dir.existsSync()) dir.createSync(recursive: true);
     final entry = await _copyInto(dir, sourcePath,

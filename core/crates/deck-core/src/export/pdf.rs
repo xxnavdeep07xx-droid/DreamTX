@@ -572,6 +572,7 @@ mod tests {
                         stroke: crate::model::Stroke::default(),
                         effects: crate::model::Effects::default(),
                         points: None, holes: None, closed: true,
+                        content: None,
                     },
                     Shape {
                         id: "o2".into(),
@@ -583,6 +584,7 @@ mod tests {
                         stroke: crate::model::Stroke { color: "17181A".into(), width: 3.0, ..Default::default() },
                         effects: crate::model::Effects::default(),
                         points: None, holes: None, closed: false,
+                        content: None,
                     },
                 ],
             }],

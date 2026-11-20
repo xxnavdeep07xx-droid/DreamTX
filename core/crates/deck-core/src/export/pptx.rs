@@ -395,6 +395,7 @@ mod tests {
                     points: None,
                     holes: None,
                     closed: true,
+                    content: None,
                 }],
             }],
             components: Vec::new(),

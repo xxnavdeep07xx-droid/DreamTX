@@ -82,6 +82,16 @@ pub struct Slide {
 /// A positioned vector object in the 1280x720 design space. `points` are
 /// normalized (0..1) bbox-local coordinates for polygon/path presets, so
 /// geometry survives resizes.
+///
+/// Objects that carry `content` render as CONTENT, not as their vector
+/// silhouette: the base geometry (x/y/w/h/rotation/opacity/locked/group)
+/// keeps the whole gesture/z-order/component machinery working unchanged,
+/// while the payload describes what the object IS — a rich text box, an
+/// image or media asset reference, a vector icon sticker, or a table. The
+/// core stores and round-trips `content` verbatim (it is part of the deck
+/// model, so it persists with the deck file like every other field); the
+/// app owns its interpretation. Export renders the object's vector box
+/// (fill/stroke as declared) — content rendering is a client capability.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Shape {
     pub id: String,
@@ -115,6 +125,170 @@ pub struct Shape {
     pub holes: Option<Vec<Vec<Pt>>>,
     #[serde(default)]
     pub closed: bool,
+    /// The object's content payload — present when the object is a text
+    /// box, image, icon sticker, media asset, or table rather than a pure
+    /// vector shape. Absent for classic shapes (so existing deck files stay
+    /// byte-stable).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<ObjectContent>,
+}
+
+// ---------------------------------------------------------------------------
+// Object content payloads
+// ---------------------------------------------------------------------------
+
+/// What an object IS when it is not a plain vector shape. Internally
+/// tagged (`{"kind":"text", ...}`), additive, and app-interpreted: the core
+/// round-trips it with the deck and never reaches inside.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ObjectContent {
+    /// A rich text box. The plain text (paragraphs separated by `\n`) is
+    /// the caret/selection coordinate space; `runs` are character-format
+    /// marks over that string; `paras` are per-paragraph styles anchored at
+    /// paragraph starts.
+    Text {
+        doc: TextDoc,
+    },
+    /// An image placed on the slide. The bytes live in the device resource
+    /// store (`brand` picks the scope); `name` survives for display when
+    /// the asset file itself is gone.
+    Image {
+        resource_id: String,
+        #[serde(default)]
+        brand: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+    },
+    /// A vector icon sticker. `name` is the icon key (the app's icon
+    /// registry); the object's fill color paints the glyph.
+    Icon {
+        name: String,
+    },
+    /// A video or audio asset placed on the slide (an import — never a
+    /// recording). `media_kind` is "video" or "audio" for display.
+    Media {
+        resource_id: String,
+        #[serde(default)]
+        brand: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        media_kind: Option<String>,
+    },
+    /// A table with editable cells. `cells` is row-major, `rows * cols`
+    /// entries, each cell a plain-text string.
+    Table {
+        rows: u32,
+        cols: u32,
+        #[serde(default)]
+        cells: Vec<String>,
+    },
+}
+
+/// A rich text document: plain text + formatting marks. Offsets are UTF-16
+/// code-unit indices into `text` — the same space a Flutter text field's
+/// `TextSelection` uses — so the app maps selections onto runs directly.
+/// Rust never interprets these; they are model data.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct TextDoc {
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub runs: Vec<TextRun>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub paras: Vec<ParaStyle>,
+    #[serde(default)]
+    pub valign: VerticalAlign,
+    #[serde(default)]
+    pub autofit: Autofit,
+}
+
+/// One character-formatting mark over `[start, end)` of the doc's text.
+/// Only set attributes serialize; an absent attribute inherits the doc's
+/// base style.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TextRun {
+    pub start: u32,
+    pub end: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bold: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub italic: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub underline: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strike: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subscript: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub superscript: Option<bool>,
+    /// Text color, RRGGBB.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    /// Color behind the text (highlight), RRGGBB.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub highlight: Option<String>,
+    /// 'sans' | 'serif' | 'mono' (the app's renderable families).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_family: Option<String>,
+    /// Design-space font size.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_size: Option<f64>,
+}
+
+/// Paragraph-level style, anchored at a paragraph start offset and applying
+/// until the next anchor (or the end).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ParaStyle {
+    pub start: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub align: Option<TextAlign>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub list: Option<ListKind>,
+    /// List indent level, 0-based.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub indent: Option<u32>,
+    /// Line-spacing multiplier (1.0, 1.15, 1.5, 2.0).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_spacing: Option<f64>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum VerticalAlign {
+    #[default]
+    Top,
+    Middle,
+    Bottom,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Autofit {
+    /// No autofit — text overflows the box as-is.
+    #[default]
+    None,
+    /// Shrink text on overflow until it fits.
+    Shrink,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TextAlign {
+    #[default]
+    Left,
+    Center,
+    Right,
+    Justify,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ListKind {
+    #[default]
+    None,
+    Bullet,
+    Number,
 }
 
 fn one() -> f64 {

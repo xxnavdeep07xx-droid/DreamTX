@@ -34,6 +34,8 @@ import 'package:dreamtx/theme.dart';
 
 // ---- fixtures -----------------------------------------------------------------
 
+Map<String, dynamic> deckFixtureForProbe(int n) => _deckFixture('d1', 'Test deck', n);
+
 Map<String, dynamic> _deckFixture(String id, String title, int n) => {
       'id': id,
       'title': title,
@@ -52,7 +54,7 @@ Map<String, dynamic> _deckFixture(String id, String title, int n) => {
 /// the build path touches (meta, get_layout with the deck's frame dims) plus
 /// add_slide for the + smoke and set_aspect for the Files drawer's ratio
 /// tool.
-Map<String, dynamic> _fakeEngine(Map<String, dynamic> req) {
+Map<String, dynamic> testFakeEngine(Map<String, dynamic> req) {
   switch (req['op']) {
     case 'meta':
       return {
@@ -61,6 +63,54 @@ Map<String, dynamic> _fakeEngine(Map<String, dynamic> req) {
         'archetypes': <String>[],
         'aspects': <String>['16:9', '16:10', '4:3', '1:1'],
       };
+    case 'resolve_dna':
+      // The deck's palette (deck colors) + the text boxes' slide-theme base.
+      return {
+        'ok': true,
+        'dna': {
+          'palette': {
+            'bg': 'FFFFFF',
+            'surface': 'F7F6F3',
+            'fg': '17181A',
+            'muted': '6B6E76',
+            'accent': 'C25E00',
+          },
+          'body_font': 'sans',
+          'display_font': 'sans',
+        },
+      };
+    case 'add_object':
+      return _fakeObjectOp(req, adding: true);
+    case 'update_object':
+      return _fakeObjectOp(req, adding: false);
+    case 'delete_object':
+      final deck = Map<String, dynamic>.from(req['deck'] as Map);
+      _fakeForEachSlide(deck, req['slide_id'].toString(), (slide) {
+        slide['objects'] = [
+          for (final o in (slide['objects'] as List? ?? const []))
+            if ((o as Map)['id'] != req['object_id']) Map<String, dynamic>.from(o),
+        ];
+      });
+      return {'ok': true, 'deck': _fakeBump(deck)};
+    case 'move_object_z':
+      final deck = Map<String, dynamic>.from(req['deck'] as Map);
+      var ok = false;
+      _fakeForEachSlide(deck, req['slide_id'].toString(), (slide) {
+        final objs = [
+          for (final o in (slide['objects'] as List? ?? const []))
+            Map<String, dynamic>.from(o as Map)
+        ];
+        final idx = objs.indexWhere((o) => o['id'] == req['object_id']);
+        if (idx >= 0) {
+          final moved = objs.removeAt(idx);
+          objs.insert(((req['to_index'] as num).toInt()).clamp(0, objs.length), moved);
+          slide['objects'] = objs;
+          ok = true;
+        }
+      });
+      return ok
+          ? {'ok': true, 'deck': _fakeBump(deck)}
+          : {'ok': false, 'error': 'object not found'};
     case 'get_layout':
       final deck = req['deck'] as Map?;
       final (w, h) = deckDimsOf(deck?['aspect'] as String?);
@@ -97,7 +147,57 @@ Map<String, dynamic> _fakeEngine(Map<String, dynamic> req) {
   }
 }
 
+// ---- fake-engine object helpers (Dart maps keep unknown fields, so the
+// ---- `content` payloads round-trip exactly like the Rust core does) ------
+
+Map<String, dynamic> _fakeBump(Map<String, dynamic> deck) {
+  deck['version'] = ((deck['version'] as num?)?.toInt() ?? 0) + 1;
+  return deck;
+}
+
+void _fakeForEachSlide(Map<String, dynamic> deck, String slideId,
+    void Function(Map<String, dynamic> slide) fn) {
+  for (final s in (deck['slides'] as List? ?? const [])) {
+    if (s is Map<String, dynamic> && s['id'] == slideId) fn(s);
+  }
+}
+
+Map<String, dynamic> _fakeObjectOp(Map<String, dynamic> req,
+    {required bool adding}) {
+  final deck = Map<String, dynamic>.from(req['deck'] as Map);
+  final slideId = req['slide_id'].toString();
+  final shape = Map<String, dynamic>.from(req['shape'] as Map);
+  final objectId = (adding ? shape['id'] : req['object_id']).toString();
+  var ok = false;
+  _fakeForEachSlide(deck, slideId, (slide) {
+    final objs = [
+      for (final o in (slide['objects'] as List? ?? const []))
+        Map<String, dynamic>.from(o as Map)
+    ];
+    if (adding) {
+      objs.add(shape);
+      ok = true;
+    } else {
+      final idx = objs.indexWhere((o) => o['id'] == objectId);
+      if (idx >= 0) {
+        shape['id'] = objectId;
+        objs[idx] = shape;
+        ok = true;
+      }
+    }
+    slide['objects'] = objs;
+  });
+  return ok
+      ? {'ok': true, 'deck': _fakeBump(deck)}
+      : {'ok': false, 'error': 'object not found'};
+}
+
 // ---- platform-channel mock ----------------------------------------------------
+
+/// Public wrappers for sibling test files (the insert suite reuses the
+/// same platform-channel mock).
+void mockStorageForInsert(String dir) => _mockStorage(dir: dir);
+void clearInsertStorageMock() => _clearStorageMock();
 
 void _mockStorage({String? dir, Object? throwFor, bool stall = false}) {
   const channel = MethodChannel('plugins.flutter.io/path_provider');
@@ -333,7 +433,7 @@ void main() {
   });
 
   testWidgets('filmstrip: the integrated edge handle folds the band without moving anything', (tester) async {
-    Bridge.testOverride = _fakeEngine;
+    Bridge.testOverride = testFakeEngine;
     _mockStorage(dir: tmp.path);
     // Semantics on for this test: the handle's a11y contract (a button node
     // carrying the action label) is asserted through the real semantics tree.
@@ -456,7 +556,7 @@ void main() {
   });
 
   testWidgets('filmstrip: reduced motion collapses instantly', (tester) async {
-    Bridge.testOverride = _fakeEngine;
+    Bridge.testOverride = testFakeEngine;
     _mockStorage(dir: tmp.path);
 
     await tester.pumpWidget(MaterialApp(
@@ -500,7 +600,7 @@ void main() {
   });
 
   testWidgets('files drawer: floats over an intact filmstrip with all six tools — the strip stays laid out AND live while the sheet is open', (tester) async {
-    Bridge.testOverride = _fakeEngine;
+    Bridge.testOverride = testFakeEngine;
     _mockStorage(dir: tmp.path);
     tester.view.physicalSize = const Size(780, 1688);
     tester.view.devicePixelRatio = 2;
@@ -594,7 +694,7 @@ void main() {
   });
 
   testWidgets('files drawer: the Aspect tile applies the ratio to the deck, and the canvas frame follows', (tester) async {
-    Bridge.testOverride = _fakeEngine;
+    Bridge.testOverride = testFakeEngine;
     _mockStorage(dir: tmp.path);
     tester.view.physicalSize = const Size(780, 1688);
     tester.view.devicePixelRatio = 2;
@@ -644,7 +744,7 @@ void main() {
   });
 
   testWidgets('files drawer: the header drags the sheet between its detents, and a deep downward drag dismisses it', (tester) async {
-    Bridge.testOverride = _fakeEngine;
+    Bridge.testOverride = testFakeEngine;
     _mockStorage(dir: tmp.path);
     tester.view.physicalSize = const Size(780, 1688);
     tester.view.devicePixelRatio = 2;
@@ -691,7 +791,7 @@ void main() {
   });
 
   testWidgets('files drawer: the filmstrip is an independent overlay over the sheet — toggling the tray moves nothing, covered tools stay inert, and the last row clears the tray', (tester) async {
-    Bridge.testOverride = _fakeEngine;
+    Bridge.testOverride = testFakeEngine;
     _mockStorage(dir: tmp.path);
     tester.view.physicalSize = const Size(780, 1688);
     tester.view.devicePixelRatio = 2;
@@ -851,7 +951,7 @@ void main() {
   });
 
   testWidgets('files drawer: a short viewport constrains the tray to the sheet, and closing Files restores the plain flow', (tester) async {
-    Bridge.testOverride = _fakeEngine;
+    Bridge.testOverride = testFakeEngine;
     _mockStorage(dir: tmp.path);
     // 390×297 logical: the app bar is 57dp (56 + its hairline), so the body
     // is 240dp — the plain flow still fits the expanded strip (229dp) with
@@ -998,7 +1098,7 @@ void main() {
   // ---- the sheet's entrance/exit slide + the preview lock ----------------------
 
   testWidgets('files drawer: the sheet slides up from behind the navbar — the preview, the ribbon, and the tray never move', (tester) async {
-    Bridge.testOverride = _fakeEngine;
+    Bridge.testOverride = testFakeEngine;
     _mockStorage(dir: tmp.path);
     tester.view.physicalSize = const Size(780, 1688);
     tester.view.devicePixelRatio = 2;
@@ -1118,7 +1218,7 @@ void main() {
   });
 
   testWidgets('files drawer: with the tray collapsed, the sheet still rises from behind the navbar behind the stationary divider', (tester) async {
-    Bridge.testOverride = _fakeEngine;
+    Bridge.testOverride = testFakeEngine;
     _mockStorage(dir: tmp.path);
     tester.view.physicalSize = const Size(780, 1688);
     tester.view.devicePixelRatio = 2;
@@ -1192,7 +1292,7 @@ void main() {
   });
 
   testWidgets('files drawer: interrupted and reversed slides continue from the current visible position', (tester) async {
-    Bridge.testOverride = _fakeEngine;
+    Bridge.testOverride = testFakeEngine;
     _mockStorage(dir: tmp.path);
     tester.view.physicalSize = const Size(780, 1688);
     tester.view.devicePixelRatio = 2;
@@ -1251,24 +1351,24 @@ void main() {
     // post-frame flip (two taps inside one frame gap) hits the defensive
     // branch — no pixel of the sheet was ever rendered, so there is
     // nothing to animate out: the layer unmounts at once, no half-slide
-    // flash, and the Home tab lands live in its place.
-    await tester.tap(find.text('Home'));
+    // flash, and the Draw tab lands live in its place.
+    await tester.tap(find.text('Draw'));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('files_drawer')), findsNothing);
     await tester.tap(find.text('Files'));
-    await tester.tap(find.text('Home')); // before the entrance ever renders
+    await tester.tap(find.text('Draw')); // before the entrance ever renders
     await tester.pump();
     expect(find.byKey(const ValueKey('files_drawer')), findsNothing,
         reason: 'the never-rose sheet unmounts immediately — nothing shown, '
             'nothing to animate');
     await tester.pumpAndSettle();
-    expect(find.text('Home'), findsOneWidget);
+    expect(find.text('Draw'), findsOneWidget);
 
     // INTERRUPTED ENTRANCE: start a fresh entrance, switch tabs mid-rise —
     // the sheet reverses from the position it had reached (plus at most
     // one 16ms entrance step of input latency), never resetting to the
     // hidden mount, and sinks monotonically away.
-    await tester.tap(find.text('Home'));
+    await tester.tap(find.text('Draw'));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('files_drawer')), findsNothing);
     await tester.tap(find.text('Files'));
@@ -1280,7 +1380,7 @@ void main() {
         reason: 'the sheet is partially visible mid-rise');
     expect(rising.top, greaterThan(boundary - halfH),
         reason: 'but not yet in place');
-    await tester.tap(find.text('Home'));
+    await tester.tap(find.text('Draw'));
     await tester.pump(const Duration(milliseconds: 16));
     final reversing = tester.getRect(sheet);
     expect(reversing.top, lessThanOrEqualTo(rising.top + 0.25),
@@ -1301,12 +1401,12 @@ void main() {
     }
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('files_drawer')), findsNothing);
-    expect(find.text('Home'), findsOneWidget);
+    expect(find.text('Draw'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
   testWidgets('files drawer: toggling the tray over the open sheet, then closing, hands the space back without a jump', (tester) async {
-    Bridge.testOverride = _fakeEngine;
+    Bridge.testOverride = testFakeEngine;
     _mockStorage(dir: tmp.path);
     tester.view.physicalSize = const Size(780, 1688);
     tester.view.devicePixelRatio = 2;
@@ -1374,7 +1474,7 @@ void main() {
   });
 
   testWidgets('filmstrip divider: the raised tab is fully opaque — nothing behind it shows through', (tester) async {
-    Bridge.testOverride = _fakeEngine;
+    Bridge.testOverride = testFakeEngine;
     _mockStorage(dir: tmp.path);
     tester.view.physicalSize = const Size(780, 1688);
     tester.view.devicePixelRatio = 2;

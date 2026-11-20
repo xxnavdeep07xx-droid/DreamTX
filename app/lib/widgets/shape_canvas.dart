@@ -3,11 +3,14 @@ import 'dart:ui' show PathMetric;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../core/object_content.dart';
+
 /// Interactive vector overlay layer: paints every object (fills, gradients,
 /// strokes, arrows, shadows, glow) and — when `interactive` — handles
 /// selection, move/resize/rotate with smart-guide snapping, and freeform
-/// scribble capture. Coordinates live in the 1280x720 design space, exactly
-/// like the Rust engine's model.
+/// scribble capture. Coordinates live in the deck's design space (1280×720
+/// for 16:9 decks — [designW]/[designH] carry other aspects), exactly like
+/// the Rust engine's model.
 
 class ShapesLayer extends StatefulWidget {
   const ShapesLayer({
@@ -16,6 +19,8 @@ class ShapesLayer extends StatefulWidget {
     this.selectedId,
     this.interactive = false,
     this.scribbleMode = false,
+    this.designW = 1280,
+    this.designH = 720,
     this.onSelect,
     this.onLive,
     this.onCommit,
@@ -27,6 +32,11 @@ class ShapesLayer extends StatefulWidget {
   final String? selectedId;
   final bool interactive;
   final bool scribbleMode;
+
+  /// The deck's design-space frame — non-16:9 aspects lay objects out in
+  /// their true frame instead of stretching the classic one.
+  final double designW;
+  final double designH;
 
   /// selection change (null = deselect)
   final void Function(String?)? onSelect;
@@ -44,8 +54,6 @@ class ShapesLayer extends StatefulWidget {
 }
 
 class _ShapesLayerState extends State<ShapesLayer> {
-  static const double designW = 1280;
-  static const double designH = 720;
   static const double snapTol = 6.0;
 
   _Grab? _grab;
@@ -57,9 +65,10 @@ class _ShapesLayerState extends State<ShapesLayer> {
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(builder: (context, constraints) {
-      _scale = constraints.biggest.width / constraints.biggest.height > designW / designH
-          ? constraints.biggest.height / designH
-          : constraints.biggest.width / designW;
+      _scale = constraints.biggest.width / constraints.biggest.height >
+              widget.designW / widget.designH
+          ? constraints.biggest.height / widget.designH
+          : constraints.biggest.width / widget.designW;
       return GestureDetector(
         behavior: widget.interactive ? HitTestBehavior.opaque : HitTestBehavior.translucent,
         onTapUp: widget.interactive ? _onTap : null,
@@ -68,12 +77,12 @@ class _ShapesLayerState extends State<ShapesLayer> {
         onPanEnd: widget.interactive ? _onPanEnd : null,
         onPanCancel: widget.interactive ? _onPanCancel : null,
         child: SizedBox(
-          width: designW * _scale,
-          height: designH * _scale,
+          width: widget.designW * _scale,
+          height: widget.designH * _scale,
           child: FittedBox(
             fit: BoxFit.fill,
             child: CustomPaint(
-              size: const Size(designW, designH),
+              size: Size(widget.designW, widget.designH),
               painter: _ShapesPainter(
                 objects: widget.objects,
                 selectedId: widget.selectedId,
@@ -328,8 +337,8 @@ class _ShapesLayerState extends State<ShapesLayer> {
     final h = (origin['h'] as num).toDouble();
     final guides = <_GuideLine>[];
     // candidate X positions: slide edges/center + other objects
-    final candX = <double>[0, designW / 2, designW];
-    final candY = <double>[0, designH / 2, designH];
+    final candX = <double>[0, widget.designW / 2, widget.designW];
+    final candY = <double>[0, widget.designH / 2, widget.designH];
     for (final other in widget.objects) {
       if (other['id'] == live['id']) continue;
       final ox = (other['x'] as num).toDouble();
@@ -409,6 +418,10 @@ class _ShapesPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     for (final obj in objects) {
+      // Content-carrying objects (text boxes, images, icons, media, tables)
+      // render as CONTENT in the sibling content layer — their vector
+      // silhouette stays gesture/selection geometry only, never paint.
+      if (ObjectContent.hasContent(obj)) continue;
       _paintObject(canvas, obj);
     }
     // scribble-in-progress

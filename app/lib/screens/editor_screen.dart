@@ -10,24 +10,43 @@ import 'package:share_plus/share_plus.dart';
 
 import '../core/aspects.dart';
 import '../core/bridge.dart';
+import '../core/media_pickers.dart';
+import '../core/object_content.dart';
+import '../core/resources.dart';
 import '../core/store.dart';
 import '../theme.dart';
 import '../widgets/content_editor.dart';
 import '../widgets/design_sheets.dart';
+import '../widgets/object_content_layer.dart';
+import '../widgets/rich_doc.dart';
 import '../widgets/shape_canvas.dart';
 import '../widgets/slide_canvas.dart';
+import '../widgets/text_edit_field.dart';
+import '../widgets/typing_toolbar.dart';
 import 'files_drawer.dart';
+import 'insert_sheet.dart';
 import 'pair_sheet.dart';
 
 /// Screen 2 — Editor. Canvas + filmstrip + a PowerPoint-style bottom ribbon —
-/// AI · Files · Home · Insert · Draw · Design · Transitions · Animations ·
+/// AI · Files · Insert · Draw · Design · Transitions · Animations ·
 /// Slide show · Review · View · Help — horizontally scrollable, each tab
-/// opening a contextual tool row under the canvas. The top bar keeps
+/// opening its contextual tool row under the canvas. The top bar keeps
 /// deck-level controls: rename (tap the title), undo/redo, comments, share,
 /// and the More menu with Editing / Viewing / Presenting modes and Export.
 /// **+** adds a blank slide instantly (the curated layout list is a
-/// deliberate choice from the Home row or a long-press on **+**). And the
+/// deliberate choice from a long-press on **+**). And the
 /// AI can still drive the same ops over MCP.
+///
+/// Insert is where things get ADDED: its compact drawer rides the ribbon's
+/// top edge (the same sheet machinery as Files) with a 3×2 grid — Text Box,
+/// Image, Shapes, Table, Icons / Stickers, Media — and inserting or tapping
+/// an object swaps the grid for that object's editing panel: the slide stays
+/// fully visible and interactive above it, most of the panel is controls,
+/// and a narrow icon-only rail on the far right switches between groups.
+/// A text box edits WYSIWYG on the canvas: while typing, the drawer hides
+/// and a horizontally scrollable toolbar rides above the keyboard; with
+/// the keyboard closed, the full panel carries Quick Tools / Character /
+/// Paragraph & Box.
 class EditorScreen extends StatefulWidget {
   const EditorScreen({super.key, required this.deck});
 
@@ -52,6 +71,49 @@ class _EditorScreenState extends State<EditorScreen> {
   String? _selectedObjectId;
   List<Map<String, dynamic>> _objectPresets = const [];
   int _oidSeq = 0;
+
+  // ---- the Insert drawer's object/text editing session ---------------------------
+
+  /// The live text-editing session for the selected text box: the doc + the
+  /// controller + the field's focus node, one undo snapshot per session,
+  /// and a debounced engine commit so typing never round-trips per keystroke.
+  _TextSession? _textSession;
+
+  /// True while the text field has focus — the TYPING state: the Insert
+  /// sheet is hidden (the keyboard covers it) and the typing toolbar
+  /// rides above the keyboard in the root overlay.
+  bool _typing = false;
+
+  /// The typing toolbar's root-overlay entry (null when not typing).
+  OverlayEntry? _typingToolbarEntry;
+
+  /// The deck's resolved palette (deck colors) + base text style for text
+  /// boxes — read from the engine's `resolve_dna`, cached per deck version.
+  List<Color> _deckPalette = const [];
+  Color _baseTextColor = const Color(0xFF17181A);
+  String? _baseTextFamily;
+  int _paletteForVersion = -1;
+
+  /// Live style edits from the object panel (one undo snapshot per
+  /// selection, debounced commit — same contract as the text session).
+  bool _styleUndoPushed = false;
+  Timer? _objectCommitDebounce;
+
+  /// Cached image-resource paths: 'brand:<id>' / 'deck:<id>' → file path.
+  final Map<String, String> _resourcePaths = {};
+
+  /// The Insert drawer's two resting extents. The GRID sheet is compact —
+  /// header + the full 3×2 grid above the filmstrip tray's overlay, with
+  /// the slide's center still visible and tappable above it (mid-slide
+  /// objects stay selectable). The PANEL sheet is taller — its control
+  /// area earns the height, and the object it edits is already selected.
+  static const double _insertGridSheetHeight = 400;
+  static const double _insertPanelSheetHeight = 436;
+
+  /// The sheet tab whose surface the layer is showing (or last showed) —
+  /// the Files ⇄ Insert switch swaps content without unmounting the layer,
+  /// and the exit slide keeps showing the surface it is animating OUT.
+  _NavTab _lastSheetTab = _NavTab.files;
 
   // ---- PowerPoint-style bottom ribbon ------------------------------------------
   /// The active ribbon tab; its contextual action row renders between
@@ -159,13 +221,142 @@ class _EditorScreenState extends State<EditorScreen> {
         .map((m) => Map<String, dynamic>.from(m))
         .toList();
     _refreshLayout();
+    _loadResourceIndex();
   }
 
   @override
   void dispose() {
+    _removeTypingToolbar();
+    _disposeTextSession();
+    _objectCommitDebounce?.cancel();
     _commentField.dispose();
     _navScroll.dispose();
     super.dispose();
+  }
+
+  /// A different deck handed to the SAME editor instance (a parent
+  /// rebuilding with another deck): reload everything — the state belongs
+  /// to the deck it was opened on, never to the widget slot.
+  @override
+  void didUpdateWidget(EditorScreen old) {
+    super.didUpdateWidget(old);
+    if (identical(widget.deck, old.deck)) return;
+    _removeTypingToolbar();
+    _disposeTextSession();
+    _objectCommitDebounce?.cancel();
+    setState(() {
+      _deck = Map<String, dynamic>.from(widget.deck);
+      _index = 0;
+      _selectedObjectId = null;
+      _typing = false;
+      _navTab = null;
+      _designMode = false;
+      _scribbleMode = false;
+      _sheetEntering = false;
+      _sheetClosing = false;
+      _drawerExtent = null;
+      _frozenStripFootprint = null;
+      _paletteForVersion = -1;
+    });
+    _refreshLayout();
+    _loadResourceIndex();
+  }
+
+  /// The image-resource index (both scopes) + resolved paths, loaded once —
+  /// the content layer's resolver reads the cache synchronously; inserts
+  /// refresh the touched entries.
+  Future<void> _loadResourceIndex() async {
+    try {
+      final store = await ResourceStore.open();
+      final deckId = (_deck['id'] ?? '').toString();
+      for (final (brand, scope) in [(false, 'deck'), (true, 'brand')]) {
+        final items =
+            await store.list(brand: brand, deckId: brand ? null : deckId);
+        for (final e in items) {
+          final path = await store.resolve(
+              brand: brand, deckId: brand ? null : deckId, id: '${e['id']}');
+          if (path != null) {
+            _resourcePaths['$scope:${e['id']}'] = path;
+          }
+        }
+      }
+    } catch (_) {
+      // Storage offline — image objects fall back to their name chip.
+    }
+  }
+
+  /// The sync resolver handed to the canvas content layer.
+  String? _resolveResourcePath(Map<String, dynamic> content) {
+    final scope = content['brand'] == true ? 'brand' : 'deck';
+    return _resourcePaths['$scope:${content['resource_id']}'];
+  }
+
+  /// The deck's design-space frame — objects, content widgets and the edit
+  /// field all live in it.
+  (double, double) get _designDims => deckDimsOf(_deck['aspect']?.toString());
+
+  /// The panel's text formatting bundle, bound to the live session.
+  late final TextActions _textActions = TextActions(
+    toggleFlag: (flag) =>
+        _docMutate((doc, a, b) => doc.toggleFlag(a, b, flag)),
+    setColor: (hex) =>
+        _docMutate((doc, a, b) => doc.setAttr(a, b, 'color', hex)),
+    setHighlight: (hex) =>
+        _docMutate((doc, a, b) => doc.setAttr(a, b, 'highlight', hex)),
+    setAlign: (v) =>
+        _docMutate((doc, a, b) => doc.setParagraphAttr(a, b, 'align', v)),
+    toggleList: (k) => _docMutate((doc, a, b) => doc.toggleList(a, b, k)),
+    setFontFamily: (f) =>
+        _docMutate((doc, a, b) => doc.setAttr(a, b, 'font_family', f)),
+    setFontSize: (s) =>
+        _docMutate((doc, a, b) => doc.setAttr(a, b, 'font_size', s)),
+    clearFormatting: () => _docMutate((doc, a, b) {
+          if (a == b) {
+            doc.clearRange(0, doc.text.length);
+          } else {
+            doc.clearRange(a, b);
+          }
+        }),
+    setValign: (v) => _docMutate((doc, a, b) => doc.valign = v),
+    setAutofit: (v) => _docMutate((doc, a, b) => doc.autofit = v),
+    setLineSpacing: (s) => _docMutate(
+        (doc, a, b) => doc.setParagraphAttr(a, b, 'line_spacing', s)),
+    indentBy: (d) => _docMutate((doc, a, b) => doc.indentBy(a, b, d)),
+  );
+
+  /// The panel's "full style inspector" affordance — the existing sheet,
+  /// driven on the CURRENT selection.
+  void _editSelectedObjectStyle() {
+    final obj = _selectedObject;
+    if (obj == null) return;
+    showInspector(context, object: obj, onChange: _styleChanged);
+  }
+
+  /// The deck's palette + the text boxes' slide-theme base — recomputed when
+  /// the deck version moves (new deck, DNA change, undo/redo).
+  void _refreshPalette() {
+    final version = (_deck['version'] as num?)?.toInt() ?? 0;
+    if (version == _paletteForVersion) return;
+    _paletteForVersion = version;
+    final r = Bridge.command({'op': 'resolve_dna', 'deck': _deck});
+    if (r['ok'] != true || r['dna'] is! Map) return;
+    final palette = (r['dna']['palette'] as Map?) ?? const {};
+    final colors = <Color>[];
+    for (final key in ['bg', 'surface', 'fg', 'muted', 'accent']) {
+      final hex = palette[key]?.toString();
+      if (hex != null && hex.length == 6) {
+        colors.add(hexToColor(hex));
+      }
+    }
+    // The deck colors first, then the studio's standard swatches.
+    _deckPalette = [...colors, ...kSwatchPalette];
+    final fg = palette['fg']?.toString();
+    _baseTextColor = fg != null && fg.length == 6
+        ? hexToColor(fg)
+        : const Color(0xFF17181A);
+    _baseTextFamily = (r['dna']['body_font'] ?? '').toString() == 'serif'
+        ? 'serif'
+        : null;
   }
 
   List<Map<String, dynamic>> get _slides => (_deck['slides'] as List? ?? [])
@@ -225,6 +416,7 @@ class _EditorScreenState extends State<EditorScreen> {
     _deck = Map<String, dynamic>.from(newDeck);
     unawaited(_persist());
     _refreshLayout();
+    _refreshPalette();
   }
 
   void _undoStep() {
@@ -235,6 +427,9 @@ class _EditorScreenState extends State<EditorScreen> {
     });
     unawaited(_persist());
     _refreshLayout();
+    _refreshPalette();
+    _styleUndoPushed = false;
+    _resyncTextSession();
   }
 
   void _redoStep() {
@@ -245,6 +440,9 @@ class _EditorScreenState extends State<EditorScreen> {
     });
     unawaited(_persist());
     _refreshLayout();
+    _refreshPalette();
+    _styleUndoPushed = false;
+    _resyncTextSession();
   }
 
   void _refreshLayout() {
@@ -299,37 +497,75 @@ class _EditorScreenState extends State<EditorScreen> {
     return 'o${DateTime.now().millisecondsSinceEpoch}_$_oidSeq';
   }
 
+  /// Switch the active slide. A different slide means the old slide's
+  /// selection is CLEARED — the object panel, the text session and the
+  /// editing state all belong to the slide they were opened on, and no
+  /// one keeps accidentally editing the previous slide's object.
+  void _gotoSlide(int i) {
+    if (i < 0 || i >= _slides.length || i == _index) {
+      if (i == _index) _refreshLayout();
+      return;
+    }
+    _flushTextSession();
+    _disposeTextSession();
+    _removeTypingToolbar();
+    setState(() {
+      _index = i;
+      _selectedObjectId = null;
+      _typing = false;
+    });
+    _refreshLayout();
+  }
+
   /// Ribbon state machine: one contextual row at a time, tapped again to
   /// collapse. Tabs that work on the canvas overlay (Insert, Draw) double
-  /// as design mode, so leaving them clears scribble/selection.
+  /// as design mode, so leaving them clears scribble/selection — but the
+  /// selection SURVIVES a Files ⇄ Insert switch (both are sheet tabs over
+  /// the same design mode canvas).
   void _setNavTab(_NavTab? tab) {
-    final wasFiles = _navTab == _NavTab.files;
+    final wasSheet = _isSheetTab(_navTab);
+    final willBeSheet = _isSheetTab(tab);
+    // The sheet's height where it stands RIGHT NOW (before the tab flips) —
+    // what the exit slide holds when it reverses.
+    final leavingHeight = _drawerExtent ??
+        (_navTab == _NavTab.files
+            ? _drawerHalf
+            : (_selectedObjectId != null
+                ? _insertPanelSheetHeight
+                : _insertGridSheetHeight));
     // The strip's live height where it stands right now — read BEFORE the
     // setState rebuild, so a fold caught mid-flight freezes at its real
     // on-screen height, not its target.
     final arrivingFootprint = _liveStripFlowHeight();
     setState(() {
       _navTab = tab;
+      if (willBeSheet) _lastSheetTab = tab!;
       _designMode = tab == _NavTab.insert || tab == _NavTab.draw;
       if (!_designMode) {
         _scribbleMode = false;
         _selectedObjectId = null;
+        _disposeTextSession();
       }
-      // The drawer layer's lifecycle. ARRIVING at Files: the sheet mounts
-      // at its full intended height (the resting detent) translated fully
-      // below the navbar's top edge — the first frame paints nothing — and
-      // the post-frame callback below slides it up into view; the flow
+      if (tab != _NavTab.insert) {
+        // Leaving the typing state: any tab switch closes the keyboard and
+        // ends the typing session's field focus (the sheet returns).
+        _endTyping();
+      }
+      // The drawer layer's lifecycle. ARRIVING at a sheet tab (Files or
+      // Insert): the sheet mounts at its full intended height translated
+      // fully below the navbar's top edge — the first frame paints nothing —
+      // and the post-frame callback below slides it up into view; the flow
       // freezes the strip's footprint so the slide preview cannot move.
-      // Re-arriving mid-exit (the sheet still sliding down): the retarget
-      // simply reverses the slide from its current visible position.
-      // LEAVING Files: the sheet reverses the entrance — it translates back
-      // down behind the navbar, and the layer unmounts when the slide
-      // completes (onEnd below). Only if it never rose past its mount
-      // frame is there nothing on screen to animate out — then the layer
-      // unmounts at once.
-      if (tab != _NavTab.files) {
+      // SWITCHING Files ⇄ Insert: the layer simply swaps its content —
+      // same layer, same spacer, no entrance.
+      // LEAVING a sheet tab: the sheet reverses the entrance — it
+      // translates back down behind the navbar, and the layer unmounts
+      // when the slide completes (onEnd below). Only if it never rose past
+      // its mount frame is there nothing on screen to animate out — then
+      // the layer unmounts at once.
+      if (!willBeSheet) {
         _drawerDragging = false;
-        if (wasFiles) {
+        if (wasSheet) {
           if (_sheetEntering) {
             // Never rose: no pixels were ever shown — nothing to animate.
             _sheetEntering = false;
@@ -337,13 +573,14 @@ class _EditorScreenState extends State<EditorScreen> {
             _drawerExtent = null;
           } else {
             _sheetClosing = true;
-            _drawerExtent ??= _drawerHalf; // hold the height it stands at
+            // hold the height it stands at
+            _drawerExtent ??= leavingHeight;
           }
         }
-        // (Leaving a non-files tab for another non-files tab while the
-        // exit slide already runs changes nothing — the slide continues
-        // to the same unmount.)
-      } else if (!wasFiles) {
+        // (Leaving a sheet tab for another non-sheet tab while the exit
+        // slide already runs changes nothing — the slide continues to the
+        // same unmount.)
+      } else if (!wasSheet) {
         final resumingExit = _sheetClosing;
         _sheetClosing = false;
         _sheetEntering = !resumingExit;
@@ -351,10 +588,10 @@ class _EditorScreenState extends State<EditorScreen> {
         _frozenStripFootprint = arrivingFootprint;
       }
     });
-    if (tab == _NavTab.files && !wasFiles) {
+    if (willBeSheet && !wasSheet) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted ||
-            _navTab != _NavTab.files ||
+            !_isSheetTab(_navTab) ||
             _drawerDragging ||
             !_sheetEntering) {
           return;
@@ -371,23 +608,41 @@ class _EditorScreenState extends State<EditorScreen> {
     }
   }
 
-  /// Centers the active ribbon tab in the bar's viewport.
+  bool _isSheetTab(_NavTab? tab) =>
+      tab == _NavTab.files || tab == _NavTab.insert;
+
+  /// The sheet layer's live height for the CURRENT state: a held drag/settle
+  /// extent when one exists, the Files detents when Files is the active tab,
+  /// the Insert drawer's current extent otherwise (compact grid, taller
+  /// object panel — the AnimatedPositioned morphs between them).
+  double _sheetLiveHeightFor(bool filesOpen) => _drawerExtent ??
+      (filesOpen
+          ? _drawerHalf
+          : (_selectedObjectId != null
+              ? _insertPanelSheetHeight
+              : _insertGridSheetHeight));
+
+  /// Centers the active ribbon tab in the bar's viewport — but only when
+  /// the tab is actually off-screen. A tab that is already fully visible
+  /// never nudges the bar: the centering glide is a nicety for reaching
+  /// far-edge tabs, and an unnecessary one would leave the scroll animating
+  /// (and its content ignoring pointers) for a quarter second after every
+  /// switch — exactly when the user's next tap lands.
   void _centerNavTab(_NavTab tab) {
     if (!_navScroll.hasClients) return;
     final i = _NavTab.values.indexOf(tab);
     final view = _navScroll.position.viewportDimension;
     final maxExtent = _navScroll.position.maxScrollExtent;
+    final itemLeft = i * _navItemWidth;
+    if (itemLeft >= -4 && itemLeft + _navItemWidth <= view + 4) {
+      return; // fully visible — the bar stays put
+    }
     final target = (i * _navItemWidth + _navItemWidth / 2 - view / 2)
         .clamp(0.0, maxExtent)
         .toDouble();
     _navScroll.animateTo(target,
         duration: const Duration(milliseconds: 240),
         curve: Curves.easeOutCubic);
-  }
-
-  void _showLibrary() {
-    if (_slides.isEmpty) return;
-    showShapeLibrary(context, presets: _objectPresets, onPick: _addObject);
   }
 
   void _addObject(String preset) {
@@ -441,7 +696,7 @@ class _EditorScreenState extends State<EditorScreen> {
     });
     if (r['ok'] == true && r['deck'] is Map) {
       _mutate(r['deck'] as Map);
-      setState(() => _selectedObjectId = shape['id'] as String?);
+      _prepareSelectionFor(shape['id'] as String?);
     } else {
       _toast('Could not add shape: ${r['error']}');
     }
@@ -499,8 +754,531 @@ class _EditorScreenState extends State<EditorScreen> {
     });
     if (r['ok'] == true && r['deck'] is Map) {
       _mutate(r['deck'] as Map);
-      setState(() => _selectedObjectId = shape['id'] as String?);
+      _prepareSelectionFor(shape['id'] as String?);
     }
+  }
+
+  // ---- object selection + the text editing session ---------------------------
+
+  /// Selection from the canvas layer (tap): first tap selects and shows the
+  /// object's panel; tapping the SAME text box again re-enters typing.
+  void _onObjectSelected(String? id) {
+    if (id == null) {
+      _flushTextSession();
+      _disposeTextSession();
+      setState(() => _selectedObjectId = null);
+      return;
+    }
+    if (id == _selectedObjectId) {
+      final obj = _selectedObject;
+      if (obj != null && ObjectContent.isText(obj)) {
+        _beginTyping();
+        return;
+      }
+    }
+    _prepareSelectionFor(id);
+  }
+
+  /// Point the editor's selection at [id]: swap the text session (a text box
+  /// gets a live doc + controller; anything else ends it), reset the
+  /// per-selection style undo bookkeeping.
+  void _prepareSelectionFor(String? id) {
+    _flushTextSession();
+    _disposeTextSession();
+    _endTyping();
+    _styleUndoPushed = false;
+    _objectCommitDebounce?.cancel();
+    _objectCommitDebounce = null;
+    setState(() {
+      _selectedObjectId = id;
+      if (id == null) return;
+      final obj = _selectedObject;
+      if (obj != null && ObjectContent.isText(obj)) {
+        _textSession = _TextSession(
+          controller: RichEditingController(
+            doc: ObjectContent.textDocOf(obj) ?? RichDoc(),
+          ),
+          focus: FocusNode(),
+        );
+        _wireTextSession();
+      }
+    });
+  }
+
+  void _wireTextSession() {
+    final s = _textSession;
+    if (s == null) return;
+    // Text changes: local deck update + debounced engine commit; one undo
+    // snapshot per session (typing is one undo group, like the pros).
+    s.controller.addListener(_onSessionTextChanged);
+    // The typing state IS the field's focus.
+    s.focus.addListener(_onSessionFocusChanged);
+  }
+
+  void _onSessionTextChanged() {
+    final s = _textSession;
+    if (s == null) return;
+    if (!s.undoPushed) {
+      s.undoPushed = true;
+      _undo.add(_copy());
+      if (_undo.length > 60) _undo.removeAt(0);
+      _redo.clear();
+    }
+    _syncSessionDocIntoDeck();
+    _scheduleTextCommit();
+    if (mounted) setState(() {});
+  }
+
+  /// The session's doc, written back into the LOCAL deck map (the debounced
+  /// commit takes it across the engine + storage).
+  void _syncSessionDocIntoDeck() {
+    final s = _textSession;
+    if (s == null) return;
+    final obj = _selectedObject;
+    if (obj == null || !ObjectContent.isText(obj)) return;
+    _replaceObjectLocal(ObjectContent.withTextDoc(obj, s.controller.doc));
+  }
+
+  void _scheduleTextCommit() {
+    final s = _textSession;
+    if (s == null) return;
+    s.commitDebounce?.cancel();
+    s.commitDebounce = Timer(const Duration(milliseconds: 450), () {
+      _flushTextSession();
+    });
+  }
+
+  /// Commit the live text session to the engine now (persist + layout).
+  void _flushTextSession() {
+    final s = _textSession;
+    if (s == null) return;
+    s.commitDebounce?.cancel();
+    s.commitDebounce = null;
+    final obj = _selectedObject;
+    if (obj == null || !ObjectContent.isText(obj)) return;
+    final r = Bridge.command({
+      'op': 'update_object',
+      'deck': _deck,
+      'slide_id': _slideId,
+      'object_id': obj['id'],
+      'shape': obj,
+    });
+    if (r['ok'] == true && r['deck'] is Map) {
+      _setDeck(r['deck'] as Map);
+    }
+  }
+
+  void _disposeTextSession() {
+    final s = _textSession;
+    _textSession = null;
+    if (s == null) return;
+    s.commitDebounce?.cancel();
+    s.controller.removeListener(_onSessionTextChanged);
+    s.focus.removeListener(_onSessionFocusChanged);
+    s.controller.dispose();
+    s.focus.dispose();
+  }
+
+  /// After an undo/redo swap of the whole deck, the live session must
+  /// re-read its object (the box may be gone or carry older text).
+  void _resyncTextSession() {
+    final s = _textSession;
+    if (s == null) return;
+    final obj = _selectedObject;
+    if (obj == null || !ObjectContent.isText(obj)) {
+      _disposeTextSession();
+      return;
+    }
+    final fresh = ObjectContent.textDocOf(obj) ?? RichDoc();
+    s.controller.doc = fresh;
+    s.undoPushed = false;
+    s.controller.text = fresh.text;
+    s.controller.refresh();
+  }
+
+  // ---- the typing state --------------------------------------------------------
+
+  void _beginTyping() {
+    final s = _textSession;
+    if (s == null) return;
+    // The field mounts focused (autofocus) — the focus listener below
+    // flips the typing state, hides the sheet, shows the toolbar.
+    setState(() => _typing = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_typing) return;
+      s.focus.requestFocus();
+    });
+  }
+
+  void _endTyping() {
+    final s = _textSession;
+    if (_typing || _typingToolbarEntry != null) {
+      s?.focus.unfocus();
+    }
+    setState(() => _typing = false);
+    _removeTypingToolbar();
+  }
+
+  void _onSessionFocusChanged() {
+    final s = _textSession;
+    if (s == null || !mounted) return;
+    if (s.focus.hasFocus) {
+      setState(() => _typing = true);
+      _showTypingToolbar();
+    } else {
+      // Keyboard closed with the text box still selected: the sheet (and
+      // its full panel) returns — capture the strip's footprint first, in
+      // flow-order, so the spacer is honest through the reparent.
+      _removeTypingToolbar();
+      final footprint = _liveStripFlowHeight();
+      setState(() {
+        _typing = false;
+        _frozenStripFootprint = footprint;
+      });
+      _flushTextSession();
+    }
+  }
+
+  void _showTypingToolbar() {
+    if (_typingToolbarEntry != null) return;
+    final s = _textSession;
+    if (s == null) return;
+    _typingToolbarEntry = OverlayEntry(
+      builder: (overlayContext) {
+        // The root overlay sees the REAL viewport: the toolbar rides the
+        // keyboard in both inset-delivery and window-resize mode.
+        final bottom = MediaQuery.viewInsetsOf(overlayContext).bottom;
+        return Positioned(
+          left: 0,
+          right: 0,
+          bottom: bottom,
+          child: SafeArea(
+            top: false,
+            child: AnimatedBuilder(
+              animation: s.controller,
+              builder: (context, _) => TypingToolbar(
+                docState: _TypingDocState(s),
+                palette: _deckPalette,
+                onToggle: (flag) => _docMutate(
+                    (doc, a, b) => doc.toggleFlag(a, b, flag)),
+                onColor: (hex) =>
+                    _docMutate((doc, a, b) => doc.setAttr(a, b, 'color', hex)),
+                onHighlight: (hex) => _docMutate(
+                    (doc, a, b) => doc.setAttr(a, b, 'highlight', hex)),
+                onAlign: (v) =>
+                    _docMutate((doc, a, b) => doc.setParagraphAttr(a, b, 'align', v)),
+                onList: (k) => _docMutate((doc, a, b) => doc.toggleList(a, b, k)),
+                onExpand: _endTyping,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    Overlay.of(context, rootOverlay: true).insert(_typingToolbarEntry!);
+  }
+
+  void _removeTypingToolbar() {
+    _typingToolbarEntry?.remove();
+    _typingToolbarEntry = null;
+  }
+
+  /// One mutator for every toolbar/panel text action: target the current
+  /// selection (or caret), apply, refresh the field, commit live.
+  void _docMutate(void Function(RichDoc doc, int a, int b) fn) {
+    final s = _textSession;
+    if (s == null) return;
+    final sel = s.controller.effectiveSelection;
+    fn(s.controller.doc, sel.baseOffset, sel.extentOffset);
+    _onSessionTextChanged();
+    s.controller.refresh();
+  }
+
+  // ---- live object style edits (the panel) -------------------------------------
+
+  void _liveObjectEdit(Map<String, dynamic> updated) {
+    if (!_styleUndoPushed) {
+      _styleUndoPushed = true;
+      _undo.add(_copy());
+      if (_undo.length > 60) _undo.removeAt(0);
+      _redo.clear();
+    }
+    _replaceObjectLocal(updated);
+    _objectCommitDebounce?.cancel();
+    _objectCommitDebounce = Timer(const Duration(milliseconds: 350), () {
+      final obj = _selectedObject;
+      if (obj == null) return;
+      final r = Bridge.command({
+        'op': 'update_object',
+        'deck': _deck,
+        'slide_id': _slideId,
+        'object_id': obj['id'],
+        'shape': obj,
+      });
+      if (r['ok'] == true && r['deck'] is Map) {
+        _setDeck(r['deck'] as Map);
+      }
+    });
+    if (mounted) setState(() {});
+  }
+
+  // ---- the Insert drawer's flows -------------------------------------------------
+
+  Map<String, dynamic> _newContentObject({
+    required double w,
+    required double h,
+    Map<String, dynamic>? content,
+    Map<String, dynamic>? fill,
+    Map<String, dynamic>? stroke,
+  }) {
+    final (dw, dh) = deckDimsOf(_deck['aspect']?.toString());
+    return {
+      'id': _newObjectId(),
+      'preset': 'rectangle',
+      'x': (dw - w) / 2,
+      'y': (dh - h) / 2,
+      'w': w,
+      'h': h,
+      'rotation': 0.0,
+      'opacity': 1.0,
+      'locked': false,
+      'fill': fill ?? {'type': 'none'},
+      'stroke': stroke ?? {'color': '17181A', 'width': 0.0, 'dash': 'solid', 'start_arrow': 'none', 'end_arrow': 'none'},
+      'effects': {},
+      'closed': true,
+      if (content != null) 'content': content,
+    };
+  }
+
+  void _insertObject(Map<String, dynamic> shape, {bool startTyping = false}) {
+    final slideId = _slideId;
+    if (slideId == null) {
+      _toast('Add a slide first.');
+      return;
+    }
+    final r = Bridge.command({
+      'op': 'add_object',
+      'deck': _deck,
+      'slide_id': slideId,
+      'shape': shape,
+    });
+    if (r['ok'] == true && r['deck'] is Map) {
+      _mutate(r['deck'] as Map);
+      _prepareSelectionFor(shape['id'] as String?);
+      // The Insert tab must be the active sheet when inserting (the grid
+      // lives there); a text box goes straight into typing.
+      if (_navTab != _NavTab.insert) _setNavTab(_NavTab.insert);
+      if (startTyping) _beginTyping();
+    } else {
+      _toast('Could not insert: ${r['error']}');
+    }
+  }
+
+  /// Text Box: an editable text box mid-slide, selected, keyboard open.
+  void _insertTextBox() {
+    _insertObject(
+      _newContentObject(w: 560, h: 170, content: ObjectContent.text(RichDoc())),
+      startTyping: true,
+    );
+  }
+
+  /// Table: 3×3 with editable cells.
+  void _insertTable() {
+    _insertObject(
+      _newContentObject(
+        w: 620,
+        h: 340,
+        content: ObjectContent.table(3, 3),
+        stroke: const {
+          'color': '17181A',
+          'width': 1.5,
+          'dash': 'solid',
+          'start_arrow': 'none',
+          'end_arrow': 'none',
+        },
+      ),
+    );
+  }
+
+  /// Icon sticker from the searchable registry.
+  void _insertIcon(String name) {
+    _insertObject(
+      _newContentObject(
+        w: 140,
+        h: 140,
+        content: ObjectContent.icon(name),
+        fill: {'type': 'solid', 'color': colorToHex(_baseTextColor)},
+      ),
+    );
+  }
+
+  /// Image: Gallery / Camera / Deck Resources / Brand Resources.
+  Future<void> _pickImage(String source) async {
+    if (source == 'deck' || source == 'brand') {
+      await _pickImageResource(source == 'brand');
+      return;
+    }
+    final path =
+        await ImagePickers.pickImage(camera: source == 'camera');
+    if (path == null || !mounted) return;
+    await _insertImageFromPath(path);
+  }
+
+  Future<void> _insertImageFromPath(String path) async {
+    try {
+      final store = await ResourceStore.open();
+      final entry = await store.add(
+        brand: false,
+        deckId: (_deck['id'] ?? '').toString(),
+        sourcePath: path,
+      );
+      final resolved = _resourcePathOf(entry, brand: false);
+      if (resolved != null) {
+        _resourcePaths['deck:${entry['id']}'] = resolved;
+      }
+      _insertObject(
+        _newContentObject(
+          w: 480,
+          h: 300,
+          content: ObjectContent.image('${entry['id']}',
+              brand: false, name: '${entry['name']}'),
+        ),
+      );
+    } catch (e) {
+      _toast('Could not import that image: $e');
+    }
+  }
+
+  String? _resourcePathOf(Map<String, dynamic> entry, {required bool brand}) {
+    try {
+      final store = ResourceStore.peek();
+      if (store == null) return null;
+      final dir = store.scopeDirPath(
+          brand: brand,
+          deckId: brand ? null : (_deck['id'] ?? '').toString());
+      return '$dir/${entry['file']}';
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Pick an image from the device's resource libraries (deck or brand).
+  Future<void> _pickImageResource(bool brand) async {
+    try {
+      final store = await ResourceStore.open();
+      final items = await store.list(
+          brand: brand, deckId: brand ? null : (_deck['id'] ?? '').toString());
+      final images = items
+          .where((e) => isImagePath('${e['name']}'))
+          .toList(growable: false);
+      if (!mounted) return;
+      if (images.isEmpty) {
+        _toast(brand
+            ? 'No images in Brand resources yet — import some from Files.'
+            : 'No images in this deck\'s resources yet — import some from Files.');
+        return;
+      }
+      final choice = await showModalBottomSheet<Map<String, dynamic>>(
+        context: context,
+        isScrollControlled: true,
+        builder: (sheetContext) => SafeArea(
+          child: SizedBox(
+            height: MediaQuery.of(sheetContext).size.height * 0.55,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Text(
+                    brand ? 'Brand resources — images' : 'Deck resources — images',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  ),
+                ),
+                for (final e in images)
+                  ListTile(
+                    leading: Image(
+                      image: FileImage(
+                          File(_resourcePathOf(e, brand: brand) ?? '')),
+                      width: 44,
+                      height: 44,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          const Icon(Icons.image_outlined, size: 22),
+                    ),
+                    title: Text('${e['name']}',
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    subtitle: Text(
+                        '${((e['size'] ?? 0) as num).toInt() ~/ 1024} KB',
+                        style: const TextStyle(fontSize: 11.5)),
+                    onTap: () => Navigator.pop(sheetContext, e),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      );
+      if (choice == null || !mounted) return;
+      _insertObject(
+        _newContentObject(
+          w: 480,
+          h: 300,
+          content: ObjectContent.image('${choice['id']}',
+              brand: brand, name: '${choice['name']}'),
+        ),
+      );
+    } catch (e) {
+      _toast('Storage is not answering — try again in a moment.');
+    }
+  }
+
+  /// Media: import an existing video or audio file (no recorder, ever).
+  Future<void> _pickMedia(String kind) async {
+    final path = await ImagePickers.pickMedia(kind: kind);
+    if (path == null || !mounted) return;
+    try {
+      final store = await ResourceStore.open();
+      final entry = await store.add(
+        brand: false,
+        deckId: (_deck['id'] ?? '').toString(),
+        sourcePath: path,
+      );
+      _insertObject(
+        _newContentObject(
+          w: 460,
+          h: 240,
+          content: ObjectContent.media('${entry['id']}',
+              brand: false,
+              name: '${entry['name']}',
+              mediaKind: kind),
+        ),
+      );
+    } catch (e) {
+      _toast('Could not import that file: $e');
+    }
+  }
+
+  /// Table cell editing — the route dialog (text entry lives in routes,
+  /// outside the keyboard-stable subtree).
+  Future<void> _editTableCell(int index) async {
+    final obj = _selectedObject;
+    if (obj == null || !ObjectContent.isTable(obj)) return;
+    final (rows, cols, cells) = ObjectContent.tableOf(obj);
+    if (index < 0 || index >= cells.length) return;
+    final text = await dreamInputDialog(
+      context,
+      title: 'Cell ${index ~/ cols + 1},${index % cols + 1}',
+      initial: cells[index],
+      confirmLabel: 'Save',
+    );
+    if (text == null || !mounted) return;
+    final updated = List<String>.from(cells);
+    updated[index] = text;
+    final copy = Map<String, dynamic>.from(obj);
+    final content = Map<String, dynamic>.from(copy['content'] as Map);
+    content['cells'] = updated;
+    copy['content'] = content;
+    // A committed cell edit is its own undo step (discrete, deliberate).
+    _styleChanged(copy);
   }
 
   void _objectGestureStart() {
@@ -859,8 +1637,7 @@ class _EditorScreenState extends State<EditorScreen> {
         {'op': 'add_slide', 'deck': _deck, 'archetype': 'blank'});
     if (r['ok'] == true && r['deck'] is Map) {
       _mutate(r['deck'] as Map);
-      setState(() => _index = _slides.length - 1);
-      _refreshLayout();
+      _gotoSlide(_slides.length - 1);
     } else {
       _toast('Could not add: ${r['error']}');
     }
@@ -901,8 +1678,7 @@ class _EditorScreenState extends State<EditorScreen> {
         {'op': 'add_slide', 'deck': _deck, 'archetype': _archetypeOf(choice)});
     if (add['ok'] == true && add['deck'] is Map) {
       _mutate(add['deck'] as Map);
-      setState(() => _index = _slides.length - 1);
-      _refreshLayout();
+      _gotoSlide(_slides.length - 1);
     } else {
       _toast('Could not add: ${add['error']}');
     }
@@ -963,8 +1739,7 @@ class _EditorScreenState extends State<EditorScreen> {
       if (move['ok'] == true && move['deck'] is Map) deck = move['deck'] as Map;
     }
     _mutate(deck);
-    setState(() => _index = (i + 1).clamp(0, _slides.length - 1));
-    _refreshLayout();
+    _gotoSlide((i + 1).clamp(0, _slides.length - 1));
   }
 
   void _moveAt(int i, int delta) {
@@ -980,8 +1755,7 @@ class _EditorScreenState extends State<EditorScreen> {
     });
     if (r['ok'] == true && r['deck'] is Map) {
       _mutate(r['deck'] as Map);
-      setState(() => _index = target);
-      _refreshLayout();
+      _gotoSlide(target);
     }
   }
 
@@ -1046,7 +1820,7 @@ class _EditorScreenState extends State<EditorScreen> {
     );
     switch (action) {
       case 'edit':
-        setState(() => _index = i);
+        _gotoSlide(i);
         _editContent();
       case 'dup':
         _duplicateAt(i);
@@ -1439,6 +2213,8 @@ class _EditorScreenState extends State<EditorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Deck colors + the text boxes' slide-theme base track the deck version.
+    _refreshPalette();
     final title = (_deck['title'] ?? 'Deck').toString();
     final family = ((_deck['dna'] ?? const {})['family'] ?? '')
         .toString()
@@ -1547,10 +2323,19 @@ class _EditorScreenState extends State<EditorScreen> {
           builder: (context, constraints) {
             final filesOpen =
                 _mode == _Mode.editing && _navTab == _NavTab.files;
-            // The sheet's layer is alive while Files is active OR its exit
-            // slide is still running — the unmount lands when that slide
-            // completes (the AnimatedPositioned's onEnd below).
-            final sheetLive = filesOpen || _sheetClosing;
+            // The Insert sheet: same layer, compact drawer. While the user
+            // is TYPING into a text box the sheet stands down (the keyboard
+            // owns the bottom of the screen and the typing toolbar rides it
+            // in the root overlay) — the flow's spacer system keeps the
+            // canvas's constraints frozen through that too.
+            final insertOpen = _mode == _Mode.editing &&
+                _navTab == _NavTab.insert &&
+                !_typing;
+            // The sheet's layer is alive while a sheet tab is active OR its
+            // exit slide is still running — the unmount lands when that
+            // slide completes (the AnimatedPositioned's onEnd below).
+            final sheetOpen = filesOpen || insertOpen;
+            final sheetLive = sheetOpen || _sheetClosing;
             // The strip's flow footprint at its CURRENT state — what the
             // spacer hands back to on close, and the fallback for a missing
             // freeze.
@@ -1592,7 +2377,8 @@ class _EditorScreenState extends State<EditorScreen> {
             final stripH = _filmOpen
                 ? _FilmstripDivider.regionHeight + _filmstripBandHeight
                 : _FilmstripDivider.regionHeight;
-            final overlayH = math.min(stripH, _drawerExtent ?? half);
+            final sheetHeight = _sheetLiveHeightFor(filesOpen);
+            final overlayH = math.min(stripH, sheetHeight);
             return Stack(
               children: [
                 // The base layer: the editor's whole flow. While the Files
@@ -1635,6 +2421,7 @@ class _EditorScreenState extends State<EditorScreen> {
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(12),
                                   child: Stack(
+                                    clipBehavior: Clip.none,
                                     children: [
                                       SlideCanvas(
                                           layout: _layout!,
@@ -1642,18 +2429,49 @@ class _EditorScreenState extends State<EditorScreen> {
                                                   _mode == _Mode.viewing
                                               ? null
                                               : _editText),
+                                      // Content objects (text boxes, images,
+                                      // icons, media, tables) render as
+                                      // CONTENT under the geometry layer.
+                                      ObjectContentLayer(
+                                        objects: _objects,
+                                        designW: _designDims.$1,
+                                        designH: _designDims.$2,
+                                        baseColor: _baseTextColor,
+                                        baseFamily: _baseTextFamily,
+                                        baseFontSize: kTextBoxBaseSize,
+                                        resolveResourcePath:
+                                            _resolveResourcePath,
+                                      ),
                                       ShapesLayer(
                                         objects: _objects,
                                         selectedId: _selectedObjectId,
                                         interactive: _designMode,
                                         scribbleMode: _scribbleMode,
-                                        onSelect: (id) => setState(
-                                            () => _selectedObjectId = id),
+                                        designW: _designDims.$1,
+                                        designH: _designDims.$2,
+                                        onSelect: _onObjectSelected,
                                         onLive: _liveObject,
                                         onCommit: _commitObject,
                                         onGestureStart: _objectGestureStart,
                                         onScribble: _onScribbleDone,
                                       ),
+                                      // The typing state's WYSIWYG field —
+                                      // mounted only while the selected text
+                                      // box is focused.
+                                      if (_typing &&
+                                          _textSession != null &&
+                                          _selectedObject != null)
+                                        TextEditFieldLayer(
+                                          obj: _selectedObject!,
+                                          controller:
+                                              _textSession!.controller,
+                                          focusNode: _textSession!.focus,
+                                          designW: _designDims.$1,
+                                          designH: _designDims.$2,
+                                          baseColor: _baseTextColor,
+                                          baseFamily: _baseTextFamily,
+                                          baseFontSize: kTextBoxBaseSize,
+                                        ),
                                     ],
                                   ),
                                 ),
@@ -1735,11 +2553,12 @@ class _EditorScreenState extends State<EditorScreen> {
             // ---- editing chrome: tool row + filmstrip + ribbon nav ---------------
             if (_mode == _Mode.editing) ...[
               // Tabs with no tools yet (transitions / animations / help)
-              // skip the band entirely, and Files' tools live in its docked
-              // drawer instead of a contextual row — the canvas keeps the
+              // skip the band entirely; Files and Insert live in their docked
+              // drawers instead of a contextual row — the canvas keeps the
               // space until their toolboxes get spec'd.
               if (_navTab != null &&
                   _navTab != _NavTab.files &&
+                  _navTab != _NavTab.insert &&
                   _navTab != _NavTab.transitions &&
                   _navTab != _NavTab.animations &&
                   _navTab != _NavTab.help)
@@ -1784,7 +2603,7 @@ class _EditorScreenState extends State<EditorScreen> {
                       ? Duration.zero
                       : const Duration(milliseconds: 200),
                   curve: Curves.easeInOutCubic,
-                  height: filesOpen
+                  height: sheetOpen
                       ? (_frozenStripFootprint ?? stripFlowHeight)
                       : stripFlowHeight,
                 ),
@@ -1868,16 +2687,16 @@ class _EditorScreenState extends State<EditorScreen> {
                           // so interrupted or reversed slides continue from
                           // the current visible position, never resetting.
                           bottom: (_sheetEntering || _sheetClosing)
-                              ? sheetAnchor - (_drawerExtent ?? half)
+                              ? sheetAnchor - sheetHeight
                               : sheetAnchor,
-                          height: _drawerExtent ?? half,
+                          height: sheetHeight,
                           // The exit slide's bookend: when the translation
                           // completes the layer unmounts at its slot (a
                           // tab's chrome appears and disappears there).
                           onEnd: () {
                             if (!mounted ||
                                 !_sheetClosing ||
-                                _navTab == _NavTab.files) {
+                                _isSheetTab(_navTab)) {
                               return;
                             }
                             setState(() {
@@ -1886,26 +2705,54 @@ class _EditorScreenState extends State<EditorScreen> {
                               _drawerExtent = null;
                             });
                           },
-                          child: FilesDrawer(
-                            aspect: _deckAspect,
-                            deckId: (_deck['id'] ?? '').toString(),
-                            onNew: _filesNewDeck,
-                            onOpen: _filesOpenDeck,
-                            onRename: _renameDeck,
-                            onAspect: _filesAspect,
-                            onDismiss: () => _setNavTab(null),
-                            // The overlay clearance: the tray (divider
-                            // region + band) rides the sheet's lower part,
-                            // so the grid's scrollable carries this as
-                            // bottom padding — the last row can always be
-                            // scrolled fully above the tray, including its
-                            // raised handle. Scroll content, never chrome:
-                            // the sheet's outer height is the detents' alone.
-                            bottomInset: _FilmstripDivider.regionHeight +
-                                _filmstripBandHeight,
-                            onDragUpdate: _drawerDragUpdate,
-                            onDragSettle: _drawerDragSettle,
-                          ),
+                          // The sheet's CONTENT: the Files drawer or the
+                          // Insert drawer — same layer, same lifecycle, same
+                          // clip; switching between the two sheet tabs swaps
+                          // the surface without unmounting the layer, and the
+                          // exit slide keeps the surface it is animating out.
+                          child: _lastSheetTab == _NavTab.insert
+                              ? InsertSheet(
+                                  bottomInset: _FilmstripDivider.regionHeight +
+                                      _filmstripBandHeight,
+                                  selectedObject: _selectedObject,
+                                  textController: _selectedObject != null &&
+                                          ObjectContent.isText(_selectedObject!)
+                                      ? _textSession?.controller
+                                      : null,
+                                  textActions: _textActions,
+                                  deckPalette: _deckPalette,
+                                  onInsertTextBox: _insertTextBox,
+                                  onPickImage: _pickImage,
+                                  onPickShape: _addObject,
+                                  onInsertTable: _insertTable,
+                                  onInsertIcon: _insertIcon,
+                                  onPickMedia: _pickMedia,
+                                  onObjectStyle: _liveObjectEdit,
+                                  onTableCell: _editTableCell,
+                                  onShowLayers: _showLayers,
+                                  onEditStyleSheet: _editSelectedObjectStyle,
+                                  onStartTyping: _beginTyping,
+                                )
+                              : FilesDrawer(
+                                  aspect: _deckAspect,
+                                  deckId: (_deck['id'] ?? '').toString(),
+                                  onNew: _filesNewDeck,
+                                  onOpen: _filesOpenDeck,
+                                  onRename: _renameDeck,
+                                  onAspect: _filesAspect,
+                                  onDismiss: () => _setNavTab(null),
+                                  // The overlay clearance: the tray (divider
+                                  // region + band) rides the sheet's lower part,
+                                  // so the grid's scrollable carries this as
+                                  // bottom padding — the last row can always be
+                                  // scrolled fully above the tray, including its
+                                  // raised handle. Scroll content, never chrome:
+                                  // the sheet's outer height is the detents' alone.
+                                  bottomInset: _FilmstripDivider.regionHeight +
+                                      _filmstripBandHeight,
+                                  onDragUpdate: _drawerDragUpdate,
+                                  onDragSettle: _drawerDragSettle,
+                                ),
                         ),
                         // ---- the filmstrip overlay layer --------------------------
                         // The tray is a FOREGROUND layer over the sheet's lower
@@ -2113,12 +2960,7 @@ class _EditorScreenState extends State<EditorScreen> {
                               padding: const EdgeInsets.all(6),
                               child: InkWell(
                                 borderRadius: BorderRadius.circular(10),
-                                onTap: () {
-                                  setState(() {
-                                    _index = i;
-                                    _refreshLayout();
-                                  });
-                                },
+                                onTap: () => _gotoSlide(i),
                                 onLongPress: () => _slideActions(i),
                                 child: AnimatedContainer(
                                   duration: const Duration(milliseconds: 150),
@@ -2297,7 +3139,6 @@ class _EditorScreenState extends State<EditorScreen> {
   /// filmstrip "timeline". Tabs without tools yet render nothing (their
   /// band is skipped in build); the filler hint texts are gone by request.
   Widget _contextualRow() {
-    final n = _slides.length;
     switch (_navTab) {
       case null:
         return const SizedBox.shrink();
@@ -2318,75 +3159,10 @@ class _EditorScreenState extends State<EditorScreen> {
         // The Files tab's tools live in the docked drawer that replaces this
         // band (see build) — the row itself never renders for Files.
         return const SizedBox.shrink();
-      case _NavTab.home:
-        return Row(
-          children: [
-            IconButton(
-              tooltip: 'Add blank slide',
-              icon: const Icon(Icons.add_circle_outline),
-              onPressed: _addSlide,
-            ),
-            IconButton(
-              tooltip: 'Add from a layout template',
-              icon: const Icon(Icons.dashboard_outlined),
-              onPressed: _addLayoutSlide,
-            ),
-            IconButton(
-              tooltip: 'Duplicate slide',
-              icon: const Icon(Icons.content_copy),
-              onPressed: n == 0 ? null : () => _duplicateAt(_index),
-            ),
-            IconButton(
-              tooltip: 'Move slide left',
-              icon: const Icon(Icons.arrow_back),
-              onPressed: _index <= 0 ? null : () => _moveAt(_index, -1),
-            ),
-            IconButton(
-              tooltip: 'Move slide right',
-              icon: const Icon(Icons.arrow_forward),
-              onPressed: _index >= n - 1 ? null : () => _moveAt(_index, 1),
-            ),
-            IconButton(
-              tooltip: 'Delete slide',
-              icon: const Icon(Icons.delete_outline, color: kAccent),
-              onPressed: n == 0 ? null : () => _deleteAt(_index),
-            ),
-          ],
-        );
       case _NavTab.insert:
-        return Row(
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(left: 10),
-              child: FilledButton.icon(
-                onPressed: n == 0 ? null : _editContent,
-                icon: const Icon(Icons.text_fields, size: 18),
-                label: const Text('Add text'),
-              ),
-            ),
-            IconButton(
-                tooltip: 'Add shape',
-                icon: const Icon(Icons.category_outlined),
-                onPressed: _showLibrary),
-            IconButton(
-              tooltip: 'Style the selected object',
-              icon: const Icon(Icons.format_paint_outlined),
-              onPressed: _selectedObjectId == null
-                  ? null
-                  : () {
-                      final obj = _selectedObject;
-                      if (obj != null) {
-                        showInspector(context,
-                            object: obj, onChange: _styleChanged);
-                      }
-                    },
-            ),
-            IconButton(
-                tooltip: 'Layers, groups, components',
-                icon: const Icon(Icons.layers_outlined),
-                onPressed: _showLayers),
-          ],
-        );
+        // Insert is where things get ADDED to the slide — its compact drawer
+        // (the same sheet layer as Files) replaces this band.
+        return const SizedBox.shrink();
       case _NavTab.draw:
         return Row(
           children: [
@@ -2685,7 +3461,6 @@ class _EditorScreenState extends State<EditorScreen> {
 enum _NavTab {
   ai,
   files,
-  home,
   insert,
   draw,
   design,
@@ -3019,7 +3794,6 @@ class _EditorNavBar extends StatelessWidget {
   static const _icons = {
     _NavTab.ai: Icons.auto_awesome,
     _NavTab.files: Icons.folder,
-    _NavTab.home: Icons.home,
     _NavTab.insert: Icons.add_box,
     _NavTab.draw: Icons.gesture,
     _NavTab.design: Icons.palette,
@@ -3033,7 +3807,6 @@ class _EditorNavBar extends StatelessWidget {
   static const _labels = {
     _NavTab.ai: 'AI',
     _NavTab.files: 'Files',
-    _NavTab.home: 'Home',
     _NavTab.insert: 'Insert',
     _NavTab.draw: 'Draw',
     _NavTab.design: 'Design',
@@ -3395,5 +4168,81 @@ class _DesignChip extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The Insert drawer's session + toolbar state adapters
+// ---------------------------------------------------------------------------
+
+/// The live text-editing session for the selected text box.
+class _TextSession {
+  _TextSession({required this.controller, required this.focus});
+
+  final RichEditingController controller;
+  final FocusNode focus;
+
+  /// One undo snapshot per session — typing and its formatting are a
+  /// single undo group.
+  bool undoPushed = false;
+
+  /// Debounced engine commit while typing (keystrokes never round-trip).
+  Timer? commitDebounce;
+}
+
+/// The typing toolbar's live view over the session — rebuilt on every
+/// controller notification, so the active states track the caret.
+class _TypingDocState extends TypingToolbarStateLike {
+  _TypingDocState(this._session);
+
+  final _TextSession _session;
+
+  (int, int) get _sel {
+    final s = _session.controller.effectiveSelection;
+    return (s.baseOffset, s.extentOffset);
+  }
+
+  RichRun? _runAtSelection(String? Function(RichRun) pick) {
+    final (a, b) = _sel;
+    if (a == b) {
+      // A caret reads its typing source.
+      final src = _session.controller.doc.typingSourceAt(a);
+      return src == null ? null : (pick(src) != null ? src : null);
+    }
+    for (final r in _session.controller.doc.runs) {
+      if (r.end <= r.start) continue;
+      if (r.start < b && a < r.end) return r;
+    }
+    return null;
+  }
+
+  @override
+  bool isFlagActive(String flag) {
+    final (a, b) = _sel;
+    return _session.controller.doc.isFlagActive(a, b, flag);
+  }
+
+  @override
+  String? get color => _runAtSelection((r) => r.color)?.color;
+
+  @override
+  String? get highlight => _runAtSelection((r) => r.highlight)?.highlight;
+
+  @override
+  String? get align {
+    final (a, b) = _sel;
+    final caret = (a == b) ? a : b;
+    return _session.controller.doc
+        .effectiveParaAt(caret.clamp(0, _session.controller.doc.text.length))
+        ?.align;
+  }
+
+  @override
+  String? get list {
+    final (a, b) = _sel;
+    final caret = (a == b) ? a : b;
+    return _session.controller.doc
+        .effectiveParaAt(caret.clamp(0, _session.controller.doc.text.length))
+        ?.list;
   }
 }

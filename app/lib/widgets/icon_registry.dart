@@ -1,0 +1,183 @@
+import 'package:material_ui/material_ui.dart';
+
+/// The app's curated vector icon registry — what the Insert drawer's
+/// Icons / Stickers picker searches. Names are stable object-model keys
+/// (the engine's `content.name`); the glyph is the Material icon. Keywords
+/// make the picker searchable by what the user means, not just by name.
+const List<IconEntry> kIconRegistry = [
+  IconEntry('favorite', Icons.favorite, 'heart like love'),
+  IconEntry('star', Icons.star, 'favorite rating'),
+  IconEntry('bookmark', Icons.bookmark, 'save read later'),
+  IconEntry('flag', Icons.flag, 'mark milestone'),
+  IconEntry('push_pin', Icons.push_pin, 'pin attach note'),
+  IconEntry('label', Icons.label, 'tag category'),
+  IconEntry('lightbulb', Icons.lightbulb, 'idea tip insight'),
+  IconEntry('bolt', Icons.bolt, 'fast energy lightning power'),
+  IconEntry('rocket_launch', Icons.rocket_launch, 'launch ship grow startup'),
+  IconEntry('trending_up', Icons.trending_up, 'growth chart up increase'),
+  IconEntry('trending_down', Icons.trending_down, 'decline chart down decrease'),
+  IconEntry('trending_flat', Icons.trending_flat, 'flat neutral chart'),
+  IconEntry('bar_chart', Icons.bar_chart, 'chart stats data graph'),
+  IconEntry('pie_chart', Icons.pie_chart, 'chart share distribution'),
+  IconEntry('show_chart', Icons.show_chart, 'line chart graph data'),
+  IconEntry('stacked_line_chart', Icons.stacked_line_chart, 'lines chart data'),
+  IconEntry('calendar', Icons.calendar_month, 'date schedule event month'),
+  IconEntry('schedule', Icons.schedule, 'clock time'),
+  IconEntry('timer', Icons.timer, 'countdown time'),
+  IconEntry('alarm', Icons.alarm, 'clock reminder alert'),
+  IconEntry('place', Icons.place, 'pin location map address'),
+  IconEntry('map', Icons.map, 'location atlas'),
+  IconEntry('navigation', Icons.navigation, 'compass direction'),
+  IconEntry('explore', Icons.explore, 'compass discover search'),
+  IconEntry('check_circle', Icons.check_circle, 'done complete success yes'),
+  IconEntry('check', Icons.check, 'done complete yes tick'),
+  IconEntry('cancel', Icons.cancel, 'close no stop reject'),
+  IconEntry('close', Icons.close, 'x cancel dismiss'),
+  IconEntry('add_circle', Icons.add_circle, 'plus new create insert'),
+  IconEntry('remove_circle', Icons.remove_circle, 'minus delete less'),
+  IconEntry('info', Icons.info, 'information about note'),
+  IconEntry('warning', Icons.warning, 'alert caution risk attention'),
+  IconEntry('error', Icons.error, 'failure critical bug'),
+  IconEntry('help', Icons.help, 'question support faq'),
+  IconEntry('task_alt', Icons.task_alt, 'todo done checklist'),
+  IconEntry('checklist', Icons.checklist, 'todo list tasks steps'),
+  IconEntry('assignment', Icons.assignment, 'task document homework'),
+  IconEntry('description', Icons.description, 'document file text page'),
+  IconEntry('folder', Icons.folder, 'directory files storage'),
+  IconEntry('open_in_new', Icons.open_in_new, 'external link out'),
+  IconEntry('link', Icons.link, 'url chain connect'),
+  IconEntry('attach_file', Icons.attach_file, 'paperclip attachment file'),
+  IconEntry('mail', Icons.mail, 'email envelope message'),
+  IconEntry('chat_bubble', Icons.chat_bubble, 'message comment talk'),
+  IconEntry('forum', Icons.forum, 'discussion comments chat'),
+  IconEntry('call', Icons.call, 'phone contact support'),
+  IconEntry('smartphone', Icons.smartphone, 'phone mobile device'),
+  IconEntry('computer', Icons.computer, 'laptop desktop pc'),
+  IconEntry('tablet', Icons.tablet, 'device ipad'),
+  IconEntry('watch', Icons.watch, 'time wearable clock'),
+  IconEntry('camera', Icons.camera, 'photo picture shoot'),
+  IconEntry('photo', Icons.photo, 'image picture gallery'),
+  IconEntry('image', Icons.image, 'picture photo media'),
+  IconEntry('palette', Icons.palette, 'color design paint theme'),
+  IconEntry('brush', Icons.brush, 'paint draw art'),
+  IconEntry('format_paint', Icons.format_paint, 'color fill style'),
+  IconEntry('draw', Icons.draw, 'pen sketch scribble'),
+  IconEntry('edit', Icons.edit, 'pencil write modify'),
+  IconEntry('delete', Icons.delete, 'trash remove bin'),
+  IconEntry('content_copy', Icons.content_copy, 'duplicate clone copy'),
+  IconEntry('content_cut', Icons.content_cut, 'scissors cut'),
+  IconEntry('paste', Icons.content_paste, 'clipboard copy'),
+  IconEntry('undo', Icons.undo, 'history back revert'),
+  IconEntry('redo', Icons.redo, 'history forward repeat'),
+  IconEntry('save', Icons.save, 'disk write store'),
+  IconEntry('download', Icons.download, 'export save get'),
+  IconEntry('upload', Icons.upload, 'import share put'),
+  IconEntry('cloud', Icons.cloud, 'sync backup weather'),
+  IconEntry('cloud_done', Icons.cloud_done, 'synced backup complete'),
+  IconEntry('lock', Icons.lock, 'secure private password'),
+  IconEntry('lock_open', Icons.lock_open, 'unlock open security'),
+  IconEntry('key', Icons.key, 'password access token'),
+  IconEntry('shield', Icons.shield, 'security safe protect'),
+  IconEntry('verified', Icons.verified, 'trust badge check certified'),
+  IconEntry('workspace_premium', Icons.workspace_premium, 'award premium badge star'),
+  IconEntry('emoji_events', Icons.emoji_events, 'trophy win award cup'),
+  IconEntry('military_tech', Icons.military_tech, 'medal honor award'),
+  IconEntry('thumb_up', Icons.thumb_up, 'like approve good vote'),
+  IconEntry('thumb_down', Icons.thumb_down, 'dislike reject bad vote'),
+  IconEntry('celebration', Icons.celebration, 'party confetti celebrate'),
+  IconEntry('cake', Icons.cake, 'birthday party dessert'),
+  IconEntry('music_note', Icons.music_note, 'audio sound song'),
+  IconEntry('headphones', Icons.headphones, 'audio listen music'),
+  IconEntry('mic', Icons.mic, 'microphone voice record audio'),
+  IconEntry('volume_up', Icons.volume_up, 'sound audio speaker'),
+  IconEntry('videocam', Icons.videocam, 'video camera record film'),
+  IconEntry('movie', Icons.movie, 'film video cinema'),
+  IconEntry('play_circle', Icons.play_circle, 'video media start play'),
+  IconEntry('pause_circle', Icons.pause_circle, 'media hold stop'),
+  IconEntry('stop_circle', Icons.stop_circle, 'media halt end'),
+  IconEntry('fast_forward', Icons.fast_forward, 'skip next speed'),
+  IconEntry('skip_next', Icons.skip_next, 'next track forward'),
+  IconEntry('people', Icons.people, 'team group users audience'),
+  IconEntry('person', Icons.person, 'user human profile'),
+  IconEntry('groups', Icons.groups, 'team crowd community'),
+  IconEntry('handshake', Icons.handshake, 'deal partner agreement'),
+  IconEntry('school', Icons.school, 'education learn student'),
+  IconEntry('menu_book', Icons.menu_book, 'read book library'),
+  IconEntry('auto_stories', Icons.auto_stories, 'book pages read'),
+  IconEntry('science', Icons.science, 'lab experiment research flask'),
+  IconEntry('biotech', Icons.biotech, 'lab dna science research'),
+  IconEntry('psychology', Icons.psychology, 'mind brain think idea'),
+  IconEntry('visibility', Icons.visibility, 'eye view show reveal'),
+  IconEntry('search', Icons.search, 'find magnifier lookup'),
+  IconEntry('settings', Icons.settings, 'gear preferences options'),
+  IconEntry('build', Icons.build, 'tools fix wrench'),
+  IconEntry('construction', Icons.construction, 'work in progress tools'),
+  IconEntry('engineering', Icons.engineering, 'worker build helmet'),
+  IconEntry('factory', Icons.factory, 'plant industry production'),
+  IconEntry('inventory', Icons.inventory, 'stock warehouse goods'),
+  IconEntry('shopping_cart', Icons.shopping_cart, 'buy commerce cart'),
+  IconEntry('shopping_bag', Icons.shopping_bag, 'shop purchase bag'),
+  IconEntry('payments', Icons.payments, 'money payment cash'),
+  IconEntry('attach_money', Icons.attach_money, 'dollar price cost money'),
+  IconEntry('savings', Icons.savings, 'budget save piggy bank'),
+  IconEntry('receipt', Icons.receipt, 'invoice bill order'),
+  IconEntry('toll', Icons.toll, 'price coin pay'),
+  IconEntry('eco', Icons.eco, 'green leaf sustainability nature'),
+  IconEntry('recycling', Icons.recycling, 'recycle sustainability loop'),
+  IconEntry('water_drop', Icons.water_drop, 'liquid drop droplet'),
+  IconEntry('wb_sunny', Icons.wb_sunny, 'sun weather day bright'),
+  IconEntry('ac_unit', Icons.ac_unit, 'cool snow frost freeze'),
+  IconEntry('local_fire_department', Icons.local_fire_department, 'hot fire flame trending'),
+  IconEntry('storm', Icons.storm, 'weather rain storm'),
+  IconEntry('pets', Icons.pets, 'animal paw dog cat'),
+  IconEntry('flight', Icons.flight, 'plane travel trip fly'),
+  IconEntry('directions_car', Icons.directions_car, 'car vehicle drive'),
+  IconEntry('directions_bus', Icons.directions_bus, 'bus transport commute'),
+  IconEntry('train', Icons.train, 'rail transit metro'),
+  IconEntry('two_wheeler', Icons.two_wheeler, 'bike motorcycle cycle'),
+  IconEntry('local_shipping', Icons.local_shipping, 'truck delivery logistics'),
+  IconEntry('public', Icons.public, 'globe world earth international'),
+  IconEntry('language', Icons.language, 'translate locale globe'),
+  IconEntry('people_alt', Icons.people_alt, 'people inclusion team culture'),
+  IconEntry('target', Icons.adjust, 'target bullseye goal'),
+  IconEntry('crop_free', Icons.crop_free, 'frame crop bounds'),
+  IconEntry('dashboard', Icons.dashboard, 'overview panels grid'),
+  IconEntry('widgets', Icons.widgets, 'components grid ui'),
+  IconEntry('category', Icons.category, 'shapes categories types'),
+  IconEntry('extension', Icons.extension, 'plugin puzzle component'),
+  IconEntry('timeline', Icons.timeline, 'history sequence events'),
+  IconEntry('route', Icons.route, 'path journey steps map'),
+  IconEntry('alt_route', Icons.alt_route, 'fork path options branch'),
+  IconEntry('swap_horiz', Icons.swap_horiz, 'exchange switch arrows'),
+  IconEntry('sync', Icons.sync, 'refresh update cycle sync'),
+  IconEntry('autorenew', Icons.autorenew, 'refresh recycle renew'),
+  IconEntry('loop', Icons.loop, 'repeat cycle infinite'),
+  IconEntry('all_inclusive', Icons.all_inclusive, 'infinite forever'),
+];
+
+class IconEntry {
+  const IconEntry(this.name, this.icon, this.keywords);
+
+  /// Stable key stored in the deck (`content.name`).
+  final String name;
+
+  /// The Material glyph rendered on the slide.
+  final IconData icon;
+
+  /// Search hint words (lowercase, space-separated).
+  final String keywords;
+
+  bool matches(String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    if (name.contains(q)) return true;
+    return keywords.contains(q);
+  }
+}
+
+IconData? iconGlyphOf(String name) {
+  for (final e in kIconRegistry) {
+    if (e.name == name) return e.icon;
+  }
+  return null;
+}
