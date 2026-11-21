@@ -15,10 +15,17 @@ jobs:
       - uses: actions/checkout@v4
 
       # ---- Java + Flutter --------------------------------------------------
+      # JDK 21, not 17: AGP 9.3.0-9.3.1 lint crashes on JDK 17 with
+      # NoSuchMethodError java.util.List.removeLast() (the bundled IntelliJ
+      # JavaDocParser calls a JDK-21 API while compiled to Java 8 bytecode;
+      # issuetracker 522845800, fixed in AGP 9.3.2). The first Java source to
+      # trip it was image_picker_android's ExifDataCopier.java, added in
+      # v0.2.33 — v0.2.32 never ran lint on a Java file, so it never saw the
+      # bug. JDK 21 is the documented workaround and what AGP ships against.
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
       # Pinned, not floating: `stable` drifted mid-stream twice this project
       # and every drift silently re-resolved dependencies. Builds are now
       # reproducible from the exact toolchain + committed lock below.
