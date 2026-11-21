@@ -102,14 +102,6 @@ class _EditorScreenState extends State<EditorScreen> {
   /// Cached image-resource paths: 'brand:<id>' / 'deck:<id>' → file path.
   final Map<String, String> _resourcePaths = {};
 
-  /// The Insert drawer's two resting extents. The GRID sheet is compact —
-  /// header + the full 3×2 grid above the filmstrip tray's overlay, with
-  /// the slide's center still visible and tappable above it (mid-slide
-  /// objects stay selectable). The PANEL sheet is taller — its control
-  /// area earns the height, and the object it edits is already selected.
-  static const double _insertGridSheetHeight = 400;
-  static const double _insertPanelSheetHeight = 436;
-
   /// The sheet tab whose surface the layer is showing (or last showed) —
   /// the Files ⇄ Insert switch swaps content without unmounting the layer,
   /// and the exit slide keeps showing the surface it is animating OUT.
@@ -149,28 +141,30 @@ class _EditorScreenState extends State<EditorScreen> {
   /// accounted separately wherever the anchor needs it (sheetAnchor).
   static const double _navBarHeight = 76.0;
 
-  /// The Files drawer's live extent, in logical px — the sheet floats as
-  /// its own layer pinned directly to the ribbon's top edge. null = the
-  /// resting half detent (recomputed each build from the layer cake's
-  /// actual space); anything else = a drag in flight or a snapped detent.
-  /// The settle logic (fling one detent, nearest-detent release, dismiss
-  /// zone at the bottom) reads the cached [_drawerHalf]/[_drawerTall],
-  /// refreshed on every build. The sheet's extent is completely
-  /// independent of the filmstrip's state — the strip never takes layout
-  /// space while the sheet is open, so its toggles can never move the
-  /// sheet's top edge.
+  /// The sheet layer's live extent, in logical px — the ONE extent that
+  /// both drawers (Files and Insert) share: the sheet floats as its own
+  /// layer pinned directly to the ribbon's top edge. null = the resting
+  /// half detent (recomputed each build from the layer cake's actual
+  /// space); anything else = a drag in flight or a snapped detent — from
+  /// EITHER drawer's header. The settle logic (fling one detent,
+  /// nearest-detent release, dismiss zone at the bottom) reads the cached
+  /// [_drawerHalf]/[_drawerTall], refreshed on every build. The sheet's
+  /// extent is completely independent of the filmstrip's state — the strip
+  /// never takes layout space while the sheet is open, so its toggles can
+  /// never move the sheet's top edge.
   double? _drawerExtent;
   double _drawerHalf = 296;
   double _drawerTall = 356;
   bool _drawerDragging = false;
 
-  /// The sheet's entrance slide. Arriving at Files, the sheet is laid out
-  /// at its FULL intended height (the resting detent — never a mid-screen
-  /// sliver) but translated fully below the navbar's top edge, so its
-  /// first mounted frame paints nothing; the post-frame callback in
-  /// [_setNavTab] then translates it up into view over the same 200ms
-  /// family, clipped at the navbar boundary — the sheet emerges
-  /// continuously from behind the navbar, the navbar fixed in front.
+  /// The sheet's entrance slide. Arriving at a sheet tab (Files or
+  /// Insert), the sheet is laid out at its FULL intended height (the
+  /// resting detent — never a mid-screen sliver) but translated fully
+  /// below the navbar's top edge, so its first mounted frame paints
+  /// nothing; the post-frame callback in [_setNavTab] then translates it
+  /// up into view over the same 200ms family, clipped at the navbar
+  /// boundary — the sheet emerges continuously from behind the navbar,
+  /// the navbar fixed in front.
   bool _sheetEntering = false;
 
   /// True while the sheet is translating back down behind the navbar on
@@ -526,13 +520,10 @@ class _EditorScreenState extends State<EditorScreen> {
     final wasSheet = _isSheetTab(_navTab);
     final willBeSheet = _isSheetTab(tab);
     // The sheet's height where it stands RIGHT NOW (before the tab flips) —
-    // what the exit slide holds when it reverses.
-    final leavingHeight = _drawerExtent ??
-        (_navTab == _NavTab.files
-            ? _drawerHalf
-            : (_selectedObjectId != null
-                ? _insertPanelSheetHeight
-                : _insertGridSheetHeight));
+    // what the exit slide holds when it reverses. ONE machinery for both
+    // drawers: a held extent if one exists, the shared resting half detent
+    // otherwise.
+    final leavingHeight = _drawerExtent ?? _drawerHalf;
     // The strip's live height where it stands right now — read BEFORE the
     // setState rebuild, so a fold caught mid-flight freezes at its real
     // on-screen height, not its target.
@@ -611,16 +602,13 @@ class _EditorScreenState extends State<EditorScreen> {
   bool _isSheetTab(_NavTab? tab) =>
       tab == _NavTab.files || tab == _NavTab.insert;
 
-  /// The sheet layer's live height for the CURRENT state: a held drag/settle
-  /// extent when one exists, the Files detents when Files is the active tab,
-  /// the Insert drawer's current extent otherwise (compact grid, taller
-  /// object panel — the AnimatedPositioned morphs between them).
-  double _sheetLiveHeightFor(bool filesOpen) => _drawerExtent ??
-      (filesOpen
-          ? _drawerHalf
-          : (_selectedObjectId != null
-              ? _insertPanelSheetHeight
-              : _insertGridSheetHeight));
+  /// The sheet layer's live height for the CURRENT state, for BOTH drawer
+  /// surfaces (Files and Insert ride the SAME machinery verbatim — same
+  /// anchor, same detents, same drag, same dismiss): a held drag/settle
+  /// extent when one exists, the shared resting half detent otherwise.
+  /// The Insert drawer's cards scroll inside whatever the detent gives
+  /// them, exactly like the Files drawer's grid on short screens.
+  double _sheetLiveHeightFor() => _drawerExtent ?? _drawerHalf;
 
   /// Centers the active ribbon tab in the bar's viewport — but only when
   /// the tab is actually off-screen. A tab that is already fully visible
@@ -2350,11 +2338,12 @@ class _EditorScreenState extends State<EditorScreen> {
             // canvas, or the ribbon by a single pixel.
             const sheetAnchor = _navBarHeight + 1.0;
             // The space the sheet may occupy: everything above the ribbon
-            // inside this body. From it, the two detents the header's drag
-            // settles between — the resting HALF (floor 296 so the whole
-            // 3×2 grid always fits, ceiling 430) and the TALL sheet
-            // (~78%, leaving the slide's top sliver in view). The drag
-            // handlers run between builds, so both are cached per build.
+            // inside this body. From it, the two detents EITHER drawer's
+            // header drag settles between — the resting HALF (floor 296 so
+            // the whole 3×2 grid always fits — Files' tool tiles and
+            // Insert's cards alike, ceiling 430) and the TALL sheet (~78%,
+            // leaving the slide's top sliver in view). The drag handlers run
+            // between builds, so both are cached per build.
             final available =
                 math.max(64.0, constraints.maxHeight - sheetAnchor);
             final half = math.min(
@@ -2377,12 +2366,12 @@ class _EditorScreenState extends State<EditorScreen> {
             final stripH = _filmOpen
                 ? _FilmstripDivider.regionHeight + _filmstripBandHeight
                 : _FilmstripDivider.regionHeight;
-            final sheetHeight = _sheetLiveHeightFor(filesOpen);
+            final sheetHeight = _sheetLiveHeightFor();
             final overlayH = math.min(stripH, sheetHeight);
             return Stack(
               children: [
-                // The base layer: the editor's whole flow. While the Files
-                // sheet is open the filmstrip is NOT in this flow (it is the
+                // The base layer: the editor's whole flow. While a sheet
+                // (Files or Insert) is open the filmstrip is NOT in this flow (it is the
                 // foreground overlay above the sheet — see the layer cake
                 // below), which is what keeps the canvas's geometry and the
                 // sheet's anchor completely independent of the strip's
@@ -2650,7 +2639,8 @@ class _EditorScreenState extends State<EditorScreen> {
                       child: Stack(
                       children: [
                         // ---- the drawer layer -------------------------------------
-                        // The Files sheet floats ABOVE the canvas and rides the
+                        // The drawer (Files' surface or Insert's — the SAME
+                        // layer) floats ABOVE the canvas and rides the
                         // RIBBON's top edge (bottom offset = the constant
                         // sheetAnchor), so the filmstrip's state can never
                         // move it: the strip is not in the flow beneath it —
@@ -2707,9 +2697,12 @@ class _EditorScreenState extends State<EditorScreen> {
                           },
                           // The sheet's CONTENT: the Files drawer or the
                           // Insert drawer — same layer, same lifecycle, same
-                          // clip; switching between the two sheet tabs swaps
-                          // the surface without unmounting the layer, and the
-                          // exit slide keeps the surface it is animating out.
+                          // clip, same anchor, same detents, same drag
+                          // (both headers forward their vertical drags to
+                          // the one shared extent machinery); switching
+                          // between the two sheet tabs swaps the surface
+                          // without unmounting the layer, and the exit
+                          // slide keeps the surface it is animating out.
                           child: _lastSheetTab == _NavTab.insert
                               ? InsertSheet(
                                   bottomInset: _FilmstripDivider.regionHeight +
@@ -2732,6 +2725,13 @@ class _EditorScreenState extends State<EditorScreen> {
                                   onShowLayers: _showLayers,
                                   onEditStyleSheet: _editSelectedObjectStyle,
                                   onStartTyping: _beginTyping,
+                                  // The SAME drag forwarding the Files
+                                  // drawer's header carries: the Insert
+                                  // drawer's header resizes the shared sheet
+                                  // between the same detents and dismisses on
+                                  // the same fling/deep-drag rules.
+                                  onDragUpdate: _drawerDragUpdate,
+                                  onDragSettle: _drawerDragSettle,
                                 )
                               : FilesDrawer(
                                   aspect: _deckAspect,
@@ -3069,7 +3069,7 @@ class _EditorScreenState extends State<EditorScreen> {
     setState(() => _filmOpen = !_filmOpen);
   }
 
-  // ---- the Files drawer's layer ---------------------------------------------
+  // ---- the sheet drawers' shared layer (Files + Insert) --------------------
 
   /// A live drag on the drawer's header: the sheet's top edge follows the
   /// finger — down shrinks, up grows — clamped between the header sliver

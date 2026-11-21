@@ -6,10 +6,15 @@ import '../widgets/icon_registry.dart';
 import '../widgets/rich_doc.dart';
 import '../widgets/shape_canvas.dart' show objectPath;
 
-/// The Insert tab's compact drawer — where things get ADDED to the slide.
-/// The editor owns the layer (same sheet machinery as Files: it rides the
-/// ribbon's top edge, rises from behind the navbar, the filmstrip overlays
-/// its lower part); this widget owns the surface and its contents.
+/// The Insert tab's drawer — where things get ADDED to the slide. It is
+/// the SAME sheet as Files, verbatim, with different cards inside: the
+/// editor owns the layer (rides the ribbon's top edge, rises from behind
+/// the navbar, the filmstrip overlays its lower part), and this widget
+/// owns the surface and its contents — the same alignment, the same
+/// sizing (the editor's shared detents), and the same touch slidability
+/// (the header is the drag surface: up grows the sheet, down shrinks it,
+/// a downward fling or a deep drag dismisses it, a plain release snaps to
+/// the nearest detent). Only the working cards differ.
 ///
 /// The resting view is the 3×2 grid:
 ///
@@ -46,6 +51,8 @@ class InsertSheet extends StatefulWidget {
     required this.onEditStyleSheet,
     required this.onStartTyping,
     this.bottomInset = 0,
+    this.onDragUpdate,
+    this.onDragSettle,
   });
 
   /// The live selected object (or null). Non-null → the object panel.
@@ -96,6 +103,13 @@ class InsertSheet extends StatefulWidget {
   /// bottom padding so the last controls can always be scrolled fully
   /// above the tray. Scroll content, never chrome.
   final double bottomInset;
+
+  /// Live drag forwarding from the header — the same contract as the Files
+  /// drawer's handle: the vertical deltas (positive = the finger moved
+  /// down) and the settle velocity, both mapped by the editor onto the
+  /// shared sheet extent and detents.
+  final void Function(double dy)? onDragUpdate;
+  final void Function(double velocityDy)? onDragSettle;
 
   @override
   State<InsertSheet> createState() => _InsertSheetState();
@@ -183,6 +197,8 @@ class _InsertSheetState extends State<InsertSheet> {
             showBack: !panel && _view != _InsertView.grid,
             onBack: _back,
             onLayers: widget.onShowLayers,
+            onDragUpdate: widget.onDragUpdate,
+            onDragSettle: widget.onDragSettle,
           ),
           Flexible(
             child: AnimatedSwitcher(
@@ -441,77 +457,100 @@ class _InsertSheetState extends State<InsertSheet> {
 // Header + tiles
 // ---------------------------------------------------------------------------
 
+/// The drawer's header: the grab handle pill under the centered title —
+/// the same header language as the Files drawer's, with the whole header
+/// as the sheet's drag surface. A drag up or down streams its deltas to
+/// the editor (which resizes the sheet between the shared detents); how
+/// it settles — snap to a detent, or dismiss on a downward fling / deep
+/// drag — is the editor's call, from the settle velocity it receives
+/// here. The back and layers buttons live inside the drag surface: they
+/// still take their taps (a tap never wins the vertical-drag arena), and
+/// every other touch on the header is a gesture, not a press into
+/// whatever the sheet is floating over.
 class _InsertHeader extends StatelessWidget {
   const _InsertHeader({
     required this.title,
     required this.showBack,
     required this.onBack,
     required this.onLayers,
+    this.onDragUpdate,
+    this.onDragSettle,
   });
 
   final String title;
   final bool showBack;
   final VoidCallback onBack;
   final VoidCallback onLayers;
+  final void Function(double dy)? onDragUpdate;
+  final void Function(double velocityDy)? onDragSettle;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 7, 8, 5),
-        child: Column(
-          children: [
-            Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: kText3,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                SizedBox(
-                  width: 36,
-                  height: 32,
-                  child: showBack
-                      ? IconButton(
-                          tooltip: 'Back to Insert',
-                          icon: const Icon(Icons.arrow_back, size: 18),
-                          color: kText2,
-                          onPressed: onBack,
-                        )
-                      : null,
+    return GestureDetector(
+      key: const ValueKey('insert_drawer_handle'),
+      // Opaque, like the Files header: a touch on the header is a gesture,
+      // never a press through the sheet into the canvas below.
+      behavior: HitTestBehavior.opaque,
+      onVerticalDragUpdate: (d) => onDragUpdate?.call(d.delta.dy),
+      onVerticalDragEnd: (d) =>
+          onDragSettle?.call(d.velocity.pixelsPerSecond.dy),
+      child: SizedBox(
+        width: double.infinity,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 7, 8, 5),
+          child: Column(
+            children: [
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: kText3,
+                  borderRadius: BorderRadius.circular(2),
                 ),
-                Expanded(
-                  child: Center(
-                    child: Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: kText,
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  SizedBox(
+                    width: 36,
+                    height: 32,
+                    child: showBack
+                        ? IconButton(
+                            tooltip: 'Back to Insert',
+                            icon: const Icon(Icons.arrow_back, size: 18),
+                            color: kText2,
+                            onPressed: onBack,
+                          )
+                        : null,
+                  ),
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: kText,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                SizedBox(
-                  width: 36,
-                  height: 32,
-                  child: IconButton(
-                    tooltip: 'Layers, groups, components',
-                    icon: const Icon(Icons.layers_outlined, size: 18),
-                    color: kText2,
-                    onPressed: onLayers,
+                  SizedBox(
+                    width: 36,
+                    height: 32,
+                    child: IconButton(
+                      tooltip: 'Layers, groups, components',
+                      icon: const Icon(Icons.layers_outlined, size: 18),
+                      color: kText2,
+                      onPressed: onLayers,
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -149,6 +149,60 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('insert drawer: the SAME sheet as Files — same anchor and sizing, the header drags it between the same detents, a deep drag dismisses it', (tester) async {
+    await pumpEditor(tester);
+    final row = find.byKey(const ValueKey('filmstrip_row'));
+    await tester.tap(find.text('Insert'));
+    await tester.pumpAndSettle();
+
+    // The same resting detent Files rests at (the machinery is shared:
+    // 45% of the 710dp above the ribbon = 319.5), at the same anchor —
+    // the ribbon's top edge.
+    final sheet = find.byKey(const ValueKey('insert_drawer'));
+    final handle = find.byKey(const ValueKey('insert_drawer_handle'));
+    expect(tester.getSize(sheet).height, closeTo(319.5, 0.1));
+    expect(tester.getRect(sheet).bottom, closeTo(767, 0.1));
+    final insertRect = tester.getRect(sheet);
+
+    // Measured head-to-head: the Files drawer occupies the EXACT same rect
+    // on the same viewport — same alignment, same sizing. (`.first` — the
+    // open drawer's own header title carries the same text as the tab.)
+    await tester.tap(find.text('Insert').first);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('insert_drawer')), findsNothing);
+    await tester.tap(find.text('Files'));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(find.byKey(const ValueKey('files_drawer'))),
+        insertRect,
+        reason: 'Files and Insert rest on the identical rect — one sheet');
+    await tester.tap(find.text('Files').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Insert'));
+    await tester.pumpAndSettle();
+
+    // Touch slidability: a slow drag up (no fling) tracks the finger, then
+    // settles to the NEAREST detent — tall, ~78% of the space above the
+    // ribbon (553.8 here). The header IS the drag surface.
+    await tester.timedDrag(handle, const Offset(0, -180),
+        const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+    final tall = tester.getSize(sheet).height;
+    expect(tall, greaterThan(540));
+    expect(tall, lessThan(570));
+
+    // A slow deep drag down: past the dismiss zone (below ~70% of half),
+    // so the sheet closes outright — unmounted cleanly at its slot, the
+    // Insert tab releasing with it. The filmstrip never knew.
+    await tester.timedDrag(handle, const Offset(0, 340),
+        const Duration(milliseconds: 700));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('insert_drawer')), findsNothing);
+    expect(find.text('Insert'), findsOneWidget,
+        reason: 'only the ribbon tab remains after the dismiss');
+    expect(tester.getSize(row), const Size(390, 104));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('text box: insert selects it, opens the keyboard, typing toolbar rides above it', (tester) async {
     await pumpEditor(tester);
     await tester.tap(find.text('Insert'));
@@ -299,6 +353,12 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('typing_toolbar_expand')));
     await tester.pumpAndSettle();
 
+    // Fold the tray: the sheet rests at the shared half detent, so its
+    // lower part (the panel's deeper controls) sits under the open tray —
+    // the same clearance the Files grid lives by.
+    await tester.tap(find.byKey(const ValueKey('filmstrip_handle')));
+    await tester.pumpAndSettle();
+
     // Quick Tools: center the paragraph + highlight palette chips exist.
     await tester.tap(find.byIcon(Icons.format_align_center).first);
     await tester.pump();
@@ -316,25 +376,23 @@ void main() {
     expect(find.text('36'), findsOneWidget, reason: 'the size stepper reads 36');
 
     // Paragraph & Box: vertical alignment, line spacing, indent, autofit.
-    // (The tray covers the sheet's lower part — scroll the panel's body
-    // fully above it before reaching the lower controls, exactly like a
-    // user does.)
+    // (The sheet rides the shared detents — the shorter resting height
+    // scrolls the panel's deeper controls; the test scrolls the minimum a
+    // user would, bringing each control into view before tapping it.)
     await tester.tap(find.byTooltip('Paragraph & Box'));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('panel_body_para')), findsOneWidget);
     await tester.tap(find.byIcon(Icons.vertical_align_center).first);
     await tester.pump();
-    // Scroll the panel's body fully up (the tray covers the sheet's lower
-    // part; the user scrolls, the test drives the position directly).
-    final scrollable = tester.state<ScrollableState>(
-      find.descendant(
-          of: find.byKey(const ValueKey('panel_body_para')),
-          matching: find.byType(Scrollable)),
-    );
-    scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
+    // Bring the lower controls into the panel body's viewport (the tray
+    // covers the sheet's lower part; the user scrolls, the test drives the
+    // scrollable minimally).
+    await tester.ensureVisible(find.text('1.5').first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('1.5').first);
     await tester.pump();
+    await tester.ensureVisible(find.text('Shrink text on overflow').first);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Shrink text on overflow').first);
     await tester.pump();
 
@@ -462,6 +520,12 @@ void main() {
     await pumpEditor(tester);
     await tester.tap(find.text('Insert'));
     await tester.pumpAndSettle();
+    // The drawer rests at the SAME detent as Files, so its lower part sits
+    // under the open filmstrip tray — fold the tray before tapping the
+    // covered second row's tile, the same clearance path the Files
+    // drawer's covered row takes.
+    await tester.tap(find.byKey(const ValueKey('filmstrip_handle')));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Table'));
     await tester.pumpAndSettle();
 
@@ -519,6 +583,10 @@ void main() {
   testWidgets('icons: the searchable picker inserts an icon sticker', (tester) async {
     await pumpEditor(tester);
     await tester.tap(find.text('Insert'));
+    await tester.pumpAndSettle();
+    // The covered second row: fold the tray first (the shared detent puts
+    // the drawer's lower part under it at rest).
+    await tester.tap(find.byKey(const ValueKey('filmstrip_handle')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Icons / Stickers'));
     await tester.pumpAndSettle();
@@ -592,6 +660,9 @@ void main() {
 
     await pumpEditor(tester);
     await tester.tap(find.text('Insert'));
+    await tester.pumpAndSettle();
+    // The covered second row: fold the tray first.
+    await tester.tap(find.byKey(const ValueKey('filmstrip_handle')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Media'));
     await tester.pumpAndSettle();
