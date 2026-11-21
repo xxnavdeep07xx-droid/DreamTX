@@ -50,6 +50,7 @@ class InsertSheet extends StatefulWidget {
     required this.onShowLayers,
     required this.onEditStyleSheet,
     required this.onStartTyping,
+    required this.onPanelBack,
     this.bottomInset = 0,
     this.onDragUpdate,
     this.onDragSettle,
@@ -97,6 +98,11 @@ class InsertSheet extends StatefulWidget {
 
   /// "Edit text": focus the on-canvas field (keyboard opens, panel hides).
   final VoidCallback onStartTyping;
+
+  /// The object panel's back arrow: stop editing the selection — the
+  /// editor clears it (the same path as tapping empty canvas), the sheet
+  /// returns to its grid, and the object stays on the slide untouched.
+  final VoidCallback onPanelBack;
 
   /// The overlay clearance at the sheet's bottom (the editor's filmstrip
   /// tray rides the sheet's lower part): every scrollable carries it as
@@ -170,7 +176,16 @@ class _InsertSheetState extends State<InsertSheet> {
   bool get _panelShown =>
       widget.selectedObject != null && _view == _InsertView.grid;
 
-  void _back() => setState(() => _view = _InsertView.grid);
+  void _back() {
+    // Two different backs, one arrow: a subsection's back returns to the
+    // grid; the object PANEL's back is "stop editing" — the editor drops
+    // the selection (the object itself stays on the slide).
+    if (_panelShown) {
+      widget.onPanelBack();
+      return;
+    }
+    setState(() => _view = _InsertView.grid);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -194,7 +209,11 @@ class _InsertSheetState extends State<InsertSheet> {
         children: [
           _InsertHeader(
             title: title,
-            showBack: !panel && _view != _InsertView.grid,
+            // The back arrow serves every view that is NOT the resting
+            // grid: the pickers (Shapes / Image / Media) AND the object
+            // panel — editing a table or an icon is as deep a view as a
+            // picker, and it needs the same way out.
+            showBack: _view != _InsertView.grid || panel,
             onBack: _back,
             onLayers: widget.onShowLayers,
             onDragUpdate: widget.onDragUpdate,
@@ -557,7 +576,12 @@ class _InsertHeader extends StatelessWidget {
   }
 }
 
-/// One insert tile: icon above label — the 3-column grid's anatomy.
+/// One insert tile: the SAME card as the Files drawer's tool tiles —
+/// elevated a deliberate step above the sheet's own surface, hairline
+/// edge, the icon in its washed-purple chip above the label — with the
+/// SAME footprint (112 tall, 36-chip, the same inner breathing room),
+/// so both grids read as one language and neither set of cards looks
+/// squeezed or pressed relative to the other.
 class _InsertTile extends StatelessWidget {
   const _InsertTile({
     required this.icon,
@@ -583,22 +607,25 @@ class _InsertTile extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: SizedBox(
-          height: 86,
+          // The Files tile's own height: both grids' cards are equal-
+          // footprint so a card in one is a card in the other, never a
+          // compressed variant.
+          height: 112,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
-                  width: 32,
-                  height: 32,
+                  width: 36,
+                  height: 36,
                   decoration: BoxDecoration(
                     color: kPurpleWash,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(9),
                   ),
-                  child: Icon(icon, size: 17, color: kPurple),
+                  child: Icon(icon, size: 19, color: kPurple),
                 ),
-                const SizedBox(height: 5),
+                const SizedBox(height: 6),
                 Text(
                   label,
                   maxLines: 2,
@@ -628,7 +655,9 @@ class _InsertTile extends StatelessWidget {
   }
 }
 
-/// One shape tile: the preset's own silhouette plus its label.
+/// One shape tile: the preset's own silhouette plus its label — the
+/// same elevated-card language as the insert tiles, at the denser
+/// 4-across grid the shape palette wants.
 class _ShapeTile extends StatelessWidget {
   const _ShapeTile({
     required this.preset,
@@ -653,18 +682,18 @@ class _ShapeTile extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.all(10),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               SizedBox(
-                width: 40,
-                height: 30,
+                width: 44,
+                height: 32,
                 child: CustomPaint(
                   painter: _PresetSilhouette(preset: preset, open: open),
                 ),
               ),
-              const SizedBox(height: 5),
+              const SizedBox(height: 6),
               Text(
                 label,
                 maxLines: 1,
@@ -767,15 +796,32 @@ class _IconPickerSheetState extends State<_IconPickerSheet> {
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
+            padding: const EdgeInsets.fromLTRB(8, 8, 20, 8),
             child: Row(
               children: [
+                // The picker's own back arrow: the sheet is modal, but the
+                // way out must never depend on knowing that — the arrow
+                // pops the route like any header's back would.
+                SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: IconButton(
+                    key: const ValueKey('icon_picker_back'),
+                    tooltip: 'Back to Insert',
+                    icon: const Icon(Icons.arrow_back, size: 18),
+                    color: kText2,
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ),
                 Expanded(
                   child: Text('Icons / Stickers',
                       style: Theme.of(context).textTheme.titleLarge),
                 ),
-                Text('${results.length}',
-                    style: const TextStyle(fontSize: 12, color: kText2)),
+                Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: Text('${results.length}',
+                      style: const TextStyle(fontSize: 12, color: kText2)),
+                ),
               ],
             ),
           ),
@@ -806,7 +852,14 @@ class _IconPickerSheetState extends State<_IconPickerSheet> {
                 final e = results[i];
                 return InkWell(
                   borderRadius: BorderRadius.circular(10),
-                  onTap: () => widget.onPick(e.name),
+                  onTap: () {
+                    widget.onPick(e.name);
+                    // The pick is a commitment: the sticker inserts and
+                    // the sheet closes — the object's own panel takes
+                    // over behind it. Staying open would bury the result
+                    // of the tap behind the picker.
+                    Navigator.of(context).pop();
+                  },
                   child: Container(
                     decoration: BoxDecoration(
                       border: Border.all(color: kHairline),
@@ -893,7 +946,11 @@ class _ObjectPanel extends StatelessWidget {
           ),
         ),
         // The narrow icon-only rail on the far right: switches between
-        // groups of controls; the active group is highlighted.
+        // groups of controls; the active group is highlighted. The full
+        // style inspector sits right under the group buttons — never
+        // pinned to the rail's bottom: the filmstrip tray (raised fold
+        // arrow included) rides the sheet's lower part and would bury a
+        // bottom-pinned control behind it.
         Container(
           decoration: const BoxDecoration(
             border: Border(left: BorderSide(color: kHairline)),
@@ -909,14 +966,14 @@ class _ObjectPanel extends StatelessWidget {
                   active: i == groupIndex,
                   onTap: () => onGroup(i),
                 ),
-              const Spacer(),
+              const SizedBox(height: 6),
               _RailButton(
                 icon: Icons.tune,
                 tooltip: 'Full style inspector',
                 active: false,
                 onTap: onEditStyleSheet,
               ),
-              const SizedBox(height: 4),
+              const Spacer(),
             ],
           ),
         ),

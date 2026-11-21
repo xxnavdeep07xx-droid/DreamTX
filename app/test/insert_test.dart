@@ -684,6 +684,158 @@ void main() {
     expect(find.byTooltip('Info'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('insert drawer: the cards ARE the Files drawer\'s cards — same footprint, same chip, no compressed variant', (tester) async {
+    await pumpEditor(tester);
+    await tester.tap(find.text('Insert'));
+    await tester.pumpAndSettle();
+    // Card anatomy, measured on the cards themselves (the tile IS its
+    // InkWell): same footprint, same row pitch. (Text tops are
+    // content-height-biased — 'New' carries a sub, 'Text Box' does not —
+    // so the card boxes are the honest comparison.)
+    Finder tileOf(String label) =>
+        find.ancestor(of: find.text(label), matching: find.byType(InkWell));
+    final insertTile = tileOf('Text Box');
+    final insertTileSize = tester.getSize(insertTile);
+    final insertPitch =
+        tester.getTopLeft(tileOf('Table')).dy - tester.getTopLeft(insertTile).dy;
+    await tester.tap(find.text('Insert').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Files'));
+    await tester.pumpAndSettle();
+    final filesTile = tileOf('New');
+    final filesTileSize = tester.getSize(filesTile);
+    final filesPitch =
+        tester.getTopLeft(tileOf('Aspect ratio')).dy - tester.getTopLeft(filesTile).dy;
+    expect(insertTileSize, filesTileSize,
+        reason:
+            'the Insert cards and the Files tiles are the exact same footprint — one card language, never a squeezed variant');
+    expect(insertPitch, filesPitch,
+        reason: 'the same row pitch in both grids');
+    expect(insertTileSize.height, 112.0,
+        reason: 'the Files tiles\' own 112-tall anatomy');
+    expect(insertPitch, closeTo(122, 0.1),
+        reason: 'a 112-tall tile on the 10 row gap');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('table panel: the back arrow stops editing — the grid returns, the table stays on the slide', (tester) async {
+    await pumpEditor(tester);
+    await tester.tap(find.text('Insert'));
+    await tester.pumpAndSettle();
+    // The covered second row: fold the tray first (the shared detent puts
+    // the drawer's lower part under it at rest).
+    await tester.tap(find.byKey(const ValueKey('filmstrip_handle')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Table'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Cells'), findsOneWidget);
+    expect(find.byKey(const ValueKey('panel_body_cells')), findsOneWidget);
+
+    // The panel is as deep a view as a picker — it carries the SAME back
+    // arrow the pickers do.
+    await tester.tap(find.byIcon(Icons.arrow_back));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Cells'), findsNothing,
+        reason: 'the object panel closed with the selection');
+    expect(find.text('Text Box'), findsOneWidget,
+        reason: 'the resting grid is back');
+
+    // "Stop editing", not "delete": the table is still on the slide, and
+    // nothing ever asked the engine to remove it.
+    final added = recordedObjectOps.firstWhere(
+        (op) => op['op'] == 'add_object', orElse: () => <String, dynamic>{});
+    expect((added['shape'] as Map?)?['content']?['kind'], 'table');
+    expect(
+        recordedObjectOps
+            .where((op) => op['op'] == 'delete_object' || op['op'] == 'remove'),
+        isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('icons picker: carries its own back arrow and closes on pick — the sticker\'s panel takes over', (tester) async {
+    await pumpEditor(tester);
+    await tester.tap(find.text('Insert'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('filmstrip_handle')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Icons / Stickers'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('icon_picker_search')), findsOneWidget);
+
+    // The header's own back arrow pops the modal — the way out never
+    // depends on knowing the sheet is modal.
+    await tester.tap(find.byKey(const ValueKey('icon_picker_back')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('icon_picker_search')), findsNothing);
+    expect(find.text('Text Box'), findsOneWidget,
+        reason: 'the Insert grid is back');
+
+    // Reopen and pick: the pick is a commitment — the sheet closes and
+    // the selected sticker's panel takes over behind it.
+    await tester.tap(find.text('Icons / Stickers'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('favorite'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('icon_picker_search')), findsNothing,
+        reason: 'the picker closed on pick');
+    expect(find.byTooltip('Color'), findsOneWidget,
+        reason: 'the selected icon\'s own panel is up');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('text box: force-closing the keyboard (system back) ends typing cleanly — no orphaned toolbar, the panel returns, the text survives', (tester) async {
+    await pumpEditor(tester);
+    await tester.tap(find.text('Insert'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Text Box'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    final field = find.byKey(const ValueKey('text_box_field'));
+    // The node outlives the field: the WYSIWYG field unmounts when the
+    // typing session ends (the panel takes over), so hold the node itself.
+    final focusNode = (tester.widget(field) as TextField).focusNode!;
+    await tester.enterText(field, 'Orphan');
+    await tester.pump();
+
+    // The IME opens in inset-delivery mode (edge-to-edge): physical
+    // 600px at dpr 2 = the 300dp logical inset the root overlay sees.
+    tester.view.viewInsets = const FakeViewPadding(bottom: 600.0);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey('typing_toolbar')), findsOneWidget);
+    // The backdrop fills the IME's whole reserved region below the
+    // toolbar with the toolbar's own surface — no slide peeks through
+    // the keyboard's transparent band between toolbar and keys.
+    final backdrop = find.byKey(const ValueKey('typing_toolbar_backdrop'));
+    expect(backdrop, findsOneWidget);
+    expect(tester.getSize(backdrop).height, 300.0);
+
+    // System back: the IME hides while the field KEEPS its focus — the
+    // case that used to strand the toolbar above the navbar with the
+    // sheet still hidden behind the typing state.
+    tester.view.viewInsets = FakeViewPadding.zero;
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(focusNode.hasFocus, isFalse,
+        reason: 'the typing session ended for real');
+    expect(find.byKey(const ValueKey('typing_toolbar')), findsNothing,
+        reason: 'no orphaned toolbar');
+    expect(find.byKey(const ValueKey('typing_toolbar_backdrop')),
+        findsNothing);
+    expect(find.byKey(const ValueKey('insert_drawer')), findsOneWidget,
+        reason: 'the drawer with its full panel returns');
+
+    // The typed text survived the session end and committed with the deck.
+    await tester.pumpAndSettle(const Duration(seconds: 1));
+    final updated = recordedObjectOps
+        .where((op) => op['op'] == 'update_object')
+        .lastOrNull;
+    final doc = (updated?['shape'] as Map?)?['content']?['doc'] as Map?;
+    expect(doc?['text'], 'Orphan');
+    expect(tester.takeException(), isNull);
+  });
 }
 
 /// A minimal valid PNG (1×1 transparent) — enough for FileImage to decode.

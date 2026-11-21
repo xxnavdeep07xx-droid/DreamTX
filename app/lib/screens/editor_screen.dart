@@ -56,7 +56,8 @@ class EditorScreen extends StatefulWidget {
   State<EditorScreen> createState() => _EditorScreenState();
 }
 
-class _EditorScreenState extends State<EditorScreen> {
+class _EditorScreenState extends State<EditorScreen>
+    with WidgetsBindingObserver {
   late Map<String, dynamic> _deck;
   int _index = 0;
   Map<String, dynamic>? _layout;
@@ -205,9 +206,18 @@ class _EditorScreenState extends State<EditorScreen> {
   final List<Map<String, String>> _comments = [];
   final TextEditingController _commentField = TextEditingController();
 
+  /// The last settled keyboard inset (logical px, straight off the view —
+  /// the editor's own subtree is keyboard-stable and sees zeroed insets,
+  /// so MediaQuery here would always read 0). Only the TRANSITION from
+  /// open to closed matters: the system back button can hide the IME
+  /// while the text field keeps its focus, and that case has no focus
+  /// event to catch it.
+  double _lastInsetBottom = 0;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _deck = Map<String, dynamic>.from(widget.deck);
     final meta = Bridge.command({'op': 'meta'});
     _objectPresets = ((meta['object_presets'] as List?) ?? const [])
@@ -220,6 +230,7 @@ class _EditorScreenState extends State<EditorScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _removeTypingToolbar();
     _disposeTextSession();
     _objectCommitDebounce?.cancel();
@@ -886,6 +897,31 @@ class _EditorScreenState extends State<EditorScreen> {
 
   // ---- the typing state --------------------------------------------------------
 
+  @override
+  void didChangeMetrics() {
+    // The inset animates in steps — read the settled value after the
+    // frame lands, from the view itself (never the keyboard-stable
+    // subtree's MediaQuery).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final views = WidgetsBinding.instance.platformDispatcher.views;
+      if (views.isEmpty) return;
+      final inset =
+          views.first.viewInsets.bottom / views.first.devicePixelRatio;
+      final wasOpen = _lastInsetBottom > 0;
+      _lastInsetBottom = inset;
+      if (!wasOpen || inset > 0 || !_typing) return;
+      // The keyboard closed while the field still holds focus — the
+      // system back button (gesture bar / 3-button nav) hides the IME
+      // WITHOUT unfocusing it, so no focus event ever fires. Left alone
+      // this stranded the toolbar at the screen's bottom with the sheet
+      // still hidden. Close the session exactly like the expand button
+      // does: toolbar down, the drawer and its full panel return, and
+      // the text/caret/selection survive in the session's controller.
+      _endTyping();
+    });
+  }
+
   void _beginTyping() {
     final s = _textSession;
     if (s == null) return;
@@ -939,25 +975,47 @@ class _EditorScreenState extends State<EditorScreen> {
         return Positioned(
           left: 0,
           right: 0,
-          bottom: bottom,
+          // Anchored to the SCREEN's bottom, not to the inset's top: the
+          // toolbar sits exactly where it always did (its bottom edge at
+          // the inset), and everything below it — the IME's whole reserved
+          // region — is filled with the toolbar's own surface. Themed
+          // keyboards reserve more window than they paint (their top band
+          // is transparent), which used to show the slide peeking through
+          // that band between the toolbar and the first key row; the
+          // backdrop makes the toolbar read flush against the keys
+          // wherever the keyboard actually starts painting (under the
+          // opaque keys the backdrop is simply covered).
+          bottom: 0,
           child: SafeArea(
             top: false,
-            child: AnimatedBuilder(
-              animation: s.controller,
-              builder: (context, _) => TypingToolbar(
-                docState: _TypingDocState(s),
-                palette: _deckPalette,
-                onToggle: (flag) => _docMutate(
-                    (doc, a, b) => doc.toggleFlag(a, b, flag)),
-                onColor: (hex) =>
-                    _docMutate((doc, a, b) => doc.setAttr(a, b, 'color', hex)),
-                onHighlight: (hex) => _docMutate(
-                    (doc, a, b) => doc.setAttr(a, b, 'highlight', hex)),
-                onAlign: (v) =>
-                    _docMutate((doc, a, b) => doc.setParagraphAttr(a, b, 'align', v)),
-                onList: (k) => _docMutate((doc, a, b) => doc.toggleList(a, b, k)),
-                onExpand: _endTyping,
-              ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedBuilder(
+                  animation: s.controller,
+                  builder: (context, _) => TypingToolbar(
+                    docState: _TypingDocState(s),
+                    palette: _deckPalette,
+                    onToggle: (flag) => _docMutate(
+                        (doc, a, b) => doc.toggleFlag(a, b, flag)),
+                    onColor: (hex) =>
+                        _docMutate((doc, a, b) => doc.setAttr(a, b, 'color', hex)),
+                    onHighlight: (hex) => _docMutate(
+                        (doc, a, b) => doc.setAttr(a, b, 'highlight', hex)),
+                    onAlign: (v) => _docMutate(
+                        (doc, a, b) => doc.setParagraphAttr(a, b, 'align', v)),
+                    onList: (k) => _docMutate((doc, a, b) => doc.toggleList(a, b, k)),
+                    onExpand: _endTyping,
+                  ),
+                ),
+                if (bottom > 0)
+                  SizedBox(
+                    key: const ValueKey('typing_toolbar_backdrop'),
+                    width: double.infinity,
+                    height: bottom,
+                    child: const ColoredBox(color: kElevated),
+                  ),
+              ],
             ),
           ),
         );
@@ -2725,6 +2783,12 @@ class _EditorScreenState extends State<EditorScreen> {
                                   onShowLayers: _showLayers,
                                   onEditStyleSheet: _editSelectedObjectStyle,
                                   onStartTyping: _beginTyping,
+                                  // The panel's back arrow — "stop editing":
+                                  // the SAME clear-selection path as
+                                  // tapping empty canvas (flush + dispose
+                                  // the text session, drop the id); the
+                                  // object itself stays on the slide.
+                                  onPanelBack: () => _onObjectSelected(null),
                                   // The SAME drag forwarding the Files
                                   // drawer's header carries: the Insert
                                   // drawer's header resizes the shared sheet
