@@ -203,6 +203,30 @@ class ResourceStore {
     };
   }
 
+  /// Wipes a whole scope directory (its files AND its index) — the deck
+  /// scope when a deck is deleted: its resources are orphaned by
+  /// definition (only that deck ever saw them). The brand scope is never
+  /// wiped here: it is shared by every deck.
+  Future<void> wipeScope({required String deckId}) async {
+    final dir = _scopeDir(brand: false, deckId: deckId);
+    try {
+      if (dir.existsSync()) {
+        for (final entry in dir.listSync(followLinks: false)) {
+          try {
+            if (entry is File) {
+              await entry.delete();
+            } else if (entry is Directory) {
+              await entry.delete(recursive: true);
+            }
+          } catch (_) {}
+        }
+        try {
+          await dir.delete();
+        } catch (_) {} // a stray nested entry: next import recreates cleanly
+      }
+    } catch (_) {}
+  }
+
   /// Remove one asset from the scope: the file and its index entry.
   Future<void> remove(
       {required bool brand, String? deckId, required String id}) async {

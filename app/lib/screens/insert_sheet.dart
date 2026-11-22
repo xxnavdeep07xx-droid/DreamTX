@@ -45,6 +45,7 @@ class InsertSheet extends StatefulWidget {
     required this.onInsertTable,
     required this.onInsertIcon,
     required this.onPickMedia,
+    this.onPlayMedia,
     required this.onObjectStyle,
     required this.onTableCell,
     required this.onShowLayers,
@@ -82,6 +83,10 @@ class InsertSheet extends StatefulWidget {
 
   /// 'video' | 'audio' — imports an existing file (no recorder).
   final void Function(String kind) onPickMedia;
+
+  /// Plays the selected media object's resolved local file with the
+  /// system player (the editor owns resolution + the platform channel).
+  final void Function(Map<String, dynamic> obj)? onPlayMedia;
 
   /// Live style application for the selected non-text object (the editor
   /// commits it with its own undo/debounce machinery).
@@ -161,15 +166,16 @@ class _InsertSheetState extends State<InsertSheet> {
   @override
   void didUpdateWidget(InsertSheet old) {
     super.didUpdateWidget(old);
-    // A fresh selection (a new insert or a canvas tap) replaces whatever
-    // picker was open with the object's editing panel; dropping the
-    // selection returns to the resting grid.
-    if (widget.selectedObject != null && old.selectedObject == null) {
+    // A DIFFERENT selection (a new insert or a canvas tap on another
+    // object — not only the null -> non-null transition) replaces
+    // whatever picker was open with the new object's editing panel, at
+    // its first group; dropping the selection returns to the resting
+    // grid. Same-id rebuilds (live style edits) keep their place.
+    final newId = widget.selectedObject?['id'];
+    final oldId = old.selectedObject?['id'];
+    if (newId != oldId) {
       _panelGroup = 0;
       _view = _InsertView.grid;
-    }
-    if (widget.selectedObject == null) {
-      _panelGroup = 0;
     }
   }
 
@@ -245,6 +251,7 @@ class _InsertSheetState extends State<InsertSheet> {
         onTableCell: widget.onTableCell,
         onEditStyleSheet: widget.onEditStyleSheet,
         onStartTyping: widget.onStartTyping,
+        onPlayMedia: widget.onPlayMedia,
         bottomInset: widget.bottomInset,
       );
     }
@@ -910,6 +917,7 @@ class _ObjectPanel extends StatelessWidget {
     required this.onTableCell,
     required this.onEditStyleSheet,
     required this.onStartTyping,
+    this.onPlayMedia,
     this.bottomInset = 0,
   });
 
@@ -923,6 +931,9 @@ class _ObjectPanel extends StatelessWidget {
   final void Function(int index) onTableCell;
   final VoidCallback onEditStyleSheet;
   final VoidCallback onStartTyping;
+
+  /// Plays the media object's resolved file (media group only).
+  final void Function(Map<String, dynamic> obj)? onPlayMedia;
 
   /// The tray clearance for the body's scrollable (scroll content, never
   /// chrome — the same contract as the Files drawer's grid).
@@ -1069,7 +1080,12 @@ class _ObjectPanel extends StatelessWidget {
             id: 'info',
             icon: Icons.info_outline,
             label: 'Info',
-            body: (p, ctx) => _MediaInfo(obj: obj),
+            body: (p, ctx) => _MediaInfo(
+              obj: obj,
+              onPlay: onPlayMedia == null
+                  ? null
+                  : () => onPlayMedia!(obj),
+            ),
           ),
         ];
       default:
@@ -1195,6 +1211,11 @@ class _TextQuickTools extends StatelessWidget {
               active: doc.isFlagActive(a, b, 'underline'),
               onTap: () => actions.toggleFlag('underline'),
             ),
+            _PanelIconToggle(
+              icon: Icons.format_strikethrough,
+              active: doc.isFlagActive(a, b, 'strike'),
+              onTap: () => actions.toggleFlag('strike'),
+            ),
           ],
         ),
         _PanelRow(
@@ -1248,8 +1269,16 @@ class _TextQuickTools extends StatelessWidget {
     );
   }
 
+  /// The attribute at the selection — caret-aware, matching the Character
+  /// group (and the typing toolbar): a collapsed caret reads its TYPING
+  /// SOURCE (the pending mark at the caret, else the character before it —
+  /// "affects what I type next"), a selection reads the first covered run.
   String? _runAttr(int a, int b, String? Function(RichRun) pick) {
     final doc = controller.doc;
+    if (a == b) {
+      final src = doc.typingSourceAt(a);
+      return src == null ? null : pick(src);
+    }
     for (final r in doc.runs) {
       if (r.end <= r.start) continue;
       if (r.start < b && a < r.end) return pick(r);
@@ -1692,9 +1721,13 @@ class _IconColorTools extends StatelessWidget {
 }
 
 class _MediaInfo extends StatelessWidget {
-  const _MediaInfo({required this.obj});
+  const _MediaInfo({required this.obj, this.onPlay});
 
   final Map<String, dynamic> obj;
+
+  /// Opens the system player on the resolved local file (null = playback
+  /// unavailable — the button is not shown at all rather than shown dead).
+  final VoidCallback? onPlay;
 
   @override
   Widget build(BuildContext context) {
@@ -1738,6 +1771,18 @@ class _MediaInfo extends StatelessWidget {
             ),
           ],
         ),
+        if (onPlay != null) ...[
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              key: const ValueKey('panel_play_media'),
+              onPressed: onPlay,
+              icon: const Icon(Icons.play_arrow, size: 18),
+              label: const Text('Play in device player'),
+            ),
+          ),
+        ],
         const SizedBox(height: 6),
       ],
     );

@@ -909,11 +909,18 @@ TextStyle richTextStyle(RichRun? run,
     if (run.strike == true) TextDecoration.lineThrough,
     if (composing) TextDecoration.underline,
   ];
-  final scaled = run.fontSize == null
+  // The size the run renders at: an explicit run size lives in design px
+  // (scaled by [runScale] into the render space); an inherited size IS
+  // the base style's own (already in the render space). Sub/superscript
+  // shrinks that size — whichever space it came from — so the painter and
+  // the edit field agree (the painter additionally shifts the baseline).
+  final runSize =
+      run.fontSize != null ? run.fontSize! * runScale : base.fontSize;
+  final scaled = runSize == null
       ? null
       : (run.subscript == true || run.superscript == true)
-          ? run.fontSize! * 0.65 * runScale
-          : run.fontSize! * runScale;
+          ? runSize * 0.65
+          : runSize;
   return base.copyWith(
     fontWeight: run.bold == true ? FontWeight.w700 : null,
     fontStyle: run.italic == true ? FontStyle.italic : null,

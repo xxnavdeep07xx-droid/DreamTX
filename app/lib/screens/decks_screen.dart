@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../core/bridge.dart';
+import '../core/resources.dart';
 import '../core/store.dart';
 import '../theme.dart';
 import 'editor_screen.dart';
@@ -245,13 +246,25 @@ class _DecksScreenState extends State<DecksScreen> {
       ),
     );
     if (confirmed != true) return;
+    final id = (deck['id']).toString();
     try {
       final store = await DeckStore.open();
-      await store.delete((deck['id']).toString());
+      await store.delete(id);
     } catch (e) {
       print('[deck-store] delete failed on disk: $e');
       _toast('Could not delete the deck file — it stays in your library.');
       return; // the list below would be a lie
+    }
+    // The deck's OWN resource scope is orphaned by definition — only that
+    // deck ever saw those files — so they go with it. Brand resources stay:
+    // every deck shares them.
+    try {
+      final resources = await ResourceStore.open();
+      await resources.wipeScope(deckId: id);
+    } catch (e) {
+      // The deck file is gone; a resource we could not sweep is noise on
+      // disk, never a lie in the list.
+      print('[resources] deck scope sweep failed for $id: $e');
     }
     _reload();
   }

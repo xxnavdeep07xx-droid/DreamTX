@@ -562,9 +562,22 @@ Future<bool> _addPickedFolder(
       for (final f in listing.files.take(ResourceStore.importCap)) {
         try {
           final cached = await SafBridge.copyToCache(f.uri);
-          await store.add(
-              brand: brand, deckId: deckId, sourcePath: cached, folder: name);
-          ok++;
+          try {
+            await store.add(
+                brand: brand, deckId: deckId, sourcePath: cached, folder: name);
+            ok++;
+          } finally {
+            // The SAF staging copy in the cache has served its purpose — the
+            // store copied it into its own documents tree. Leaving the
+            // saf-* files behind only ever grew the cache dir (one file
+            // per imported document, never reclaimed).
+            try {
+              final staged = File(cached);
+              if (await staged.exists()) await staged.delete();
+            } catch (_) {
+              // A cache file we cannot remove is noise, not a failure.
+            }
+          }
         } catch (e) {
           print('[resources] folder import skipped one file: $e');
         }

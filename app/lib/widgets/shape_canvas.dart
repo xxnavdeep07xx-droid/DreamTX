@@ -26,7 +26,17 @@ class ShapesLayer extends StatefulWidget {
     this.onCommit,
     this.onGestureStart,
     this.onScribble,
+    this.overlayOnly = false,
   });
+
+  /// When true the layer paints NO object bodies — only the selection
+  /// chrome, the scribble-in-progress and the smart guides — and exists
+  /// for its gestures. [SlideStage] paints each object itself (a plain
+  /// shape via [ShapeObjectPaint], a content object via the content
+  /// layer) so shapes and content objects interleave in the deck's TRUE
+  /// Z-order; this layer rides on top as the interaction + selection
+  /// overlay for every object, exactly like it always was.
+  final bool overlayOnly;
 
   final List<Map<String, dynamic>> objects;
   final String? selectedId;
@@ -88,6 +98,9 @@ class _ShapesLayerState extends State<ShapesLayer> {
                 selectedId: widget.selectedId,
                 guides: _guides,
                 scribblePts: _scribblePts,
+                overlayOnly: widget.overlayOnly,
+                designW: widget.designW,
+                designH: widget.designH,
               ),
             ),
           ),
@@ -374,6 +387,75 @@ class _ShapesLayerState extends State<ShapesLayer> {
   }
 }
 
+
+/// Paints ONE object's vector body (fills, gradients, strokes, arrows,
+/// shadows, glow) at its design-space rect, rotated — the per-object
+/// rendering [SlideStage] interleaves in the deck's true Z-order between
+/// the content objects. Non-interactive by design: selection, gestures and
+/// scribble stay in the [ShapesLayer] riding on top.
+class ShapeObjectPaint extends StatelessWidget {
+  const ShapeObjectPaint({
+    super.key,
+    required this.obj,
+    required this.scale,
+  });
+
+  final Map<String, dynamic> obj;
+
+  /// design-px -> screen-px scale of the enclosing canvas.
+  final double scale;
+
+  @override
+  Widget build(BuildContext context) {
+    final w = ((obj['w'] as num?) ?? 1).toDouble();
+    final h = ((obj['h'] as num?) ?? 1).toDouble();
+    final rot = ((obj['rotation'] ?? 0) as num).toDouble();
+    final painter = CustomPaint(
+      size: Size(w, h),
+      painter: _SingleObjectPainter(obj: obj),
+    );
+    return OverflowBox(
+      alignment: Alignment.topLeft,
+      minWidth: 0,
+      minHeight: 0,
+      maxWidth: double.infinity,
+      maxHeight: double.infinity,
+      child: Transform.scale(
+        scale: scale,
+        alignment: Alignment.topLeft,
+        child: rot == 0
+            ? painter
+            : Transform.rotate(
+                angle: rot * math.pi / 180.0,
+                child: painter,
+              ),
+      ),
+    );
+  }
+}
+
+class _SingleObjectPainter extends CustomPainter {
+  _SingleObjectPainter({required this.obj});
+
+  final Map<String, dynamic> obj;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // [paintObject] draws in absolute design coordinates; this box is the
+    // object's own (w x h) — shift the origin to the object's top-left.
+    canvas.save();
+    canvas.translate(
+      -((obj['x'] as num?) ?? 0).toDouble(),
+      -((obj['y'] as num?) ?? 0).toDouble(),
+    );
+    paintObject(canvas, obj);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_SingleObjectPainter old) => old.obj != obj;
+}
+
 enum _GrabKind { move, resize, rotate }
 
 class _Grab {
@@ -408,21 +490,35 @@ class _ShapesPainter extends CustomPainter {
     required this.selectedId,
     required this.guides,
     required this.scribblePts,
+    this.overlayOnly = false,
+    this.designW = 1280,
+    this.designH = 720,
   });
 
   final List<Map<String, dynamic>> objects;
   final String? selectedId;
   final List<_GuideLine> guides;
   final List<Offset> scribblePts;
+  final bool overlayOnly;
+
+  /// The deck's design frame — the smart guide lines run to the frame's
+  /// edges, not to a hardcoded classic-16:9 1280x720 (4:3, 1:1 and 16:10
+  /// decks had guides that overshot or undershot the canvas).
+  final double designW;
+  final double designH;
 
   @override
   void paint(Canvas canvas, Size size) {
-    for (final obj in objects) {
-      // Content-carrying objects (text boxes, images, icons, media, tables)
-      // render as CONTENT in the sibling content layer — their vector
-      // silhouette stays gesture/selection geometry only, never paint.
-      if (ObjectContent.hasContent(obj)) continue;
-      _paintObject(canvas, obj);
+    if (!overlayOnly) {
+      for (final obj in objects) {
+        // Content-carrying objects (text boxes, images, icons, media,
+        // tables) render as CONTENT in the sibling content layer - their
+        // vector silhouette stays gesture/selection geometry only, never
+        // paint. (The SlideStage layout always interleaves them itself
+        // and runs the layer in overlayOnly mode.)
+        if (ObjectContent.hasContent(obj)) continue;
+        paintObject(canvas, obj);
+      }
     }
     // scribble-in-progress
     if (scribblePts.length >= 2) {
@@ -453,239 +549,251 @@ class _ShapesPainter extends CustomPainter {
         ..color = const Color(0xFFFF0099)
         ..strokeWidth = 1.5;
       if (g.axis == 'x') {
-        canvas.drawLine(Offset(g.pos, 0), Offset(g.pos, 720), paint);
+        canvas.drawLine(Offset(g.pos, 0), Offset(g.pos, designH), paint);
       } else {
-        canvas.drawLine(Offset(0, g.pos), Offset(1280, g.pos), paint);
+        canvas.drawLine(Offset(0, g.pos), Offset(designW, g.pos), paint);
       }
     }
-  }
-
-  void _paintSelection(Canvas canvas, Map obj) {
-    final rot = ((obj['rotation'] ?? 0) as num).toDouble();
-    final c = _centerOf(obj);
-    canvas.save();
-    canvas.translate(c.dx, c.dy);
-    canvas.rotate(rot * math.pi / 180);
-    canvas.translate(-c.dx, -c.dy);
-    final rect = Rect.fromLTWH(
-      (obj['x'] as num).toDouble(),
-      (obj['y'] as num).toDouble(),
-      (obj['w'] as num).toDouble(),
-      (obj['h'] as num).toDouble(),
-    );
-    final outline = Paint()
-      ..color = const Color(0xFFFF3B30)
-      ..strokeWidth = 1.6
-      ..style = PaintingStyle.stroke;
-    canvas.drawRect(rect.deflate(1), outline);
-    final handle = Paint()
-      ..color = Colors.white
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.fill;
-    final handleBorder = Paint()
-      ..color = const Color(0xFFFF3B30)
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.stroke;
-    const hs = 7.0;
-    for (final corner in [
-      rect.topLeft,
-      rect.topRight,
-      rect.bottomRight,
-      rect.bottomLeft,
-    ]) {
-      canvas.drawCircle(corner, hs, handle);
-      canvas.drawCircle(corner, hs, handleBorder);
-    }
-    // rotate handle above top-center
-    final rh = Offset(rect.center.dx, rect.top - 28);
-    canvas.drawLine(Offset(rect.center.dx, rect.top), Offset(rect.center.dx, rect.top - 28), outline);
-    canvas.drawCircle(rh, hs, handle);
-    canvas.drawCircle(rh, hs, handleBorder);
-    canvas.restore();
-  }
-
-  Offset _centerOf(Map obj) => Offset(
-        (obj['x'] as num).toDouble() + (obj['w'] as num).toDouble() / 2,
-        (obj['y'] as num).toDouble() + (obj['h'] as num).toDouble() / 2,
-      );
-
-  void _paintObject(Canvas canvas, Map obj) {
-    final rot = ((obj['rotation'] ?? 0) as num).toDouble();
-    final opacity = ((obj['opacity'] ?? 1) as num).toDouble().clamp(0.0, 1.0);
-    final path = objectPath(obj);
-    if (path == null) return;
-    final c = _centerOf(obj);
-    canvas.save();
-    canvas.translate(c.dx, c.dy);
-    canvas.rotate(rot * math.pi / 180);
-    canvas.translate(-c.dx, -c.dy);
-    final open = isOpenPreset(obj);
-
-    // shadow
-    final effects = obj['effects'];
-    if (effects is Map) {
-      final sh = effects['shadow'];
-      if (sh is Map) {
-        final dx = (sh['dx'] ?? 0) as num;
-        final dy = (sh['dy'] ?? 0) as num;
-        final blur = ((sh['blur'] ?? 12) as num).toDouble();
-        final alpha = (((sh['opacity'] ?? 0.45) as num).toDouble() * opacity).clamp(0.0, 1.0);
-        canvas.drawPath(
-          path.shift(Offset(dx.toDouble(), dy.toDouble())),
-          Paint()
-            ..color = _color((sh['color'] ?? '000000').toString(), alpha)
-            ..maskFilter = MaskFilter.blur(BlurStyle.normal, blur / 2),
-        );
-      }
-      final gl = effects['glow'];
-      if (gl is Map) {
-        final blur = ((gl['blur'] ?? 12) as num).toDouble();
-        canvas.drawPath(
-          path,
-          Paint()
-            ..color = _color((gl['color'] ?? 'D03028').toString(), 0.35 * opacity)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = blur
-            ..maskFilter = MaskFilter.blur(BlurStyle.normal, blur / 2),
-        );
-      }
-    }
-
-    // fill
-    if (!open) {
-      final fillPaint = _fillPaint(obj, opacity);
-      if (fillPaint != null) canvas.drawPath(path, fillPaint);
-    }
-
-    // stroke
-    final stroke = obj['stroke'];
-    if (stroke is Map) {
-      var width = (stroke['width'] ?? 0) as num;
-      if (open && width.toDouble() <= 0) width = 2;
-      if (width.toDouble() > 0) {
-        final dash = (stroke['dash'] ?? 'solid').toString();
-        Path toDraw = path;
-        if (dash != 'solid') {
-          toDraw = dashPath(path, _dashPattern(dash, width.toDouble()));
-        }
-        canvas.drawPath(
-          toDraw,
-          Paint()
-            ..color = _color((stroke['color'] ?? '17181A').toString(), opacity)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = width.toDouble()
-            ..strokeCap = StrokeCap.round
-            ..strokeJoin = StrokeJoin.round,
-        );
-        if (open) {
-          _drawArrowheads(canvas, obj, path, opacity);
-        }
-      }
-    }
-    canvas.restore();
-  }
-
-  void _drawArrowheads(Canvas canvas, Map obj, Path path, double opacity) {
-    final stroke = obj['stroke'] as Map;
-    final width = ((stroke['width'] ?? 2) as num).toDouble().clamp(2.0, 40.0);
-    final size = (width * 3).clamp(10.0, 60.0).toDouble();
-    final color = _color((stroke['color'] ?? '17181A').toString(), opacity);
-    final metrics = path.computeMetrics().toList();
-    if (metrics.isEmpty) return;
-    final endTangent = _tangentAt(metrics, true);
-    final startTangent = _tangentAt(metrics, false);
-    final paint = Paint()..color = color;
-    if ((stroke['end_arrow'] ?? 'none') != 'none' && endTangent != null) {
-      canvas.drawPath(_arrowHead(endTangent, size), paint);
-    }
-    if ((stroke['start_arrow'] ?? 'none') != 'none' && startTangent != null) {
-      canvas.drawPath(_arrowHead(startTangent, size), paint);
-    }
-  }
-
-  /// Tangent (position + outward direction) at the start or end of a path.
-  _Tangent? _tangentAt(List<PathMetric> metrics, bool atEnd) {
-    final m = metrics.first;
-    final len = m.length;
-    if (len < 1e-6) return null;
-    final off = atEnd ? math.max(0.0, len - 0.01) : 0.01;
-    final tan = m.getTangentForOffset(off);
-    if (tan == null) return null;
-    var dir = Offset(math.cos(tan.angle), math.sin(tan.angle));
-    if (!atEnd) dir = Offset(-dir.dx, -dir.dy);
-    return _Tangent(tan.position, dir);
-  }
-
-  Path _arrowHead(_Tangent t, double size) {
-    final base = t.pos - t.dir * size;
-    final perp = Offset(-t.dir.dy, t.dir.dx);
-    return Path()
-      ..moveTo(t.pos.dx, t.pos.dy)
-      ..lineTo(base.dx + perp.dx * size * 0.4, base.dy + perp.dy * size * 0.4)
-      ..lineTo(base.dx - perp.dx * size * 0.4, base.dy - perp.dy * size * 0.4)
-      ..close();
-  }
-
-  Paint? _fillPaint(Map obj, double opacity) {
-    final fill = obj['fill'];
-    if (fill is! Map) return null;
-    final type = (fill['type'] ?? 'none').toString();
-    final rect = Rect.fromLTWH(
-      (obj['x'] as num).toDouble(),
-      (obj['y'] as num).toDouble(),
-      (obj['w'] as num).toDouble(),
-      (obj['h'] as num).toDouble(),
-    );
-    switch (type) {
-      case 'solid':
-        return Paint()..color = _color((fill['color'] ?? 'D03028').toString(), opacity);
-      case 'linear_gradient':
-        final angle = ((fill['angle'] ?? 0) as num).toDouble() * math.pi / 180;
-        final axis = Offset(math.cos(angle), math.sin(angle));
-        return Paint()
- ..shader = LinearGradient(
-            colors: [
-              _color((fill['from'] ?? 'D03028').toString(), opacity),
-              _color((fill['to'] ?? 'F7F6F3').toString(), opacity),
-            ],
-            begin: Alignment(-axis.dx, -axis.dy),
-            end: Alignment(axis.dx, axis.dy),
-          ).createShader(rect);
-      case 'radial_gradient':
-        return Paint()
-          ..shader = RadialGradient(
-            colors: [
-              _color((fill['from'] ?? 'D03028').toString(), opacity),
-              _color((fill['to'] ?? 'F7F6F3').toString(), opacity),
-            ],
-          ).createShader(rect);
-      default:
-        return null;
-    }
-  }
-
-  List<double> _dashPattern(String dash, double w) {
-    switch (dash) {
-      case 'dash':
-        return [w * 3, w * 2];
-      case 'dot':
-        return [w, w * 2];
-      case 'dash_dot':
-        return [w * 3, w * 2, w, w * 2];
-      default:
-        return [w * 3, w * 2];
-    }
-  }
-
-  Color _color(String hex, double alpha) {
-    final v = int.tryParse(hex.replaceFirst('#', ''), radix: 16) ?? 0;
-    return Color(0xFF000000 | (v & 0xFFFFFF)).withValues(alpha: alpha.clamp(0.0, 1.0));
   }
 
   @override
-  bool shouldRepaint(_ShapesPainter old) =>
-      old.objects != objects || old.selectedId != selectedId || old.guides != guides || old.scribblePts != scribblePts;
+  bool shouldRepaint(_ShapesPainter oldDelegate) =>
+      oldDelegate.objects != objects ||
+      oldDelegate.selectedId != selectedId ||
+      oldDelegate.guides != guides ||
+      oldDelegate.scribblePts != scribblePts ||
+      oldDelegate.overlayOnly != overlayOnly ||
+      oldDelegate.designW != designW ||
+      oldDelegate.designH != designH;
 }
+
+void _paintSelection(Canvas canvas, Map obj) {
+  final rot = ((obj['rotation'] ?? 0) as num).toDouble();
+  final c = objectCenter(obj);
+  canvas.save();
+  canvas.translate(c.dx, c.dy);
+  canvas.rotate(rot * math.pi / 180);
+  canvas.translate(-c.dx, -c.dy);
+  final rect = Rect.fromLTWH(
+    (obj['x'] as num).toDouble(),
+    (obj['y'] as num).toDouble(),
+    (obj['w'] as num).toDouble(),
+    (obj['h'] as num).toDouble(),
+  );
+  final outline = Paint()
+    ..color = const Color(0xFFFF3B30)
+    ..strokeWidth = 1.6
+    ..style = PaintingStyle.stroke;
+  canvas.drawRect(rect.deflate(1), outline);
+  final handle = Paint()
+    ..color = Colors.white
+    ..strokeWidth = 1.5
+    ..style = PaintingStyle.fill;
+  final handleBorder = Paint()
+    ..color = const Color(0xFFFF3B30)
+    ..strokeWidth = 1.5
+    ..style = PaintingStyle.stroke;
+  const hs = 7.0;
+  for (final corner in [
+    rect.topLeft,
+    rect.topRight,
+    rect.bottomRight,
+    rect.bottomLeft,
+  ]) {
+    canvas.drawCircle(corner, hs, handle);
+    canvas.drawCircle(corner, hs, handleBorder);
+  }
+  // rotate handle above top-center
+  final rh = Offset(rect.center.dx, rect.top - 28);
+  canvas.drawLine(Offset(rect.center.dx, rect.top), Offset(rect.center.dx, rect.top - 28), outline);
+  canvas.drawCircle(rh, hs, handle);
+  canvas.drawCircle(rh, hs, handleBorder);
+  canvas.restore();
+}
+
+// ---------------------------------------------------------------------------
+// Per-object vector painting — top-level so both the layer (its historical
+// paint-everything mode) and [ShapeObjectPaint] (SlideStage's per-object
+// Z-ordered painting) share one implementation.
+// ---------------------------------------------------------------------------
+
+Offset objectCenter(Map obj) => Offset(
+      (obj['x'] as num).toDouble() + (obj['w'] as num).toDouble() / 2,
+      (obj['y'] as num).toDouble() + (obj['h'] as num).toDouble() / 2,
+    );
+
+void paintObject(Canvas canvas, Map obj) {
+  final rot = ((obj['rotation'] ?? 0) as num).toDouble();
+  final opacity = ((obj['opacity'] ?? 1) as num).toDouble().clamp(0.0, 1.0);
+  final path = objectPath(obj);
+  if (path == null) return;
+  final c = objectCenter(obj);
+  canvas.save();
+  canvas.translate(c.dx, c.dy);
+  canvas.rotate(rot * math.pi / 180);
+  canvas.translate(-c.dx, -c.dy);
+  final open = isOpenPreset(obj);
+
+  // shadow
+  final effects = obj['effects'];
+  if (effects is Map) {
+    final sh = effects['shadow'];
+    if (sh is Map) {
+      final dx = (sh['dx'] ?? 0) as num;
+      final dy = (sh['dy'] ?? 0) as num;
+      final blur = ((sh['blur'] ?? 12) as num).toDouble();
+      final alpha = (((sh['opacity'] ?? 0.45) as num).toDouble() * opacity).clamp(0.0, 1.0);
+      canvas.drawPath(
+        path.shift(Offset(dx.toDouble(), dy.toDouble())),
+        Paint()
+          ..color = shapeColor((sh['color'] ?? '000000').toString(), alpha)
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, blur / 2),
+      );
+    }
+    final gl = effects['glow'];
+    if (gl is Map) {
+      final blur = ((gl['blur'] ?? 12) as num).toDouble();
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = shapeColor((gl['color'] ?? 'D03028').toString(), 0.35 * opacity)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = blur
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, blur / 2),
+      );
+    }
+  }
+
+  // fill
+  if (!open) {
+    final fillPaint = fillPaintOf(obj, opacity);
+    if (fillPaint != null) canvas.drawPath(path, fillPaint);
+  }
+
+  // stroke
+  final stroke = obj['stroke'];
+  if (stroke is Map) {
+    var width = (stroke['width'] ?? 0) as num;
+    if (open && width.toDouble() <= 0) width = 2;
+    if (width.toDouble() > 0) {
+      final dash = (stroke['dash'] ?? 'solid').toString();
+      Path toDraw = path;
+      if (dash != 'solid') {
+        toDraw = dashPath(path, dashPattern(dash, width.toDouble()));
+      }
+      canvas.drawPath(
+        toDraw,
+        Paint()
+          ..color = shapeColor((stroke['color'] ?? '17181A').toString(), opacity)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = width.toDouble()
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round,
+      );
+      if (open) {
+        drawArrowheads(canvas, obj, path, opacity);
+      }
+    }
+  }
+  canvas.restore();
+}
+
+void drawArrowheads(Canvas canvas, Map obj, Path path, double opacity) {
+  final stroke = obj['stroke'] as Map;
+  final width = ((stroke['width'] ?? 2) as num).toDouble().clamp(2.0, 40.0);
+  final size = (width * 3).clamp(10.0, 60.0).toDouble();
+  final color = shapeColor((stroke['color'] ?? '17181A').toString(), opacity);
+  final metrics = path.computeMetrics().toList();
+  if (metrics.isEmpty) return;
+  final endTangent = _tangentAt(metrics, true);
+  final startTangent = _tangentAt(metrics, false);
+  final paint = Paint()..color = color;
+  if ((stroke['end_arrow'] ?? 'none') != 'none' && endTangent != null) {
+    canvas.drawPath(_arrowHead(endTangent, size), paint);
+  }
+  if ((stroke['start_arrow'] ?? 'none') != 'none' && startTangent != null) {
+    canvas.drawPath(_arrowHead(startTangent, size), paint);
+  }
+}
+
+/// Tangent (position + outward direction) at the start or end of a path.
+_Tangent? _tangentAt(List<PathMetric> metrics, bool atEnd) {
+  final m = metrics.first;
+  final len = m.length;
+  if (len < 1e-6) return null;
+  final off = atEnd ? math.max(0.0, len - 0.01) : 0.01;
+  final tan = m.getTangentForOffset(off);
+  if (tan == null) return null;
+  var dir = Offset(math.cos(tan.angle), math.sin(tan.angle));
+  if (!atEnd) dir = Offset(-dir.dx, -dir.dy);
+  return _Tangent(tan.position, dir);
+}
+
+Path _arrowHead(_Tangent t, double size) {
+  final base = t.pos - t.dir * size;
+  final perp = Offset(-t.dir.dy, t.dir.dx);
+  return Path()
+    ..moveTo(t.pos.dx, t.pos.dy)
+    ..lineTo(base.dx + perp.dx * size * 0.4, base.dy + perp.dy * size * 0.4)
+    ..lineTo(base.dx - perp.dx * size * 0.4, base.dy - perp.dy * size * 0.4)
+    ..close();
+}
+
+Paint? fillPaintOf(Map obj, double opacity) {
+  final fill = obj['fill'];
+  if (fill is! Map) return null;
+  final type = (fill['type'] ?? 'none').toString();
+  final rect = Rect.fromLTWH(
+    (obj['x'] as num).toDouble(),
+    (obj['y'] as num).toDouble(),
+    (obj['w'] as num).toDouble(),
+    (obj['h'] as num).toDouble(),
+  );
+  switch (type) {
+    case 'solid':
+      return Paint()..color = shapeColor((fill['color'] ?? 'D03028').toString(), opacity);
+    case 'linear_gradient':
+      final angle = ((fill['angle'] ?? 0) as num).toDouble() * math.pi / 180;
+      final axis = Offset(math.cos(angle), math.sin(angle));
+      return Paint()
+        ..shader = LinearGradient(
+          colors: [
+            shapeColor((fill['from'] ?? 'D03028').toString(), opacity),
+            shapeColor((fill['to'] ?? 'F7F6F3').toString(), opacity),
+          ],
+          begin: Alignment(-axis.dx, -axis.dy),
+          end: Alignment(axis.dx, axis.dy),
+        ).createShader(rect);
+    case 'radial_gradient':
+      return Paint()
+        ..shader = RadialGradient(
+          colors: [
+            shapeColor((fill['from'] ?? 'D03028').toString(), opacity),
+            shapeColor((fill['to'] ?? 'F7F6F3').toString(), opacity),
+          ],
+        ).createShader(rect);
+    default:
+      return null;
+  }
+}
+
+List<double> dashPattern(String dash, double w) {
+  switch (dash) {
+    case 'dash':
+      return [w * 3, w * 2];
+    case 'dot':
+      return [w, w * 2];
+    case 'dash_dot':
+      return [w * 3, w * 2, w, w * 2];
+    default:
+      return [w * 3, w * 2];
+  }
+}
+
+/// RRGGBB hex + alpha -> a Flutter color.
+Color shapeColor(String hex, double alpha) =>
+    Color(0xFF000000 | (int.tryParse(hex.replaceFirst('#', ''), radix: 16) ?? 0))
+        .withValues(alpha: alpha.clamp(0.0, 1.0));
 
 class _Tangent {
   _Tangent(this.pos, this.dir);

@@ -19,9 +19,14 @@ import '../theme.dart';
 /// in flight instead of leaking it. Pairing is fully independent of the
 /// offline startup path: it only ever touches this sheet's own state.
 class PairSheet extends StatefulWidget {
-  const PairSheet({super.key, required this.deck});
+  const PairSheet({super.key, required this.deck, this.onDeckUpdate});
 
   final Map<String, dynamic> deck;
+
+  /// Receives deck payloads pushed by the AI over the WebSocket (update /
+  /// snapshot / reset) so the edits appear LIVE on the canvas behind this
+  /// sheet instead of only moving the status label.
+  final void Function(Map<String, dynamic> deck)? onDeckUpdate;
 
   @override
   State<PairSheet> createState() => _PairSheetState();
@@ -134,6 +139,12 @@ class _PairSheetState extends State<PairSheet> {
           _pairing = body;
           _status = 'paired — waiting for your AI';
         });
+        // The Durable Object holds the REAL deck state from the first
+        // moment of pairing — the AI's first command has a deck to mutate
+        // instead of an empty object, and every editor tab catches up from
+        // the same source of truth. Bounded, logged, never fatal: a failed
+        // init surfaces in the status line, pairing still completes.
+        await _pushInitialState(url);
         _connect(url);
       } else {
         _update(() {
@@ -150,6 +161,31 @@ class _PairSheetState extends State<PairSheet> {
       });
     } finally {
       // The client is always released, success or failure.
+      http.close();
+    }
+  }
+
+  /// POST /decks/<id>/init with the current deck — the Durable Object's
+  /// baseline. Bounded and always released; a failure is visible (status)
+  /// but never blocks the WebSocket leg that follows.
+  Future<void> _pushInitialState(String serverUrl) async {
+    final http = HttpClient()..connectionTimeout = _httpTimeout;
+    try {
+      final deckId = widget.deck['id'].toString();
+      final req = await http
+          .postUrl(Uri.parse('$serverUrl/decks/$deckId/init'))
+          .timeout(_httpTimeout);
+      req.headers.contentType = ContentType.json;
+      req.write(jsonEncode({'deck': widget.deck}));
+      final resp = await req.close().timeout(_httpTimeout);
+      await resp.transform(utf8.decoder).join().timeout(_httpTimeout);
+      if (resp.statusCode >= 400) {
+        _update(() => _status = 'paired — deck sync failed (${resp.statusCode})');
+      }
+    } catch (e) {
+      print('[pair-sheet] deck init push failed: $e');
+      _update(() => _status = 'paired — deck sync failed');
+    } finally {
       http.close();
     }
   }
@@ -173,10 +209,24 @@ class _PairSheetState extends State<PairSheet> {
         (msg) {
           try {
             final data = jsonDecode(msg.toString()) as Map<String, dynamic>;
-            if (data['type'] == 'update' || data['type'] == 'snapshot') {
+            final version = data['version'];
+            if (version is num) _lastVersion = version.toInt();
+            final deck = data['deck'];
+            if ((data['type'] == 'update' ||
+                    data['type'] == 'snapshot' ||
+                    data['type'] == 'reset') &&
+                deck is Map<String, dynamic>) {
+              // The AI's edit arrives as the whole deck: hand it to the
+              // editor so the canvas reflects it live (the editor applies,
+              // persists and records undo), then report the version.
+              widget.onDeckUpdate?.call(deck);
               _update(() => _status = 'live — version ${data['version']}');
             } else if (data['type'] == 'hello') {
               _update(() => _status = 'connected');
+            } else if (data['type'] == 'update' ||
+                data['type'] == 'snapshot' ||
+                data['type'] == 'reset') {
+              _update(() => _status = 'live — version ${data['version']}');
             }
           } catch (e) {
             print('[pair-sheet] unparseable ws message: $e');

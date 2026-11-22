@@ -13,6 +13,17 @@ import 'rich_doc.dart';
 /// exactly where it was: same box, same metrics — the field is simply its
 /// editable face.
 ///
+/// The field matches the painted box's geometry contracts so entering and
+/// leaving typing never moves text:
+///  * the content padding is the painter's padX/padY scaled with the same
+///    scale*k the type size uses (not fixed screen pixels);
+///  * the vertical alignment honors the doc's valign by positioning the
+///    field's content block inside the box exactly where the painter
+///    draws its first line;
+///  * paragraph alignment follows the caret's paragraph (a single field
+///    can only carry one textAlign at a time — the closest WYSIWYG a
+///    native field offers while typing).
+///
 /// The expand button (in the typing toolbar) unfocuses this field; the
 /// controller keeps the text, caret and selection, so re-entering typing
 /// restores them.
@@ -100,6 +111,9 @@ class TextEditFieldLayer extends StatelessWidget {
                 baseFamily: baseFamily,
                 align: align,
                 boxHeight: h * scale,
+                pad: TextBoxPainter.padX * scale * k,
+                padY: TextBoxPainter.padY * scale * k,
+                valign: doc.valign,
               ),
             ),
           ),
@@ -118,6 +132,9 @@ class _Field extends StatelessWidget {
     required this.baseFamily,
     required this.align,
     required this.boxHeight,
+    required this.pad,
+    required this.padY,
+    required this.valign,
   });
 
   final RichEditingController controller;
@@ -128,9 +145,19 @@ class _Field extends StatelessWidget {
   final TextAlign align;
   final double boxHeight;
 
+  /// The painter's content padding (X), scaled with the type — entering and
+  /// leaving typing cannot jump the text's position.
+  final double pad;
+
+  /// The painter's content padding (Y), same scale.
+  final double padY;
+
+  /// 'top' | 'middle' | 'bottom' — the doc's vertical alignment.
+  final String valign;
+
   @override
   Widget build(BuildContext context) {
-    return TextField(
+    final field = TextField(
       key: const ValueKey('text_box_field'),
       controller: controller,
       focusNode: focusNode,
@@ -145,15 +172,35 @@ class _Field extends StatelessWidget {
         fontFamily: baseFamily,
         fontSize: fontSize,
       ),
-      decoration: const InputDecoration(
+      decoration: InputDecoration(
         isDense: true,
         isCollapsed: true,
         filled: false,
         border: InputBorder.none,
         focusedBorder: InputBorder.none,
         enabledBorder: InputBorder.none,
-        contentPadding: EdgeInsets.fromLTRB(14, 10, 14, 10),
+        // The painter's padding, in the field's own scale.
+        contentPadding: EdgeInsets.fromLTRB(pad, padY, pad, padY),
       ),
     );
+
+    // Vertical alignment: the field sizes its content intrinsically
+    // (maxLines: null), so positioning the content block inside the box
+    // with the same pad the painter draws its first line at reproduces
+    // top/middle/bottom exactly.
+    switch (valign) {
+      case 'middle':
+        return SizedBox(
+          height: boxHeight,
+          child: Center(child: field),
+        );
+      case 'bottom':
+        return SizedBox(
+          height: boxHeight,
+          child: Align(alignment: Alignment.bottomLeft, child: field),
+        );
+      default:
+        return field;
+    }
   }
 }

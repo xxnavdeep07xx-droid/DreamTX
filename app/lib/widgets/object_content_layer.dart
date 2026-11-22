@@ -30,9 +30,17 @@ class ObjectContentLayer extends StatelessWidget {
     required this.baseFamily,
     required this.baseFontSize,
     required this.resolveResourcePath,
+    this.singleObject = false,
   });
 
   final List<Map<String, dynamic>> objects;
+
+  /// When true the layer renders exactly ONE object (the first of
+  /// [objects]) filling whatever box the parent gives it — the
+  /// per-object rendering [SlideStage] interleaves in the deck's true
+  /// Z-order, where the parent positions/rotates the box. Default false:
+  /// the layer lays the whole list out at the design frame itself.
+  final bool singleObject;
 
   /// The deck's design-space dimensions (16:9 → 1280×720, 4:3 → 960×720…).
   final double designW;
@@ -52,6 +60,12 @@ class ObjectContentLayer extends StatelessWidget {
   Widget build(BuildContext context) {
     final contentObjects = objects.where(ObjectContent.hasContent).toList();
     if (contentObjects.isEmpty) return const SizedBox.shrink();
+    if (singleObject) {
+      // One object, one box: the parent (SlideStage) positions and
+      // rotates; this layer paints the content alone.
+      final obj = contentObjects.first;
+      return IgnorePointer(child: _contentFor(obj, 1));
+    }
     return IgnorePointer(
       child: LayoutBuilder(builder: (context, constraints) {
         final scale = math.min(constraints.biggest.width / designW,
@@ -67,7 +81,6 @@ class ObjectContentLayer extends StatelessWidget {
                 height: ((obj['h'] as num?) ?? 0).toDouble() * scale,
                 child: _rotated(
                   obj,
-                  scale,
                   child: _contentFor(obj, scale),
                 ),
               ),
@@ -79,7 +92,7 @@ class ObjectContentLayer extends StatelessWidget {
 
   /// Rotation around the object's bbox center, matching [ShapesLayer]'s
   /// selection overlay and gesture math exactly.
-  Widget _rotated(Map obj, double scale, {required Widget child}) {
+  Widget _rotated(Map obj, {required Widget child}) {
     final rot = ((obj['rotation'] ?? 0) as num).toDouble();
     if (rot == 0) return child;
     return Transform.rotate(
@@ -102,7 +115,7 @@ class ObjectContentLayer extends StatelessWidget {
       case kContentIcon:
         return _IconView(obj: obj, baseColor: baseColor);
       case kContentMedia:
-        return _MediaView(obj: obj);
+        return _MediaView(obj: obj, resolve: resolveResourcePath);
       case kContentTable:
         return _TableView(obj: obj, baseColor: baseColor, baseFamily: baseFamily, baseFontSize: baseFontSize);
     }
@@ -154,13 +167,18 @@ class _TextBoxView extends StatelessWidget {
         scale: scale,
         w: w,
         h: h,
-        child: CustomPaint(
-          size: Size(w, h),
-          painter: TextBoxPainter(
-            doc: doc,
-            baseColor: baseColor,
-            baseFamily: baseFamily,
-            baseFontSize: baseFontSize,
+        child: Opacity(
+          // The object's opacity applies to every content kind — text
+          // included, matching the vector shapes (and the exports).
+          opacity: _opacityOf(obj),
+          child: CustomPaint(
+            size: Size(w, h),
+            painter: TextBoxPainter(
+              doc: doc,
+              baseColor: baseColor,
+              baseFamily: baseFamily,
+              baseFontSize: baseFontSize,
+            ),
           ),
         ),
       );
@@ -256,18 +274,100 @@ class TextBoxPainter extends CustomPainter {
     if (k != 1.0) canvas.scale(k);
     var dy = y / k;
     for (final p in paragraphs) {
+      // The paragraph's effective text column: the indent applies to
+      // EVERY alignment — center and right align inside the INDENTED
+      // column, exactly like left/justify do, instead of ignoring the
+      // indent and centering on the full box.
+      final col = w - p.indent * indentStep;
       var x = padX + p.indent * indentStep;
       final align = p.align;
       if (align == 'center') {
-        x = padX + (w - p.painter.width) / 2;
+        x = padX + p.indent * indentStep + (col - p.painter.width) / 2;
       } else if (align == 'right') {
-        x = padX + (w - p.painter.width);
+        x = padX + p.indent * indentStep + (col - p.painter.width);
       }
+      p.paintX = x;
+      p.paintY = dy;
       p.painter.paint(canvas, Offset(x, dy));
       dy += p.painter.height;
     }
     canvas.restore();
+
+    // Sub/superscript baseline shift: the run spans render at 0.65 size
+    // (the shrink the edit field shows too) and the painter additionally
+    // LIFTS/LOWERS them along the baseline — a real raised/lowered
+    // typeset, not just small text. The spans were laid out in the
+    // paragraph painter with transparent color (see [_appendRunSpans]);
+    // here each sub/sup run piece is re-painted at its measured box
+    // position, shifted by the typographic offset.
+    for (final p in paragraphs) {
+      if (!p.hasSubSuper) continue;
+      _paintSubSuperOverlay(canvas, p, k);
+    }
   }
+
+  /// Re-paint the sub/superscript runs of one paragraph with their baseline
+  /// shift, positioned from the paragraph painter's own boxes — the
+  /// paragraph layout (line breaks, sizes) is authoritative and unchanged.
+  void _paintSubSuperOverlay(Canvas canvas, _ParaLayout p, double k) {
+    final tp = p.painter;
+    for (final r in doc.runs) {
+      final isSub = r.subscript == true;
+      final isSup = r.superscript == true;
+      if (!isSub && !isSup) continue;
+      if (r.end <= r.start) continue; // pending marks never render
+      // Position every glyph-run box the painter produced for this run
+      // and paint the piece at the box's own x, shifted vertically.
+      final boxes = tp.getBoxesForSelection(
+        TextSelection(baseOffset: r.start, extentOffset: r.end),
+      );
+      if (boxes.isEmpty) continue;
+      // The run's style at its own (already-shrunk) size, but with a real
+      // color instead of the layout pass's transparent placeholder.
+      final style = richTextStyle(r, base: _base).copyWith(
+        color: _colorForRun(r),
+      );
+      var pieceStart = r.start;
+      var lastTop = boxes.first.top;
+      for (final box in boxes) {
+        // A new line begins when the box's top moves: re-anchor.
+        if ((box.top - lastTop).abs() > 1.0) {
+          lastTop = box.top;
+          pieceStart = _offsetForBoxEnd(tp, box);
+        }
+        final pieceEnd = _offsetForBoxEnd(tp, box);
+        if (pieceEnd > pieceStart) {
+          final text = doc.text.substring(
+              pieceStart.clamp(0, doc.text.length),
+              pieceEnd.clamp(0, doc.text.length));
+          final boxH = box.bottom - box.top;
+          // Typographic offsets: a subscript's baseline sits BELOW the
+          // line's (about a third of the x-height down), a superscript's
+          // above it.
+          final shift = isSub ? boxH * 0.34 : -boxH * 0.38;
+          final piece = TextPainter(
+            text: TextSpan(text: text, style: style),
+            textDirection: TextDirection.ltr,
+          )..layout();
+          canvas.save();
+          canvas.translate(p.paintX + box.left, p.paintY + box.top + shift);
+          piece.paint(canvas, Offset.zero);
+          canvas.restore();
+          pieceStart = pieceEnd;
+        }
+      }
+    }
+  }
+
+  /// The text offset just past a box's glyphs (used to slice run pieces).
+  int _offsetForBoxEnd(TextPainter tp, TextBox box) {
+    final pos = tp.getPositionForOffset(
+      Offset(box.right + 0.5, (box.top + box.bottom) / 2),
+    );
+    return pos.offset;
+  }
+
+  Color _colorForRun(RichRun r) => r.color == null ? baseColor : _hex(r.color!);
 
   List<_ParaLayout> _paragraphLayouts(double boxW) {
     final starts = doc.paragraphStarts;
@@ -307,30 +407,52 @@ class TextBoxPainter extends CustomPainter {
         ));
       }
       final text = plain.endsWith('\n') ? plain.substring(0, plain.length - 1) : plain;
-      _appendRunSpans(spans, s, s + text.length, heightStyle);
+      var hasSubSuper = false;
+      _appendRunSpans(spans, s, s + text.length, heightStyle,
+          onSubSuper: () => hasSubSuper = true);
 
       final tp = TextPainter(
         text: TextSpan(children: spans),
+        // Justify: TextPainter distributes the extra space between words
+        // on every line but the paragraph's last — the paragraph itself
+        // must be laid out at the aligned width for that to happen.
+        textAlign: align == 'justify' ? TextAlign.justify : TextAlign.left,
         textDirection: TextDirection.ltr,
       )..layout(maxWidth: boxW - indent * indentStep);
-      out.add(_ParaLayout(painter: tp, align: align, indent: indent));
+      out.add(_ParaLayout(painter: tp, align: align, indent: indent)
+        ..hasSubSuper = hasSubSuper);
     }
     return out;
   }
 
   /// Split [from, to) of the doc's text into styled spans, following the
   /// run marks (zero-width pending marks never render).
-  void _appendRunSpans(List<InlineSpan> out, int from, int to, TextStyle base) {
+  ///
+  /// Sub/superscript runs lay out at their (shrunk) size but with a
+  /// TRANSPARENT color — the paint pass re-paints each of their pieces at
+  /// the measured box position with the real color and the baseline
+  /// shift, so the paragraph's own line breaking stays authoritative
+  /// while the glyphs read raised/lowered, typeset properly.
+  void _appendRunSpans(List<InlineSpan> out, int from, int to, TextStyle base,
+      {void Function()? onSubSuper}) {
     var pos = from;
     for (final r in doc.runs) {
       if (r.end <= from || r.start >= to || r.end <= r.start) continue;
       final a = math.max(r.start, from);
       final b = math.min(r.end, to);
       if (a > pos) out.add(TextSpan(text: doc.text.substring(pos, a), style: base));
+      final subSuper = r.subscript == true || r.superscript == true;
+      final style = richTextStyle(r, base: base);
       out.add(TextSpan(
         text: doc.text.substring(a, b),
-        style: richTextStyle(r, base: base),
+        style: subSuper
+            ? style.copyWith(
+                color: baseColor.withValues(alpha: 0),
+                background: null,
+              )
+            : style,
       ));
+      if (subSuper) onSubSuper?.call();
       pos = b;
     }
     if (pos < to) {
@@ -351,6 +473,15 @@ class _ParaLayout {
   final TextPainter painter;
   final String align;
   final int indent;
+
+  /// Where the paragraph was painted (design px) — the sub/superscript
+  /// overlay re-paints run pieces at these anchors.
+  double paintX = 0;
+  double paintY = 0;
+
+  /// Whether any rendered run carries sub/superscript (the overlay only
+  /// runs when it does).
+  bool hasSubSuper = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -369,6 +500,7 @@ class _ImageView extends StatefulWidget {
 
 class _ImageViewState extends State<_ImageView> {
   ImageProvider? _provider;
+  String? _resolvedPath;
 
   @override
   void didUpdateWidget(_ImageView old) {
@@ -382,11 +514,22 @@ class _ImageViewState extends State<_ImageView> {
     _refresh();
   }
 
+  /// Rebuild the image provider from the resolver — only when the RESOLVED
+  /// PATH actually moved. The resolver map is editor-owned and populated
+  /// the moment an asset is imported or picked, so a fresh path appearing
+  /// here remounts the image on the very next build (a newly imported
+  /// asset shows right away instead of a "missing asset" card).
+  ///
+  /// No synchronous `existsSync` runs on this path: [FileImage] loads
+  /// asynchronously and the [Image.errorBuilder] below renders the clean
+  /// fallback when the file turns out to be gone — disk IO never blocks
+  /// or runs inside layout.
   void _refresh() {
     final content = ObjectContent.of(widget.obj);
     final path = content == null ? null : widget.resolve(content);
-    final file = path == null ? null : File(path);
-    _provider = (file != null && file.existsSync()) ? FileImage(file) : null;
+    if (path == _resolvedPath && _provider != null) return;
+    _resolvedPath = path;
+    _provider = path == null ? null : FileImage(File(path));
   }
 
   @override
@@ -406,23 +549,27 @@ class _ImageViewState extends State<_ImageView> {
         scale: scale,
         w: w,
         h: h,
-        child: Container(
-          width: w,
-          height: h,
-          decoration: BoxDecoration(
-            border: strokeWidth > 0
-                ? Border.all(color: strokeColor, width: strokeWidth)
-                : null,
+        child: Opacity(
+          opacity: _opacityOf(obj),
+          child: Container(
+            width: w,
+            height: h,
+            decoration: BoxDecoration(
+              border: strokeWidth > 0
+                  ? Border.all(color: strokeColor, width: strokeWidth)
+                  : null,
+            ),
+            child: provider == null
+                ? _missingAssetFallback(obj)
+                : Image(
+                    image: provider,
+                    fit: BoxFit.cover,
+                    width: w,
+                    height: h,
+                    gaplessPlayback: true,
+                    errorBuilder: (_, __, ___) => _missingAssetFallback(obj),
+                  ),
           ),
-          child: provider == null
-              ? _missingAssetFallback(obj)
-              : Image(
-                  image: provider,
-                  fit: BoxFit.cover,
-                  width: w,
-                  height: h,
-                  gaplessPlayback: true,
-                ),
         ),
       );
     });
@@ -450,6 +597,11 @@ class _ImageViewState extends State<_ImageView> {
     );
   }
 }
+
+/// The object's opacity (0..1), the same value the vector shapes and the
+/// exporters apply.
+double _opacityOf(Map obj) =>
+    (((obj['opacity'] ?? 1) as num?)?.toDouble() ?? 1).clamp(0.0, 1.0);
 
 Color _hex(String hex) {
   final v = int.tryParse(hex.replaceFirst('#', ''), radix: 16) ?? 0;
@@ -499,10 +651,20 @@ class _IconView extends StatelessWidget {
 // Media card
 // ---------------------------------------------------------------------------
 
+/// The media card. Playback itself lives in the object panel (the
+/// Insert drawer's media group): a Play button there hands the resolved
+/// local file to the system's own player through a tiny platform intent —
+/// no bundled multi-MB video SDK, no new dependencies. The card stays
+/// paint-only like every other content view (selection/tap belongs to
+/// the gesture layer above it).
 class _MediaView extends StatelessWidget {
-  const _MediaView({required this.obj});
+  const _MediaView({required this.obj, required this.resolve});
 
   final Map<String, dynamic> obj;
+
+  /// Resolves the media content payload to its local file path (or null
+  /// when the asset is gone — the card renders its name chip then).
+  final String? Function(Map<String, dynamic> content) resolve;
 
   @override
   Widget build(BuildContext context) {
@@ -519,38 +681,41 @@ class _MediaView extends StatelessWidget {
         scale: scale,
         w: w,
         h: h,
-        child: Container(
-          width: w,
-          height: h,
-          decoration: BoxDecoration(
-            color: const Color(0xFF101014),
-            borderRadius: BorderRadius.circular(6),
-            border: strokeWidth > 0
-                ? Border.all(
-                    color: _hex((stroke['color'] ?? '17181A').toString()),
-                    width: strokeWidth)
-                : Border.all(color: const Color(0x332A2A31)),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                isVideo ? Icons.videocam_outlined : Icons.graphic_eq,
-                size: math.min(w, h) * 0.34,
-                color: kText2,
-              ),
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 11, color: kText2),
+        child: Opacity(
+          opacity: _opacityOf(obj),
+          child: Container(
+            width: w,
+            height: h,
+            decoration: BoxDecoration(
+              color: const Color(0xFF101014),
+              borderRadius: BorderRadius.circular(6),
+              border: strokeWidth > 0
+                  ? Border.all(
+                      color: _hex((stroke['color'] ?? '17181A').toString()),
+                      width: strokeWidth)
+                  : Border.all(color: const Color(0x332A2A31)),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  isVideo ? Icons.videocam_outlined : Icons.graphic_eq,
+                  size: math.min(w, h) * 0.34,
+                  color: kText2,
                 ),
-              ),
-            ],
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 11, color: kText2),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -595,7 +760,9 @@ class _TableView extends StatelessWidget {
         scale: scale,
         w: w,
         h: h,
-        child: CustomPaint(
+        child: Opacity(
+          opacity: _opacityOf(obj),
+          child: CustomPaint(
           size: Size(w, h),
           painter: _TablePainter(
             rows: rows,
@@ -609,6 +776,7 @@ class _TableView extends StatelessWidget {
               fontSize: math.min(baseFontSize * 0.62, ch * 0.42),
             ),
           ),
+        ),
         ),
       );
     });

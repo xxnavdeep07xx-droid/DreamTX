@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
 
@@ -38,27 +39,54 @@ class Bridge {
       void Function(ffi.Pointer<ffi.Uint8>)>('dreamtx_free');
 
   /// Run a JSON command against the Rust core.
+  ///
+  /// Every native allocation is freed on every path: the request string,
+  /// the out-slot, and the engine's response string all live inside one
+  /// try/finally, so a throw anywhere (a malformed payload, a decode error)
+  /// can never leak native memory.
   static Map<String, dynamic> command(Map<String, dynamic> req) {
     final override = testOverride;
     if (override != null) return override(req);
-    final reqPtr = jsonEncode(req).toNativeUtf8().cast<ffi.Uint8>();
-    final outPtr = calloc<ffi.Pointer<ffi.Uint8>>();
-    final rc = _command()(reqPtr, outPtr);
-    if (rc != 0) {
-      calloc.free(outPtr);
-      calloc.free(reqPtr.cast());
-      throw StateError('deck-core rejected the request (rc=$rc)');
+    ffi.Pointer<ffi.Uint8>? reqPtr;
+    ffi.Pointer<ffi.Pointer<ffi.Uint8>>? outPtr;
+    try {
+      reqPtr = jsonEncode(req).toNativeUtf8().cast<ffi.Uint8>();
+      outPtr = calloc<ffi.Pointer<ffi.Uint8>>();
+      final rc = _command()(reqPtr, outPtr);
+      if (rc != 0) {
+        throw StateError('deck-core rejected the request (rc=$rc)');
+      }
+      final respPtr = outPtr.value;
+      try {
+        final respText = respPtr.cast<Utf8>().toDartString();
+        final decoded = jsonDecode(respText);
+        if (decoded is! Map<String, dynamic>) {
+          throw StateError('deck-core returned an unexpected payload');
+        }
+        return decoded;
+      } finally {
+        // The engine's response string is ours to free either way.
+        _free()(respPtr);
+      }
+    } finally {
+      if (outPtr != null) calloc.free(outPtr);
+      if (reqPtr != null) calloc.free(reqPtr.cast());
     }
-    final respPtr = outPtr.value;
-    final respText = respPtr.cast<Utf8>().toDartString();
-    _free()(respPtr);
-    calloc.free(outPtr);
-    calloc.free(reqPtr.cast());
+  }
 
-    final decoded = jsonDecode(respText);
-    if (decoded is! Map<String, dynamic>) {
-      throw StateError('deck-core returned an unexpected payload');
-    }
-    return decoded;
+  /// Run a heavy command on a background isolate so the UI never freezes
+  /// while the engine works (exports serialize and zip whole decks, and
+  /// large decks with embedded images can take hundreds of milliseconds).
+  ///
+  /// The request map crosses the isolate boundary (it must be plain JSON
+  /// data — it always is: every command is JSON), the isolate opens the
+  /// same native library and runs the call there, and the response map
+  /// crosses back. Test overrides stay on the calling isolate: they are
+  /// closures, not sendable, so the seam routes to the synchronous
+  /// [command] instead.
+  static Future<Map<String, dynamic>> commandHeavy(
+      Map<String, dynamic> req) async {
+    if (testOverride != null) return command(req);
+    return Isolate.run(() => command(req));
   }
 }
