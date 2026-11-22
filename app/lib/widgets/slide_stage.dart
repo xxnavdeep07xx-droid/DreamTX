@@ -125,6 +125,7 @@ class SlideStage extends StatelessWidget {
                         baseFamily: baseFamily,
                         baseFontSize: baseFontSize,
                         resolveResourcePath: resolveResourcePath,
+                        singleObject: true,
                       )
                     : ShapeObjectPaint(obj: obj, scale: scale),
               );
