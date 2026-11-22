@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../core/color_utils.dart';
 import '../core/object_content.dart';
 import '../theme.dart';
 import 'icon_registry.dart';
@@ -367,7 +368,7 @@ class TextBoxPainter extends CustomPainter {
     return pos.offset;
   }
 
-  Color _colorForRun(RichRun r) => r.color == null ? baseColor : _hex(r.color!);
+  Color _colorForRun(RichRun r) => r.color == null ? baseColor : hexToColor(r.color!);
 
   List<_ParaLayout> _paragraphLayouts(double boxW) {
     final starts = doc.paragraphStarts;
@@ -543,7 +544,7 @@ class _ImageViewState extends State<_ImageView> {
       final stroke = obj['stroke'];
       final strokeWidth = stroke is Map ? ((stroke['width'] ?? 0) as num).toDouble() : 0.0;
       final strokeColor = stroke is Map
-          ? _hex((stroke['color'] ?? '17181A').toString())
+          ? hexToColor((stroke['color'] ?? '17181A').toString())
           : const Color(0xFF17181A);
       return _designScaled(
         scale: scale,
@@ -603,11 +604,6 @@ class _ImageViewState extends State<_ImageView> {
 double _opacityOf(Map obj) =>
     (((obj['opacity'] ?? 1) as num?)?.toDouble() ?? 1).clamp(0.0, 1.0);
 
-Color _hex(String hex) {
-  final v = int.tryParse(hex.replaceFirst('#', ''), radix: 16) ?? 0;
-  return Color(0xFF000000 | (v & 0xFFFFFF));
-}
-
 // ---------------------------------------------------------------------------
 // Icon sticker
 // ---------------------------------------------------------------------------
@@ -624,7 +620,7 @@ class _IconView extends StatelessWidget {
     final glyph = iconGlyphOf(name) ?? Icons.star_outline;
     final fill = obj['fill'];
     final color = fill is Map && fill['type'] == 'solid'
-        ? _hex((fill['color'] ?? 'F5F5F7').toString())
+        ? hexToColor((fill['color'] ?? 'F5F5F7').toString())
         : baseColor;
     final opacity = ((obj['opacity'] ?? 1) as num).toDouble().clamp(0.0, 1.0);
     return LayoutBuilder(builder: (context, constraints) {
@@ -691,7 +687,7 @@ class _MediaView extends StatelessWidget {
               borderRadius: BorderRadius.circular(6),
               border: strokeWidth > 0
                   ? Border.all(
-                      color: _hex((stroke['color'] ?? '17181A').toString()),
+                      color: hexToColor((stroke['color'] ?? '17181A').toString()),
                       width: strokeWidth)
                   : Border.all(color: const Color(0x332A2A31)),
             ),
@@ -746,7 +742,7 @@ class _TableView extends StatelessWidget {
     if (rows == 0 || cols == 0) return const SizedBox.shrink();
     final stroke = obj['stroke'];
     final gridColor = stroke is Map
-        ? _hex((stroke['color'] ?? '17181A').toString())
+        ? hexToColor((stroke['color'] ?? '17181A').toString())
         : const Color(0xFF17181A);
     final strokeWidth = stroke is Map
         ? (((stroke['width'] ?? 1.5) as num).toDouble().clamp(0.75, 4.0))

@@ -1,142 +1,11 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../core/color_utils.dart';
+import 'controls.dart';
 import '../theme.dart';
-import 'shape_canvas.dart';
 
 /// Shape library, style inspector, layers panel and components sheet —
 /// the manual studio UI for the vector overlay layer.
-
-const List<String> _swatches = [
-  '17181A', 'F7F6F3', 'FFFFFF', 'D03028', '0F62FE', '42BE65',
-  'FFD400', 'FF7847', '8A3FFC', '8D8D8D',
-];
-
-Color _hexColor(String hex) {
-  final v = int.tryParse(hex.replaceFirst('#', ''), radix: 16) ?? 0;
-  return Color(0xFF000000 | (v & 0xFFFFFF));
-}
-
-Future<void> showShapeLibrary(
-  BuildContext context, {
-  required List<Map<String, dynamic>> presets,
-  required void Function(String preset) onPick,
-}) {
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    builder: (context) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
-            child: Text('Shapes', style: Theme.of(context).textTheme.titleLarge),
-          ),
-          const Divider(height: 1),
-          Flexible(
-            child: GridView.builder(
-              shrinkWrap: true,
-              padding: const EdgeInsets.all(12),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 4,
-                childAspectRatio: 0.92,
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-              ),
-              itemCount: presets.length,
-              itemBuilder: (context, i) {
-                final p = presets[i];
-                final name = (p['name'] ?? '').toString();
-                return InkWell(
-                  borderRadius: BorderRadius.circular(10),
-                  onTap: () {
-                    Navigator.pop(context);
-                    onPick(name);
-                  },
-                  child: Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(color: kHairline),
-                      borderRadius: BorderRadius.circular(10),
-                      color: kElevated,
-                    ),
-                    padding: const EdgeInsets.all(8),
-                    child: Column(
-                      children: [
-                        Expanded(child: _PresetThumb(preset: name)),
-                        const SizedBox(height: 4),
-                        Text(
-                          (p['label'] ?? name).toString(),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-class _PresetThumb extends StatelessWidget {
-  const _PresetThumb({required this.preset});
-
-  final String preset;
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      size: const Size(64, 48),
-      painter: _PresetThumbPainter(preset),
-    );
-  }
-}
-
-class _PresetThumbPainter extends CustomPainter {
-  _PresetThumbPainter(this.preset);
-
-  final String preset;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width - 6;
-    final h = size.height - 6;
-    final poly = presetPolygon(preset, w, h);
-    final path = Path();
-    for (var i = 0; i < poly.length; i++) {
-      final pt = poly[i];
-      if (i == 0) {
-        path.moveTo(3 + pt.dx, 3 + pt.dy);
-      } else {
-        path.lineTo(3 + pt.dx, 3 + pt.dy);
-      }
-    }
-    final open = preset == 'line' || preset == 'wave' || preset == 'zigzag';
-    if (!open && poly.length > 2) path.close();
-    final ink = _hexColor('F5F5F7');
-    if (open) {
-      canvas.drawPath(
-        path,
-        Paint()
-          ..color = ink
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.4
-          ..strokeCap = StrokeCap.round,
-      );
-    } else {
-      canvas.drawPath(path, Paint()..color = ink.withValues(alpha: 0.85));
-    }
-  }
-
-  @override
-  bool shouldRepaint(_PresetThumbPainter old) => old.preset != preset;
-}
 
 // ---------------------------------------------------------------------------
 // Style inspector
@@ -469,12 +338,10 @@ class _InspectorSheetState extends State<_InspectorSheet> {
       runSpacing: 4,
       children: [
         for (var i = 0; i < values.length; i++)
-          ChoiceChip(
-            label: Text(labels[i], style: const TextStyle(fontSize: 12)),
-            labelPadding: const EdgeInsets.symmetric(horizontal: 4),
-            visualDensity: VisualDensity.compact,
+          DreamChoiceChip(
+            label: labels[i],
             selected: current == values[i],
-            onSelected: (_) => onPick(values[i]),
+            onTap: () => onPick(values[i]),
           ),
       ],
     );
@@ -555,7 +422,7 @@ class _ColorFieldState extends State<_ColorField> {
                 width: 34,
                 height: 34,
                 decoration: BoxDecoration(
-                  color: _hexColor(_controller.text),
+                  color: hexToColor(_controller.text),
                   border: Border.all(color: Colors.black26),
                   borderRadius: BorderRadius.circular(6),
                 ),
@@ -563,29 +430,15 @@ class _ColorFieldState extends State<_ColorField> {
             ],
           ),
           const SizedBox(height: 4),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final c in _swatches)
-                InkWell(
-                  borderRadius: BorderRadius.circular(14),
-                  onTap: () {
-                    _controller.text = c;
-                    _commit(c);
-                    setState(() {});
-                  },
-                  child: Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      color: _hexColor(c),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.black26),
-                    ),
-                  ),
-                ),
-            ],
+          DreamColorChips(
+            palette: kSwatchPalette,
+            selected: _controller.text,
+            onPick: (hex) {
+              if (hex == null) return; // a typed hex is the only "clear"
+              _controller.text = hex;
+              _commit(hex);
+              setState(() {});
+            },
           ),
         ],
       ),

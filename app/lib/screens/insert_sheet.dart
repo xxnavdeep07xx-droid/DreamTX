@@ -3,6 +3,8 @@ import 'package:material_ui/material_ui.dart';
 import '../core/object_content.dart';
 import '../theme.dart';
 import '../widgets/icon_registry.dart';
+import '../widgets/controls.dart';
+import '../widgets/dream_drawer.dart';
 import '../widgets/rich_doc.dart';
 import '../widgets/shape_canvas.dart' show objectPath;
 
@@ -213,15 +215,23 @@ class _InsertSheetState extends State<InsertSheet> {
       ),
       child: Column(
         children: [
-          _InsertHeader(
+          DreamDrawerHeader(
             title: title,
+            dragKey: const ValueKey('insert_drawer_handle'),
             // The back arrow serves every view that is NOT the resting
             // grid: the pickers (Shapes / Image / Media) AND the object
             // panel — editing a table or an icon is as deep a view as a
             // picker, and it needs the same way out.
             showBack: _view != _InsertView.grid || panel,
+            backTooltip: 'Back to Insert',
             onBack: _back,
-            onLayers: widget.onShowLayers,
+            trailing: IconButton(
+              key: const ValueKey('insert_drawer_layers'),
+              tooltip: 'Layers, groups, components',
+              icon: const Icon(Icons.layers_outlined, size: 18),
+              color: kText2,
+              onPressed: widget.onShowLayers,
+            ),
             onDragUpdate: widget.onDragUpdate,
             onDragSettle: widget.onDragSettle,
           ),
@@ -276,62 +286,42 @@ class _InsertSheetState extends State<InsertSheet> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: _InsertTile(
-                  icon: Icons.text_fields,
-                  label: 'Text Box',
-                  onTap: widget.onInsertTextBox,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _InsertTile(
-                  icon: Icons.image_outlined,
-                  label: 'Image',
-                  onTap: () => setState(() => _view = _InsertView.image),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _InsertTile(
-                  icon: Icons.category_outlined,
-                  label: 'Shapes',
-                  onTap: () => setState(() => _view = _InsertView.shapes),
-                ),
-              ),
-            ],
-          ),
+          DreamTileRow(tiles: [
+            DreamToolTile(
+              icon: Icons.text_fields,
+              label: 'Text Box',
+              onTap: widget.onInsertTextBox,
+            ),
+            DreamToolTile(
+              icon: Icons.image_outlined,
+              label: 'Image',
+              onTap: () => setState(() => _view = _InsertView.image),
+            ),
+            DreamToolTile(
+              icon: Icons.category_outlined,
+              label: 'Shapes',
+              onTap: () => setState(() => _view = _InsertView.shapes),
+            ),
+          ]),
           const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _InsertTile(
-                  icon: Icons.grid_on,
-                  label: 'Table',
-                  onTap: widget.onInsertTable,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _InsertTile(
-                  icon: Icons.emoji_emotions_outlined,
-                  label: 'Icons / Stickers',
-                  onTap: () => showIconPicker(context,
-                      onPick: widget.onInsertIcon),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _InsertTile(
-                  icon: Icons.perm_media_outlined,
-                  label: 'Media',
-                  onTap: () => setState(() => _view = _InsertView.media),
-                ),
-              ),
-            ],
-          ),
+          DreamTileRow(tiles: [
+            DreamToolTile(
+              icon: Icons.grid_on,
+              label: 'Table',
+              onTap: widget.onInsertTable,
+            ),
+            DreamToolTile(
+              icon: Icons.emoji_emotions_outlined,
+              label: 'Icons / Stickers',
+              onTap: () => showIconPicker(context,
+                  onPick: widget.onInsertIcon),
+            ),
+            DreamToolTile(
+              icon: Icons.perm_media_outlined,
+              label: 'Media',
+              onTap: () => setState(() => _view = _InsertView.media),
+            ),
+          ]),
         ],
       ),
     );
@@ -396,47 +386,31 @@ class _InsertSheetState extends State<InsertSheet> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: _InsertTile(
-                  icon: Icons.photo_library_outlined,
-                  label: 'Gallery',
-                  onTap: () => widget.onPickImage('gallery'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _InsertTile(
-                  icon: Icons.photo_camera_outlined,
-                  label: 'Camera',
-                  onTap: () => widget.onPickImage('camera'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _InsertTile(
-                  icon: Icons.inventory_2,
-                  label: 'Deck Resources',
-                  onTap: () => widget.onPickImage('deck'),
-                ),
-              ),
-            ],
-          ),
+          DreamTileRow(tiles: [
+            DreamToolTile(
+              icon: Icons.photo_library_outlined,
+              label: 'Gallery',
+              onTap: () => widget.onPickImage('gallery'),
+            ),
+            DreamToolTile(
+              icon: Icons.photo_camera_outlined,
+              label: 'Camera',
+              onTap: () => widget.onPickImage('camera'),
+            ),
+            DreamToolTile(
+              icon: Icons.inventory_2,
+              label: 'Deck Resources',
+              onTap: () => widget.onPickImage('deck'),
+            ),
+          ]),
           const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _InsertTile(
-                  icon: Icons.public,
-                  label: 'Brand Resources',
-                  onTap: () => widget.onPickImage('brand'),
-                ),
-              ),
-              const Expanded(child: SizedBox()),
-              const Expanded(child: SizedBox()),
-            ],
-          ),
+          DreamTileRow(tiles: [
+            DreamToolTile(
+              icon: Icons.public,
+              label: 'Brand Resources',
+              onTap: () => widget.onPickImage('brand'),
+            ),
+          ]),
         ],
       ),
     );
@@ -451,28 +425,20 @@ class _InsertSheetState extends State<InsertSheet> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: _InsertTile(
-                  icon: Icons.movie_outlined,
-                  label: 'Video',
-                  sub: 'Import a video file',
-                  onTap: () => widget.onPickMedia('video'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _InsertTile(
-                  icon: Icons.graphic_eq,
-                  label: 'Audio',
-                  sub: 'Import an audio file',
-                  onTap: () => widget.onPickMedia('audio'),
-                ),
-              ),
-              const Expanded(child: SizedBox()),
-            ],
-          ),
+          DreamTileRow(tiles: [
+            DreamToolTile(
+              icon: Icons.movie_outlined,
+              label: 'Video',
+              sub: 'Import a video file',
+              onTap: () => widget.onPickMedia('video'),
+            ),
+            DreamToolTile(
+              icon: Icons.graphic_eq,
+              label: 'Audio',
+              sub: 'Import an audio file',
+              onTap: () => widget.onPickMedia('audio'),
+            ),
+          ]),
         ],
       ),
     );
@@ -482,185 +448,6 @@ class _InsertSheetState extends State<InsertSheet> {
 // ---------------------------------------------------------------------------
 // Header + tiles
 // ---------------------------------------------------------------------------
-
-/// The drawer's header: the grab handle pill under the centered title —
-/// the same header language as the Files drawer's, with the whole header
-/// as the sheet's drag surface. A drag up or down streams its deltas to
-/// the editor (which resizes the sheet between the shared detents); how
-/// it settles — snap to a detent, or dismiss on a downward fling / deep
-/// drag — is the editor's call, from the settle velocity it receives
-/// here. The back and layers buttons live inside the drag surface: they
-/// still take their taps (a tap never wins the vertical-drag arena), and
-/// every other touch on the header is a gesture, not a press into
-/// whatever the sheet is floating over.
-class _InsertHeader extends StatelessWidget {
-  const _InsertHeader({
-    required this.title,
-    required this.showBack,
-    required this.onBack,
-    required this.onLayers,
-    this.onDragUpdate,
-    this.onDragSettle,
-  });
-
-  final String title;
-  final bool showBack;
-  final VoidCallback onBack;
-  final VoidCallback onLayers;
-  final void Function(double dy)? onDragUpdate;
-  final void Function(double velocityDy)? onDragSettle;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      key: const ValueKey('insert_drawer_handle'),
-      // Opaque, like the Files header: a touch on the header is a gesture,
-      // never a press through the sheet into the canvas below.
-      behavior: HitTestBehavior.opaque,
-      onVerticalDragUpdate: (d) => onDragUpdate?.call(d.delta.dy),
-      onVerticalDragEnd: (d) =>
-          onDragSettle?.call(d.velocity.pixelsPerSecond.dy),
-      child: SizedBox(
-        width: double.infinity,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 7, 8, 5),
-          child: Column(
-            children: [
-              Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: kText3,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  SizedBox(
-                    width: 36,
-                    height: 32,
-                    child: showBack
-                        ? IconButton(
-                            tooltip: 'Back to Insert',
-                            icon: const Icon(Icons.arrow_back, size: 18),
-                            color: kText2,
-                            onPressed: onBack,
-                          )
-                        : null,
-                  ),
-                  Expanded(
-                    child: Center(
-                      child: Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: kText,
-                        ),
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    width: 36,
-                    height: 32,
-                    child: IconButton(
-                      tooltip: 'Layers, groups, components',
-                      icon: const Icon(Icons.layers_outlined, size: 18),
-                      color: kText2,
-                      onPressed: onLayers,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// One insert tile: the SAME card as the Files drawer's tool tiles —
-/// elevated a deliberate step above the sheet's own surface, hairline
-/// edge, the icon in its washed-purple chip above the label — with the
-/// SAME footprint (112 tall, 36-chip, the same inner breathing room),
-/// so both grids read as one language and neither set of cards looks
-/// squeezed or pressed relative to the other.
-class _InsertTile extends StatelessWidget {
-  const _InsertTile({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.sub,
-  });
-
-  final IconData icon;
-  final String label;
-  final String? sub;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: kElevated,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(color: kHairline),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: SizedBox(
-          // The Files tile's own height: both grids' cards are equal-
-          // footprint so a card in one is a card in the other, never a
-          // compressed variant.
-          height: 112,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: kPurpleWash,
-                    borderRadius: BorderRadius.circular(9),
-                  ),
-                  child: Icon(icon, size: 19, color: kPurple),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  label,
-                  maxLines: 2,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: kText,
-                    height: 1.15,
-                  ),
-                ),
-                if (sub != null) ...[
-                  const SizedBox(height: 3),
-                  Text(
-                    sub!,
-                    maxLines: 1,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 10, color: kText3),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 /// One shape tile: the preset's own silhouette plus its label — the
 /// same elevated-card language as the insert tiles, at the denser
@@ -1253,13 +1040,13 @@ class _TextQuickTools extends StatelessWidget {
             ),
           ],
         ),
-        _ColorChips(
+        DreamColorChips(
           label: 'TEXT COLOR',
           palette: palette,
           selected: _runAttr(a, b, (r) => r.color),
           onPick: actions.setColor,
         ),
-        _ColorChips(
+        DreamColorChips(
           label: 'HIGHLIGHT — behind the text',
           palette: palette,
           selected: _runAttr(a, b, (r) => r.highlight),
@@ -1341,19 +1128,19 @@ class _TextCharacterTools extends StatelessWidget {
         const _PanelLabel('FONT FAMILY'),
         _PanelRow(
           children: [
-            _ChoiceChip2(
+            DreamChoiceChip(
               label: 'Sans',
               selected: _family == 'sans',
               onTap: () => actions.setFontFamily(null),
             ),
             const SizedBox(width: 8),
-            _ChoiceChip2(
+            DreamChoiceChip(
               label: 'Serif',
               selected: _family == 'serif',
               onTap: () => actions.setFontFamily('serif'),
             ),
             const SizedBox(width: 8),
-            _ChoiceChip2(
+            DreamChoiceChip(
               label: 'Mono',
               selected: _family == 'mono',
               onTap: () => actions.setFontFamily('mono'),
@@ -1469,7 +1256,7 @@ class _TextParaTools extends StatelessWidget {
             runSpacing: 6,
             children: [
               for (final s in const [1.0, 1.15, 1.5, 2.0])
-                _ChoiceChip2(
+                DreamChoiceChip(
                   label: s == 1.0 ? '1.0' : s.toString(),
                   selected: (spacing - s).abs() < 0.001,
                   onTap: () => actions.setLineSpacing(s),
@@ -1507,12 +1294,12 @@ class _TextParaTools extends StatelessWidget {
             spacing: 8,
             runSpacing: 6,
             children: [
-              _ChoiceChip2(
+              DreamChoiceChip(
                 label: 'Shrink text on overflow',
                 selected: doc.autofit == 'shrink',
                 onTap: () => actions.setAutofit('shrink'),
               ),
-              _ChoiceChip2(
+              DreamChoiceChip(
                 label: 'No autofit',
                 selected: doc.autofit == 'none',
                 onTap: () => actions.setAutofit('none'),
@@ -1624,7 +1411,7 @@ class _GridStyleTools extends StatelessWidget {
     final stroke = (obj['stroke'] as Map?) ?? const {};
     return _PanelBody(
       children: [
-        _ColorChips(
+        DreamColorChips(
           label: 'GRID LINE COLOR',
           palette: palette,
           selected: (stroke['color'] ?? '17181A').toString(),
@@ -1656,21 +1443,21 @@ class _FrameTools extends StatelessWidget {
         const _PanelLabel('BORDER'),
         _PanelRow(
           children: [
-            _ChoiceChip2(
+            DreamChoiceChip(
               label: 'None',
               selected: width <= 0,
               onTap: () => onObjectStyle(
                   _styled(obj, stroke: {...stroke, 'width': 0.0})),
             ),
             const SizedBox(width: 8),
-            _ChoiceChip2(
+            DreamChoiceChip(
               label: 'Hairline',
               selected: width > 0 && width <= 2,
               onTap: () => onObjectStyle(
                   _styled(obj, stroke: {...stroke, 'width': 1.5})),
             ),
             const SizedBox(width: 8),
-            _ChoiceChip2(
+            DreamChoiceChip(
               label: 'Bold',
               selected: width > 2,
               onTap: () =>
@@ -1678,7 +1465,7 @@ class _FrameTools extends StatelessWidget {
             ),
           ],
         ),
-        _ColorChips(
+        DreamColorChips(
           label: 'BORDER COLOR',
           palette: palette,
           selected: (stroke['color'] ?? '17181A').toString(),
@@ -1707,7 +1494,7 @@ class _IconColorTools extends StatelessWidget {
     final fill = (obj['fill'] as Map?) ?? const {};
     return _PanelBody(
       children: [
-        _ColorChips(
+        DreamColorChips(
           label: 'ICON COLOR',
           palette: palette,
           selected: (fill['color'] ?? 'F5F5F7').toString(),
@@ -1810,13 +1597,13 @@ class _ShapeStyleTools extends StatelessWidget {
         const _PanelLabel('FILL'),
         _PanelRow(
           children: [
-            _ChoiceChip2(
+            DreamChoiceChip(
               label: 'None',
               selected: fillType == 'none',
               onTap: () => onObjectStyle(_styled(obj, fill: {'type': 'none'})),
             ),
             const SizedBox(width: 8),
-            _ChoiceChip2(
+            DreamChoiceChip(
               label: 'Solid',
               selected: fillType == 'solid',
               onTap: () => onObjectStyle(_styled(obj,
@@ -1825,7 +1612,7 @@ class _ShapeStyleTools extends StatelessWidget {
           ],
         ),
         if (fillType == 'solid')
-          _ColorChips(
+          DreamColorChips(
             label: 'FILL COLOR',
             palette: palette,
             selected: (fill['color'] ?? 'D03028').toString(),
@@ -1838,7 +1625,7 @@ class _ShapeStyleTools extends StatelessWidget {
             for (final w in const [0.0, 1.5, 4.0, 8.0])
               Padding(
                 padding: const EdgeInsets.only(right: 8),
-                child: _ChoiceChip2(
+                child: DreamChoiceChip(
                   label: w == 0.0
                       ? 'None'
                       : w.toStringAsFixed(w == 1.5 ? 1 : 0),
@@ -1851,7 +1638,7 @@ class _ShapeStyleTools extends StatelessWidget {
               ),
           ],
         ),
-        _ColorChips(
+        DreamColorChips(
           label: 'STROKE COLOR',
           palette: palette,
           selected: (stroke['color'] ?? '17181A').toString(),
@@ -1992,125 +1779,6 @@ class _PanelIconToggle extends StatelessWidget {
             child: Icon(icon, size: 19, color: active ? kPurple : kText2),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _ChoiceChip2 extends StatelessWidget {
-  const _ChoiceChip2({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: selected ? kPurpleWash : kElevated,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: BorderSide(color: selected ? kPurple : kHairline),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              color: selected ? kText : kText2,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ColorChips extends StatelessWidget {
-  const _ColorChips({
-    required this.label,
-    required this.palette,
-    required this.selected,
-    required this.onPick,
-  });
-
-  final String label;
-  final List<Color> palette;
-  final String? selected;
-  final void Function(String? hex) onPick;
-
-  static String _hexKey(Color c) =>
-      ((c.r * 255).round() << 16 |
-              (c.g * 255).round() << 8 |
-              (c.b * 255).round())
-          .toRadixString(16)
-          .padLeft(6, '0')
-          .toUpperCase();
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _PanelLabel(label),
-        Padding(
-          padding: const EdgeInsets.only(left: 2),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _clearChip(),
-              for (final c in palette)
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => onPick(_hexKey(c)),
-                  child: Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      color: c,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: selected == _hexKey(c) ? kMagenta : kHairline,
-                        width: selected == _hexKey(c) ? 2 : 1,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _clearChip() {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => onPick(null),
-      child: Container(
-        width: 28,
-        height: 28,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: selected == null ? kMagenta : kHairline,
-            width: selected == null ? 2 : 1,
-          ),
-        ),
-        child: const Icon(Icons.block, size: 14, color: kText3),
       ),
     );
   }

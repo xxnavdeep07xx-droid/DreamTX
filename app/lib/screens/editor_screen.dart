@@ -11,6 +11,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../core/aspects.dart';
 import '../core/bridge.dart';
+import '../core/color_utils.dart';
 import '../core/media_pickers.dart';
 import '../core/media_playback.dart';
 import '../core/object_content.dart';
@@ -18,6 +19,7 @@ import '../core/resources.dart';
 import '../core/store.dart';
 import '../theme.dart';
 import '../widgets/content_editor.dart';
+import '../widgets/controls.dart';
 import '../widgets/design_sheets.dart';
 import '../widgets/rich_doc.dart';
 import '../widgets/slide_stage.dart';
@@ -1343,14 +1345,12 @@ class _EditorScreenState extends State<EditorScreen>
             : 'No images in this deck\'s resources yet — import some from Files.');
         return;
       }
-      final choice = await showModalBottomSheet<Map<String, dynamic>>(
-        context: context,
-        isScrollControlled: true,
-        builder: (sheetContext) => SafeArea(
-          child: SizedBox(
-            height: MediaQuery.of(sheetContext).size.height * 0.55,
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
+      final choice = await dreamSheet<Map<String, dynamic>>(
+        context,
+        builder: (sheetContext) => SizedBox(
+          height: MediaQuery.of(sheetContext).size.height * 0.55,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
               children: [
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -1377,8 +1377,7 @@ class _EditorScreenState extends State<EditorScreen>
                         style: const TextStyle(fontSize: 11.5)),
                     onTap: () => Navigator.pop(sheetContext, e),
                   ),
-              ],
-            ),
+            ],
           ),
         ),
       );
@@ -1913,25 +1912,23 @@ class _EditorScreenState extends State<EditorScreen>
     final suggested = (r['next_suggested'] ?? '').toString();
     final archetypes =
         (meta['archetypes'] as List? ?? []).map((e) => e.toString()).toList();
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: ListView(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                'Add slide${suggested.isEmpty ? '' : ' — suggested next: $suggested'}',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
+    final choice = await dreamSheet<String>(
+      context,
+      builder: (context) => ListView(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              'Add slide${suggested.isEmpty ? '' : ' — suggested next: $suggested'}',
+              style: Theme.of(context).textTheme.titleMedium,
             ),
-            ...archetypes.map((a) => ListTile(
-                  leading: const Icon(Icons.dashboard_outlined),
-                  title: Text(a),
-                  onTap: () => Navigator.pop(context, a),
-                )),
-          ],
-        ),
+          ),
+          ...archetypes.map((a) => ListTile(
+                leading: const Icon(Icons.dashboard_outlined),
+                title: Text(a),
+                onTap: () => Navigator.pop(context, a),
+              )),
+        ],
       ),
     );
     if (choice == null) return;
@@ -2041,12 +2038,11 @@ class _EditorScreenState extends State<EditorScreen>
   /// Long-press menu for a filmstrip thumbnail.
   Future<void> _slideActions(int i) async {
     if (i < 0 || i >= _slides.length) return;
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          children: [
+    final action = await dreamSheet<String>(
+      context,
+      builder: (context) => ListView(
+        shrinkWrap: true,
+        children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
               child: Text('Slide ${i + 1} of ${_slides.length}',
@@ -2082,7 +2078,6 @@ class _EditorScreenState extends State<EditorScreen>
             ),
           ],
         ),
-      ),
     );
     switch (action) {
       case 'edit':
@@ -2136,15 +2131,14 @@ class _EditorScreenState extends State<EditorScreen>
   /// the engine composes the deck in that DNA. Either way the result is a
   /// new deck id under its own file, and the editor hands over to it.
   Future<void> _filesNewDeck() async {
-    final kind = await showModalBottomSheet<String>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
-          children: [
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 20),
-              child: Text('New deck',
+    final kind = await dreamSheet<String>(
+      context,
+      builder: (context) => ListView(
+        padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
+        children: [
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20),
+            child: Text('New deck',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
             ),
             ListTile(
@@ -2161,7 +2155,6 @@ class _EditorScreenState extends State<EditorScreen>
             ),
           ],
         ),
-      ),
     );
     if (kind == null) return;
 
@@ -2175,12 +2168,11 @@ class _EditorScreenState extends State<EditorScreen>
 
     var family = 'swiss_editorial';
     if (kind == 'template') {
-      final fam = await showModalBottomSheet<String>(
-        context: context,
-        builder: (context) => SafeArea(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
-            children: [
+      final fam = await dreamSheet<String>(
+        context,
+        builder: (context) => ListView(
+          padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
+          children: [
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 20),
                 child: Text('Design family',
@@ -2195,7 +2187,6 @@ class _EditorScreenState extends State<EditorScreen>
                 ),
             ],
           ),
-        ),
       );
       if (fam == null) return;
       family = fam;
@@ -2233,15 +2224,14 @@ class _EditorScreenState extends State<EditorScreen>
   /// Files (the platform document browser). The app opens DreamTX deck
   /// files (.json) — .pptx import is not supported and is not offered.
   Future<void> _filesOpenDeck() async {
-    final kind = await showModalBottomSheet<String>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
-          children: [
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 20),
-              child: Text('Open a deck',
+    final kind = await dreamSheet<String>(
+      context,
+      builder: (context) => ListView(
+        padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
+        children: [
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20),
+            child: Text('Open a deck',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
             ),
             ListTile(
@@ -2258,7 +2248,6 @@ class _EditorScreenState extends State<EditorScreen>
             ),
           ],
         ),
-      ),
     );
     if (kind == 'recents') {
       await _openRecentDeck();
@@ -2278,14 +2267,12 @@ class _EditorScreenState extends State<EditorScreen>
       return;
     }
     final currentId = _deck['id'].toString();
-    final choice = await showModalBottomSheet<Map<String, dynamic>>(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => SafeArea(
-        child: SizedBox(
-          height: MediaQuery.of(context).size.height * 0.6,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
+    final choice = await dreamSheet<Map<String, dynamic>>(
+      context,
+      builder: (context) => SizedBox(
+        height: MediaQuery.of(context).size.height * 0.6,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
             children: [
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 20),
@@ -2306,7 +2293,6 @@ class _EditorScreenState extends State<EditorScreen>
                   onTap: () => Navigator.pop(context, d),
                 ),
             ],
-          ),
         ),
       ),
     );
@@ -2373,18 +2359,17 @@ class _EditorScreenState extends State<EditorScreen>
         ((meta['aspects'] as List?) ?? const ['16:9', '16:10', '4:3', '1:1'])
             .map((e) => e.toString())
             .toList();
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Aspect ratio',
+    final choice = await dreamSheet<String>(
+      context,
+      builder: (context) => ListView(
+        padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Aspect ratio',
                       style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                   const SizedBox(height: 4),
                   Text('Current: $current · ${dimsLabel(current)}',
@@ -2405,7 +2390,6 @@ class _EditorScreenState extends State<EditorScreen>
               ),
           ],
         ),
-      ),
     );
     if (choice == null || choice == current) return;
 
@@ -3585,7 +3569,8 @@ class _EditorScreenState extends State<EditorScreen>
             for (final (id, label) in _designFamilies)
               Padding(
                 padding: const EdgeInsets.only(right: 6),
-                child: _DesignChip(
+                child: DreamChoiceChip(
+                    magenta: true,
                     label: label,
                     selected: id == current,
                     onTap: () => _applyDesign(id)),
@@ -3733,14 +3718,9 @@ class _EditorScreenState extends State<EditorScreen>
   // ---- comments & share -------------------------------------------------------
 
   Future<void> _showComments() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => Padding(
-        padding:
-            EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-        child: SafeArea(
-          child: StatefulBuilder(
+    await dreamSheet<void>(
+      context,
+      builder: (context) => StatefulBuilder(
             builder: (context, setSheet) => Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -3808,8 +3788,6 @@ class _EditorScreenState extends State<EditorScreen>
               ],
             ),
           ),
-        ),
-      ),
     );
   }
 
@@ -3820,10 +3798,9 @@ class _EditorScreenState extends State<EditorScreen>
   Future<void> _showShareSheet() => _export('export_pptx', verb: 'Share');
 
   Future<void> _showExportSheet() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Column(
+    await dreamSheet<void>(
+      context,
+      builder: (context) => Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
@@ -3864,7 +3841,6 @@ class _EditorScreenState extends State<EditorScreen>
               ),
             ),
           ],
-        ),
       ),
     );
   }
@@ -4630,47 +4606,6 @@ class _PresenterScreenState extends State<_PresenterScreen> {
   }
 }
 
-/// Compact capsule chip for a design family (Design tool row).
-class _DesignChip extends StatelessWidget {
-  const _DesignChip(
-      {required this.label, required this.selected, required this.onTap});
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          decoration: BoxDecoration(
-            color: selected ? kElevated : kBg,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-                color: selected ? kMagenta : kHairline,
-                width: selected ? 1.4 : 1),
-          ),
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              color: selected ? kText : kText2,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 // ---------------------------------------------------------------------------
 // The Insert drawer's session + toolbar state adapters

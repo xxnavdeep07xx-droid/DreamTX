@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import '../core/resources.dart';
 import '../core/saf_bridge.dart';
 import '../theme.dart';
+import '../widgets/dream_drawer.dart';
 
 /// The Files drawer — the Files tab's sheet, floating over the workspace
 /// as its own layer. The editor owns the layering; this widget owns the
@@ -102,7 +103,9 @@ class FilesDrawer extends StatelessWidget {
           // resizes the sheet (no arena contest with the list) and it is
           // still on screen at every height the sheet can ever be at —
           // the sheet's extent is floored above the header's own height.
-          _DrawerHandle(
+          DreamDrawerHeader(
+            title: 'Files',
+            dragKey: const ValueKey('files_drawer_handle'),
             onDragUpdate: onDragUpdate,
             onDragSettle: onDragSettle,
           ),
@@ -119,212 +122,52 @@ class FilesDrawer extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _FilesTile(
-                          icon: Icons.note_add,
-                          label: 'New',
-                          sub: 'Blank · Template',
-                          onTap: onNew,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _FilesTile(
-                          icon: Icons.folder_open,
-                          label: 'Open',
-                          sub: 'Recents · Browse',
-                          onTap: onOpen,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _FilesTile(
-                          icon: Icons.edit,
-                          label: 'Rename',
-                          onTap: onRename,
-                        ),
-                      ),
-                    ],
-                  ),
+                  DreamTileRow(tiles: [
+                    DreamToolTile(
+                      icon: Icons.note_add,
+                      label: 'New',
+                      sub: 'Blank · Template',
+                      onTap: onNew,
+                    ),
+                    DreamToolTile(
+                      icon: Icons.folder_open,
+                      label: 'Open',
+                      sub: 'Recents · Browse',
+                      onTap: onOpen,
+                    ),
+                    DreamToolTile(
+                      icon: Icons.edit,
+                      label: 'Rename',
+                      onTap: onRename,
+                    ),
+                  ]),
                   const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _FilesTile(
-                          icon: Icons.aspect_ratio,
-                          label: 'Aspect ratio',
-                          sub: aspect,
-                          onTap: onAspect,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _FilesTile(
-                          icon: Icons.inventory_2,
-                          label: 'Deck resources',
-                          sub: 'This deck only',
-                          onTap: () => showResourceLibrary(context,
-                              brand: false, deckId: deckId),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _FilesTile(
-                          icon: Icons.public,
-                          label: 'Brand resources',
-                          sub: 'All decks',
-                          onTap: () => showResourceLibrary(context, brand: true),
-                        ),
-                      ),
-                    ],
-                  ),
+                  DreamTileRow(tiles: [
+                    DreamToolTile(
+                      icon: Icons.aspect_ratio,
+                      label: 'Aspect ratio',
+                      sub: aspect,
+                      onTap: onAspect,
+                    ),
+                    DreamToolTile(
+                      icon: Icons.inventory_2,
+                      label: 'Deck resources',
+                      sub: 'This deck only',
+                      onTap: () => showResourceLibrary(context,
+                          brand: false, deckId: deckId),
+                    ),
+                    DreamToolTile(
+                      icon: Icons.public,
+                      label: 'Brand resources',
+                      sub: 'All decks',
+                      onTap: () => showResourceLibrary(context, brand: true),
+                    ),
+                  ]),
                 ],
               ),
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// The drawer's header: the grab handle pill under the centered "Files"
-/// heading, with the whole header as the sheet's drag surface. A drag up
-/// or down streams its deltas to the editor (which resizes the sheet
-/// between detents); how it settles — snap to a detent, or dismiss on a
-/// downward fling / deep drag — is the editor's call, from the settle
-/// velocity it receives here.
-class _DrawerHandle extends StatelessWidget {
-  const _DrawerHandle({this.onDragUpdate, this.onDragSettle});
-
-  final void Function(double dy)? onDragUpdate;
-  final void Function(double velocityDy)? onDragSettle;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      key: const ValueKey('files_drawer_handle'),
-      // Opaque: the pill AND the heading are the drag surface, and the
-      // header eats its own taps — a touch there is a gesture, not a
-      // button press into whatever the sheet is floating over.
-      behavior: HitTestBehavior.opaque,
-      onVerticalDragUpdate: (d) => onDragUpdate?.call(d.delta.dy),
-      onVerticalDragEnd: (d) =>
-          onDragSettle?.call(d.velocity.pixelsPerSecond.dy),
-      child: SizedBox(
-        width: double.infinity,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 7, 16, 5),
-          child: Column(
-            children: [
-              Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  // The affordance: one shade clearer than a hairline so
-                  // the pill reads as a handle, never as decoration.
-                  color: kText3,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'Files',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: kText,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// One tool tile: an elevated card — a deliberate step above the drawer's
-/// own surface, hairline edge — with the icon in a washed-purple chip,
-/// the label under it (wrapping, never shrinking), and the optional
-/// supporting label under that. Equal footprint with its siblings; the
-/// Expanded parents keep the three columns equal at every screen size.
-class _FilesTile extends StatelessWidget {
-  const _FilesTile({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.sub,
-  });
-
-  final IconData icon;
-  final String label;
-  final String? sub;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      // The card: kElevated over the drawer's kSurface, so the grid reads
-      // as raised controls rather than more of the panel behind it. The
-      // Material (not a decorated Container) carries the ink — the press
-      // ripple lands ON the elevated fill instead of hiding under it.
-      color: kElevated,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(color: kHairline),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: SizedBox(
-          // Fixed height keeps both rows' tiles equal; two label lines
-          // ("Aspect ratio", "Deck resources") fit with the chip on board.
-          height: 112,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  // The signature color, quiet: the glyph sits in its own
-                  // washed-purple field — highlighted without borrowing the
-                  // gradient the app reserves for create-moments.
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: kPurpleWash,
-                    borderRadius: BorderRadius.circular(9),
-                  ),
-                  child: Icon(icon, size: 19, color: kPurple),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  label,
-                  maxLines: 2,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: kText,
-                    height: 1.15,
-                  ),
-                ),
-                if (sub != null) ...[
-                  const SizedBox(height: 3),
-                  Text(
-                    sub!,
-                    maxLines: 1,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 10, color: kText3),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }

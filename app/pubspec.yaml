@@ -26,7 +26,6 @@ dependencies:
   # Browse and the resource libraries' Add-asset flows.
   file_picker: 13.4.0
   share_plus: ^13.3.1
-  cupertino_icons: ^1.0.8
   image_picker: ^1.2.4
 
 dev_dependencies:

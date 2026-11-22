@@ -108,7 +108,11 @@ jobs:
           cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 \
             -o ../app/android/app/src/main/jniLibs build --release
 
-      # ---- Release signing (keystore from repo secrets) -------------------
+      # ---- Release signing + R8 (keystore from repo secrets) ------------------
+      # The same patch wires BOTH: the keystore config (secrets) and
+      # minifyEnabled + shrinkResources with the proguard keep rules that
+      # pin MainActivity's dreamtx/saf + dreamtx/media channels, the
+      # Flutter embedding and the reflected plugin classes.
       - name: Decode release keystore + wire signing config
         env:
           KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -120,25 +124,49 @@ jobs:
             echo "::notice::ANDROID_KEYSTORE_BASE64 secret not set; APK will be debug-signed."
           fi
 
-      # ---- Build APK ----------------------------------------------------------
-      - name: Flutter build apk
+      # ---- Build per-ABI APKs -------------------------------------------------
+      - name: Flutter build apk (per-ABI, obfuscated)
         working-directory: app
-        run: flutter build apk --release
+        # One APK per ABI instead of one universal APK carrying all three
+        # full copies of Flutter + the Rust engine: arm64-v8a, armeabi-v7a
+        # and x86_64 each ship ONLY their own native slice — a ~60-65%
+        # smaller download per device, zero feature loss. Dart is also
+        # obfuscated (symbols in build/debug-info, kept as a CI artifact
+        # for symbolizing release stack traces).
+        run: |
+          flutter build apk --release --split-per-abi \
+            --obfuscate --split-debug-info=build/debug-info
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
-      - name: Upload artifact
+      - name: Report APK sizes
+        working-directory: app
+        run: |
+          SUMMARY="$GITHUB_STEP_SUMMARY"
+          echo '### APK sizes (per ABI)' >> "$SUMMARY"
+          for f in build/app/outputs/flutter-apk/*.apk; do
+            mb=$(du -m "$f" | cut -f1)
+            echo "- $(basename "$f"): ${mb} MB" >> "$SUMMARY"
+            echo "$(basename "$f"): ${mb} MB"
+          done
+
+      - name: Upload artifacts (all ABIs + debug info)
         uses: actions/upload-artifact@v4
         with:
           name: dreamtx-apk
-          path: app/build/app/outputs/flutter-apk/app-release.apk
+          path: |
+            app/build/app/outputs/flutter-apk/app-*-release.apk
+            app/build/debug-info/
 
       # ---- Release (tag pushes only) ----------------------------------------
-      - name: Attach APK to GitHub Release
+      - name: Attach every ABI APK to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/app/outputs/flutter-apk/app-release.apk
+          files: |
+            app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            app/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            app/build/app/outputs/flutter-apk/app-x86_64-release.apk
           generate_release_notes: true

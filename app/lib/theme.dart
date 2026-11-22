@@ -31,7 +31,8 @@ const LinearGradient kInkGradient = LinearGradient(
 );
 
 /// The studio's standard color swatches — the universal row that follows
-/// the deck's own colors in every palette (toolbar + panels).
+/// the deck's own colors in every palette (toolbar + panels + the style
+/// inspector: the inspector's old separate 10-hex list merged in here).
 const List<Color> kSwatchPalette = [
   Color(0xFFF5F5F7), // white
   Color(0xFF17181A), // ink
@@ -43,6 +44,18 @@ const List<Color> kSwatchPalette = [
   Color(0xFFFF7847), // orange
   Color(0xFFE1306C), // magenta
   Color(0xFF8D8D8D), // gray
+  Color(0xFFF7F6F3), // paper (the inspector's old swatch)
+  Color(0xFFFFFFFF), // pure white (the inspector's old swatch)
+  Color(0xFFD03028), // DNA accent red (the inspector's old swatch)
+];
+
+/// The SAME palette in the engine's RRGGBB string form — [hexKeyOf] of
+/// every entry above, in order. String-typed consumers (the style
+/// inspector's hex fields) read this; a unit test pins the two lists
+/// together so they can never drift.
+const List<String> kSwatchHexes = [
+  'F5F5F7', '17181A', 'FF3B30', '8A3FFC', '0F62FE', '42BE65', 'FFD400',
+  'FF7847', 'E1306C', '8D8D8D', 'F7F6F3', 'FFFFFF', 'D03028',
 ];
 
 /// A text box's default design-space body size — "back to the slide
@@ -251,6 +264,37 @@ OutlineInputBorder _inputBorder(Color color, [double width = 1]) => OutlineInput
       borderSide: BorderSide(color: color, width: width),
     );
 
+// ---- the shared modal bottom sheet ---------------------------------------------
+
+/// The ONE modal bottom-sheet wrapper for the app's sheets (comments,
+/// export, pickers, libraries, the pair sheet…): `showModalBottomSheet`
+/// with the studio chrome pinned — scroll-controlled, SafeArea'd by the
+/// sheet itself (callers stop hand-wrapping), and padded above the
+/// keyboard by the REAL viewInsets so a text field in a sheet is never
+/// covered. The themed kSurface + rounded top corners + hairline edge
+/// come along from [buildDreamTheme]'s bottomSheetTheme.
+///
+/// Sheets that manage their own inset-sensitive layout (the inspector's
+/// constrained column) still can: [builder] receives the sheet's own
+/// context, and the padding is additive, not exclusive.
+Future<T?> dreamSheet<T>(
+  BuildContext context, {
+  required Widget Function(BuildContext sheetContext) builder,
+  bool isScrollControlled = true,
+}) {
+  return showModalBottomSheet<T>(
+    context: context,
+    isScrollControlled: isScrollControlled,
+    useSafeArea: true,
+    backgroundColor: kSurface,
+    builder: (sheetContext) => Padding(
+      padding: EdgeInsets.only(
+          bottom: MediaQuery.of(sheetContext).viewInsets.bottom),
+      child: builder(sheetContext),
+    ),
+  );
+}
+
 // ---- keyboard-stable screen wrapper -------------------------------------------
 
 /// Keeps a screen's layout laid out at its steady (keyboard-free) metrics for
@@ -280,10 +324,24 @@ OutlineInputBorder _inputBorder(Color color, [double width = 1]) => OutlineInput
 /// Overlay OUTSIDE the wrapped subtree, so they still see the real viewport
 /// and real viewInsets — sheets that pad themselves above the keyboard keep
 /// working untouched.
+///
+/// [scope] picks what stays steady:
+///  * [KeyboardStableScope.layout] (the screen-level default) — the whole
+///    layout: steady SIZE, steady padding AND zeroed viewInsets for the
+///    session, in both inset-delivery and window-resize mode;
+///  * [KeyboardStableScope.paddingOnly] — the app-root wrapper below the
+///    MaterialApp: freezes only the PADDING (the transient system-bar
+///    churn around a keyboard reveal/hide), passes the size and viewInsets
+///    through so routes and dialogs keep tracking the real keyboard.
+///    (This used to be main.dart's own `_KeyboardStablePadding` — one
+///    widget, two honest scopes, instead of two near-copies.)
+enum KeyboardStableScope { layout, paddingOnly }
+
 class KeyboardStableMetrics extends StatefulWidget {
-  const KeyboardStableMetrics({super.key, required this.child});
+  const KeyboardStableMetrics({super.key, required this.child, this.scope});
 
   final Widget child;
+  final KeyboardStableScope? scope;
 
   @override
   State<KeyboardStableMetrics> createState() => _KeyboardStableMetricsState();
@@ -298,6 +356,9 @@ class _KeyboardStableMetricsState extends State<KeyboardStableMetrics> {
   Timer? _holdTimer;
 
   static const _holdAfterClose = Duration(milliseconds: 900);
+
+  KeyboardStableScope get _scope =>
+      widget.scope ?? KeyboardStableScope.layout;
 
   @override
   void dispose() {
@@ -360,6 +421,12 @@ class _KeyboardStableMetricsState extends State<KeyboardStableMetrics> {
   }
 
   Widget _frozen(MediaQueryData mq) {
+    if (_scope == KeyboardStableScope.paddingOnly) {
+      // The app root: only the padding freezes (transient system-bar churn
+      // around keyboard sessions); the size and the REAL viewInsets pass
+      // through — routes and dialogs keep tracking the keyboard.
+      return MediaQuery(data: mq.copyWith(padding: _stablePadding), child: widget.child);
+    }
     return MediaQuery(
       data: mq.copyWith(
         size: _steadySize ?? mq.size,

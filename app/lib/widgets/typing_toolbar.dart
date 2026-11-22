@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'controls.dart';
 import '../theme.dart';
 
 /// The horizontally scrollable toolbar shown directly ABOVE the keyboard
@@ -269,79 +270,26 @@ class _PaletteRow extends StatelessWidget {
               ),
             ),
             Expanded(
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                children: [
-                  _Chip(
-                    icon: Icons.block,
-                    tooltip: docState.colorChipsOpen ? 'No color' : 'No highlight',
-                    onTap: () =>
-                        docState.colorChipsOpen ? onColor(null) : onHighlight(null),
-                  ),
-                  for (final c in palette)
-                    _Chip(
-                      color: c,
-                      selected: docState.colorChipsOpen
-                          ? docState.color == _hexKey(c)
-                          : docState.highlight == _hexKey(c),
-                      onTap: () => docState.colorChipsOpen
-                          ? onColor(_hexKey(c))
-                          : onHighlight(_hexKey(c)),
-                    ),
-                ],
+              // The SAME color chip row the panels use (one implementation;
+              // horizontal above the keyboard, 30px chips as always).
+              child: DreamColorChips(
+                palette: palette,
+                selected: docState.colorChipsOpen
+                    ? docState.color
+                    : docState.highlight,
+                onPick: (hex) => docState.colorChipsOpen
+                    ? onColor(hex)
+                    : onHighlight(hex),
+                horizontal: true,
+                chipSize: 30,
+                noneTooltip:
+                    docState.colorChipsOpen ? 'No color' : 'No highlight',
               ),
             ),
           ],
         ),
       ),
     );
-  }
-}
-
-String _hexKey(Color c) =>
-    ((c.r * 255).round() << 16 |
-            (c.g * 255).round() << 8 |
-            (c.b * 255).round())
-        .toRadixString(16)
-        .padLeft(6, '0')
-        .toUpperCase();
-
-class _Chip extends StatelessWidget {
-  const _Chip({this.color, this.icon, this.selected = false, required this.onTap, this.tooltip});
-
-  final Color? color;
-  final IconData? icon;
-  final bool selected;
-  final VoidCallback onTap;
-  final String? tooltip;
-
-  @override
-  Widget build(BuildContext context) {
-    final child = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Container(
-          width: 30,
-          height: 30,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: selected ? kMagenta : kHairline,
-              width: selected ? 2 : 1,
-            ),
-          ),
-          child: color == null
-              ? Icon(icon, size: 16, color: kText2)
-              : null,
-        ),
-      ),
-    );
-    if (tooltip == null) return child;
-    return Tooltip(message: tooltip!, child: child);
   }
 }
 

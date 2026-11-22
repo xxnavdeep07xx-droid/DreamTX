@@ -3,6 +3,7 @@ import 'dart:ui' show PathMetric;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../core/color_utils.dart';
 import '../core/object_content.dart';
 
 /// Interactive vector overlay layer: paints every object (fills, gradients,
@@ -790,10 +791,10 @@ List<double> dashPattern(String dash, double w) {
   }
 }
 
-/// RRGGBB hex + alpha -> a Flutter color.
+/// RRGGBB hex + alpha -> a Flutter color (the shared converter carries
+/// the RRGGBB part).
 Color shapeColor(String hex, double alpha) =>
-    Color(0xFF000000 | (int.tryParse(hex.replaceFirst('#', ''), radix: 16) ?? 0))
-        .withValues(alpha: alpha.clamp(0.0, 1.0));
+    hexToColor(hex).withValues(alpha: alpha.clamp(0.0, 1.0));
 
 class _Tangent {
   _Tangent(this.pos, this.dir);

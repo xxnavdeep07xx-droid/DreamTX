@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../core/color_utils.dart';
+
 /// The rich text model for a text-box object — the Dart mirror of the
 /// engine's `TextDoc` JSON. One data structure serves three consumers:
 ///
@@ -947,18 +949,3 @@ String? _familyValue(String? f) {
   return null;
 }
 
-/// RRGGBB (or RRGGBBAA) hex to a Flutter color.
-Color hexToColor(String hex) {
-  final v = int.tryParse(hex.replaceFirst('#', ''), radix: 16) ?? 0;
-  final r = (v >> 16) & 0xFF, g = (v >> 8) & 0xFF, b = v & 0xFF;
-  return Color(0xFF000000 | (r << 16) | (g << 8) | b);
-}
-
-/// RRGGBB to the engine's string form (no '#').
-String colorToHex(Color c) =>
-    ((c.r * 255).round() << 16 |
-            (c.g * 255).round() << 8 |
-            (c.b * 255).round())
-        .toRadixString(16)
-        .padLeft(6, '0')
-        .toUpperCase();
