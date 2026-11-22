@@ -16,6 +16,7 @@ use crate::pacing;
 use crate::shapes;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
@@ -148,10 +149,53 @@ pub enum Command {
     },
     ExportPptx {
         deck: Deck,
+        /// Resolved image assets for image/media objects: resource id →
+        /// bytes + format (+ decoded RGBA for the PDF path). Optional and
+        /// additive — old callers keep working, missing assets render as
+        /// clean placeholders.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        images: Option<BTreeMap<String, ExportImagePayload>>,
     },
     ExportPdf {
         deck: Deck,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        images: Option<BTreeMap<String, ExportImagePayload>>,
     },
+}
+
+/// One image asset handed to an exporter over the JSON protocol.
+///
+/// `bytes` is the ORIGINAL encoded image (base64) — embedded verbatim into
+/// `ppt/media/*` by the PPTX exporter; `rgba` (base64 raw RGBA8,
+/// width×height×4, optional) feeds the PDF exporter's FlateDecode path —
+/// send it for the PDF request only, to keep payloads lean.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportImagePayload {
+    /// "png" | "jpeg" | "gif"
+    #[serde(alias = "ext")]
+    pub format: String,
+    pub width: u32,
+    pub height: u32,
+    pub bytes: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rgba: Option<String>,
+}
+
+impl ExportImagePayload {
+    fn resolve(&self) -> Option<crate::export::ExportImage> {
+        let bytes = b64_decode(&self.bytes)?;
+        let rgba = match &self.rgba {
+            Some(r) => Some(b64_decode(r)?),
+            None => None,
+        };
+        Some(crate::export::ExportImage {
+            format: self.format.clone(),
+            width: self.width,
+            height: self.height,
+            bytes,
+            rgba,
+        })
+    }
 }
 
 fn default_family() -> String {
@@ -181,6 +225,73 @@ fn parse_archetype(s: &str) -> Option<Archetype> {
         "blank" => Some(Archetype::Blank),
         _ => None,
     }
+}
+
+/// Decode the protocol payloads into exporter assets. A bad payload entry
+/// is dropped (its object renders a placeholder) — one bad asset never
+/// fails a whole export.
+fn resolve_images(
+    images: Option<BTreeMap<String, ExportImagePayload>>,
+) -> crate::export::ExportImages {
+    let mut out = crate::export::ExportImages::new();
+    for (id, payload) in images.into_iter().flatten() {
+        if let Some(asset) = payload.resolve() {
+            out.insert(id, asset);
+        }
+    }
+    out
+}
+
+/// The decoder matching [b64]: standard alphabet, padding tolerated (and
+/// required to be correct). Malformed input returns None — the caller drops
+/// the asset and renders a placeholder.
+fn b64_decode(s: &str) -> Option<Vec<u8>> {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    fn val(c: u8) -> Option<u32> {
+        if c.is_ascii_uppercase() {
+            Some((c - b'A') as u32)
+        } else if c.is_ascii_lowercase() {
+            Some((c - b'a') as u32 + 26)
+        } else if c.is_ascii_digit() {
+            Some((c - b'0') as u32 + 52)
+        } else if c == b'+' {
+            Some(62)
+        } else if c == b'/' {
+            Some(63)
+        } else {
+            None
+        }
+    }
+    let _ = T;
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len() / 4 * 3);
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let rest = &bytes[i..];
+        let pad = rest.iter().filter(|&&c| c == b'=').count();
+        if pad > 2 || rest.len() < 4 {
+            // The final quantum may be 4 with padding; anything else is
+            // malformed (also rejects embedded whitespace/newlines).
+            if rest.is_empty() {
+                break;
+            }
+            return None;
+        }
+        let a = val(rest[0])?;
+        let b = val(rest[1])?;
+        let c = if rest[2] == b'=' { 0 } else { val(rest[2])? };
+        let d = if rest[3] == b'=' { 0 } else { val(rest[3])? };
+        let n = (a << 18) | (b << 12) | (c << 6) | d;
+        out.push((n >> 16) as u8);
+        if rest[2] != b'=' {
+            out.push((n >> 8) as u8);
+        }
+        if rest[3] != b'=' {
+            out.push(n as u8);
+        }
+        i += 4;
+    }
+    Some(out)
 }
 
 fn b64(data: &[u8]) -> String {
@@ -749,12 +860,14 @@ pub fn execute(req: &str) -> Value {
             json!({ "ok": true, "layout": layout_slide(&deck, slide) })
         }
         Command::Pacing { deck } => json!({ "ok": true, "issues": pacing::audit(&deck), "next_suggested": pacing::suggest_next(&deck) }),
-        Command::ExportPptx { deck } => {
-            let bytes = to_pptx(&deck);
+        Command::ExportPptx { deck, images } => {
+            let assets = resolve_images(images);
+            let bytes = to_pptx(&deck, &assets);
             json!({ "ok": true, "mime": "application/vnd.openxmlformats-officedocument.presentationml.presentation", "base64": b64(&bytes), "size": bytes.len() })
         }
-        Command::ExportPdf { deck } => {
-            let bytes = to_pdf(&deck);
+        Command::ExportPdf { deck, images } => {
+            let assets = resolve_images(images);
+            let bytes = to_pdf(&deck, &assets);
             json!({ "ok": true, "mime": "application/pdf", "base64": b64(&bytes), "size": bytes.len() })
         }
     }
@@ -896,5 +1009,97 @@ mod tests {
             r["aspects"].as_array().map(|a| a.len()),
             Some(ASPECTS.len())
         );
+    }
+
+    #[test]
+    fn export_commands_embed_images_and_content_over_the_protocol() {
+        // One deck, one slide: a text object + an image object. The export
+        // request carries the resolved image bytes (base64) — the exported
+        // .pptx must contain the media part, the text, and the relationship.
+        let mut deck = deck_with_object();
+        let mut slide = std::mem::take(&mut deck.slides[0].objects);
+        let text_obj = Shape {
+            id: "txt".into(),
+            preset: "rectangle".into(),
+            x: 100.0, y: 100.0, w: 400.0, h: 120.0,
+            rotation: 0.0, opacity: 1.0, locked: false,
+            group: None, component: None,
+            fill: Fill::None, stroke: Stroke::default(), effects: Effects::default(),
+            points: None, holes: None, closed: true,
+            content: Some(ObjectContent::Text {
+                doc: TextDoc {
+                    text: "Exported words".into(),
+                    ..Default::default()
+                },
+            }),
+        };
+        let png = crate::export::tests_support::tiny_png();
+        let img_obj = Shape {
+            id: "img".into(),
+            preset: "rectangle".into(),
+            x: 600.0, y: 100.0, w: 200.0, h: 100.0,
+            rotation: 0.0, opacity: 1.0, locked: false,
+            group: None, component: None,
+            fill: Fill::None, stroke: Stroke::default(), effects: Effects::default(),
+            points: None, holes: None, closed: true,
+            content: Some(ObjectContent::Image {
+                resource_id: "res1".into(),
+                brand: false,
+                name: Some("tiny.png".into()),
+            }),
+        };
+        slide.push(text_obj);
+        slide.push(img_obj);
+        deck.slides[0].objects = slide;
+
+        let payload = json!({
+            "op": "export_pptx",
+            "deck": deck,
+            "images": {
+                "res1": {
+                    "format": "png",
+                    "width": 1,
+                    "height": 1,
+                    "bytes": b64(&png),
+                }
+            }
+        });
+        let r = execute(&payload.to_string());
+        assert_eq!(r["ok"], true, "export failed: {}", r["error"]);
+        let bytes = b64_decode(r["base64"].as_str().unwrap()).unwrap();
+        // The pptx is a zip carrying the media part and the slide XML.
+        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+        let has_media = zip.file_names().any(|n| n.starts_with("ppt/media/"));
+        assert!(has_media, "media part missing");
+        let mut xml = String::new();
+        use std::io::Read as _;
+        zip.by_name("ppt/slides/slide1.xml").unwrap().read_to_string(&mut xml).unwrap();
+        assert!(xml.contains("Exported words"), "text object missing");
+        assert!(xml.contains("<p:pic>"), "picture missing");
+
+        // Old callers (no images field) keep working: the image object
+        // exports a clean placeholder instead of failing.
+        let r_old = execute(&json!({
+            "op": "export_pdf",
+            "deck": deck,
+        }).to_string());
+        assert_eq!(r_old["ok"], true, "old-shape export failed: {}", r_old["error"]);
+        let pdf = b64_decode(r_old["base64"].as_str().unwrap()).unwrap();
+        let s = String::from_utf8_lossy(&pdf);
+        assert!(s.starts_with("%PDF-1.4"));
+        assert!(s.contains("(Exportedwords) Tj") || s.contains("Exported"), "text missing");
+    }
+
+    #[test]
+    fn b64_roundtrip() {
+        for data in [&b""[..], b"a", b"ab", b"abc", b"abcd", &[0u8, 255, 7, 33]] {
+            let enc = b64(data);
+            let dec = b64_decode(&enc).unwrap();
+            assert_eq!(dec, data, "roundtrip failed for {:?}", data);
+        }
+        // Malformed input is rejected, not silently mangled.
+        assert!(b64_decode("!!!!").is_none());
+        assert!(b64_decode("abc").is_none());
+        assert!(b64_decode("AAAAA").is_none());
     }
 }

@@ -2,7 +2,26 @@
 resolver = "2"
 members = ["crates/deck-core"]
 
+# Size-first release profile: the core ships inside the app's three .so
+# ABIs (and the worker's wasm), where every kilobyte is multiplied. The
+# font-metrics table swap removed the 2.16 MB of embedded DejaVu TTFs;
+# these switches take the rest of the slack out of the code itself:
+#  - opt-level "z": optimize for size, not speed (the layout solver and
+#    exporters are memory/alloc-bound, not tight-loop-bound);
+#  - lto + codegen-units 1: whole-program optimization, no per-CGU
+#    duplication across crate boundaries;
+#  - panic "abort": no unwinding machinery or landing pads in the .so;
+#  - strip: no symbol tables.
+# `cargo test` runs the dev/test profiles and is unaffected.
+#
+# The wasm32 build (the Worker's engine) reads this profile too: wasm-pack's
+# `wasm-opt` post-pass cannot validate fully-stripped modules (binaryen
+# chokes on the stripped output — see wasm-pack#``), so wasm-opt is disabled
+# for the wasm-pack release profile in deck-core's Cargo.toml instead: the
+# shipped wasm is wasm-ld's own output, spec-valid by construction.
 [profile.release]
-opt-level = "s"
+opt-level = "z"
 lto = true
 codegen-units = 1
+panic = "abort"
+strip = true

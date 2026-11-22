@@ -1,10 +1,21 @@
 //! Minimal PDF 1.4 writer. v0.1 is Latin-first: text maps to base-14 fonts
 //! (Helvetica/Times) in WinAnsi; non-Latin-1 chars are transliterated or
 //! dropped (M2 ships embedded subset fonts + full Unicode).
+//!
+//! Objects that carry `content` (text boxes, images, icons, media, tables)
+//! render as real content in `slide.objects` Z-order: rich text boxes with
+//! runs/paragraph styles, images embedded as FlateDecode (or DCTDecode
+//! passthrough for JPEG) XObjects with alpha as an SMask, tables as grid +
+//! cell text, icons and media as clean cards. A missing image asset falls
+//! back to a clean placeholder box.
 
 use crate::command::object_polygon;
-use crate::model::{Deck, Fill, Shape, SLIDE_H, SLIDE_W, deck_dims};
+use crate::export::{ExportImage, doc_paragraphs, para_anchor_at, run_pieces, utf16_slice};
+use crate::model::{Deck, Fill, ObjectContent, Shape, TextDoc, SLIDE_H, SLIDE_W, deck_dims};
 use crate::layout::{layout_slide, Element};
+use crate::fonts;
+use std::collections::BTreeMap;
+use std::io::Write as _;
 
 /// Classic 16:9 page for crispness in viewers; everything in points. The
 /// design→page scale is uniform (KY) in every aspect, so the page WIDTH is
@@ -13,6 +24,12 @@ const PW: f64 = 960.0;
 const PH: f64 = 540.0;
 const KX: f64 = PW / SLIDE_W;
 const KY: f64 = PH / SLIDE_H;
+
+/// The app's text-box base size (kTextBoxBaseSize) — the export default.
+const BASE_FONT_PX: f64 = 32.0;
+/// The text box painter's design-space insets.
+const BOX_PAD_X: f64 = 14.0;
+const BOX_PAD_Y: f64 = 10.0;
 
 /// Map a char to a WinAnsi-representable equivalent. Returns '?' when hopeless.
 fn latinize(c: char) -> char {
@@ -263,7 +280,7 @@ fn object_pdf(o: &Shape, alphas: &mut Vec<(f64, String)>) -> String {
                 let (ax, ay) = (th.cos(), th.sin());
                 let (px_, py_) = (-ay, ax);
                 let l = o.w.abs() * ax.abs() + o.h.abs() * ay.abs();
-                let m = (o.w + o.h);
+                let m = o.w + o.h;
                 let n = 24;
                 ops.push_str(&format!("\nq {} W n", path_ops(&poly, true)));
                 for i in 0..n {
@@ -372,13 +389,484 @@ fn object_pdf(o: &Shape, alphas: &mut Vec<(f64, String)>) -> String {
     ops
 }
 
-/// Render deck to PDF bytes.
-pub fn to_pdf(deck: &Deck) -> Vec<u8> {
+// ---------------------------------------------------------------------------
+// ObjectContent rendering
+// ---------------------------------------------------------------------------
+
+struct TextDraw {
+    /// plain text (WinAnsi-safe)
+    text: String,
+    size: f64,     // page-space font size
+    color: String, // RRGGBB
+    bold: bool,
+    serif: bool,
+    /// design-space dx from the line's start (for drawing + advancing)
+    dx: f64,
+    /// design-space advance width
+    dw: f64,
+    highlight: Option<String>,
+}
+
+/// Greedy word-wrap of one paragraph with per-run sizes, returning lines of
+/// positioned draw pieces. Lines break at spaces (and hard-break tokens
+/// wider than the box); the pieces carry their own run styling.
+fn layout_text_paragraph(
+    doc: &TextDoc,
+    from: u32,
+    to: u32,
+    inner_w: f64,
+    indent_w: f64,
+    base_fg: &str,
+) -> Vec<Vec<TextDraw>> {
+    let mut lines: Vec<Vec<TextDraw>> = vec![Vec::new()];
+    let mut line_w = 0.0;
+    let avail = (inner_w - indent_w).max(1.0);
+    for piece in run_pieces(doc, from, to) {
+        let text = utf16_slice(&doc.text, piece.start, piece.end);
+        let run = piece.run;
+        let size = run.and_then(|r| r.font_size).unwrap_or(BASE_FONT_PX);
+        let bold = run.and_then(|r| r.bold).unwrap_or(false);
+        let serif = run.and_then(|r| r.font_family.as_deref()) == Some("serif");
+        let color = run
+            .and_then(|r| r.color.clone())
+            .unwrap_or_else(|| base_fg.to_string());
+        let highlight = run.and_then(|r| r.highlight.clone());
+        // wrap piece text into words at this piece's own size
+        let wrapped = fonts::wrap(&text, avail, size, serif, bold);
+        let mut first = true;
+        for wtext in wrapped {
+            if !first {
+                lines.push(Vec::new());
+                line_w = 0.0;
+            }
+            first = false;
+            let dw = fonts::measure(&wtext, size, serif, bold);
+            let line_empty = lines.last().map(|l| l.is_empty()).unwrap_or(true);
+            if line_w + dw > avail && !line_empty {
+                lines.push(Vec::new());
+                line_w = 0.0;
+            }
+            lines.last_mut().unwrap().push(TextDraw {
+                text: wtext,
+                size: size * KX,
+                color: color.clone(),
+                bold,
+                serif,
+                dx: line_w,
+                dw,
+                highlight: highlight.clone(),
+            });
+            line_w += dw;
+        }
+    }
+    lines
+}
+
+/// Rich text box object → PDF ops (runs styled individually, paragraphs
+/// aligned, bulleted, vertically aligned, autofit-shrunk).
+fn text_object_pdf(o: &Shape, doc: &TextDoc, base_fg: &str) -> String {
+    let mut ops = String::new();
+    let inner_w = (o.w - BOX_PAD_X * 2.0).max(1.0);
+    let inner_h = (o.h - BOX_PAD_Y * 2.0).max(1.0);
+
+    // Layout all paragraphs at natural size.
+    struct Para {
+        lines: Vec<Vec<TextDraw>>,
+        align: String,
+        indent: f64,
+        prefix: String,
+        prefix_w: f64,
+        line_spacing: f64,
+    }
+    let mut paras: Vec<Para> = Vec::new();
+    let mut number_seq = 0u32;
+    for (ps, pe) in doc_paragraphs(doc) {
+        let anchor = para_anchor_at(doc, ps);
+        let align = match anchor.and_then(|p| p.align) {
+            Some(crate::model::TextAlign::Center) => "center",
+            Some(crate::model::TextAlign::Right) => "right",
+            Some(crate::model::TextAlign::Justify) => "justify",
+            _ => "left",
+        }.to_string();
+        let list_kind = anchor.and_then(|p| p.list).unwrap_or(crate::model::ListKind::None);
+        let indent = anchor.and_then(|p| p.indent).unwrap_or(0) as f64 * 36.0;
+        let line_spacing = anchor.and_then(|p| p.line_spacing).unwrap_or(1.15);
+        let mut number = 0;
+        if list_kind == crate::model::ListKind::Number {
+            number_seq += 1;
+            number = number_seq;
+        } else {
+            number_seq = 0;
+        }
+        let prefix = match list_kind {
+            crate::model::ListKind::Bullet => "-  ".to_string(),
+            crate::model::ListKind::Number => format!("{number}.  "),
+            crate::model::ListKind::None => String::new(),
+        };
+        let prefix_w = if prefix.is_empty() { 0.0 } else { fonts::measure(&prefix, BASE_FONT_PX, false, false) };
+        paras.push(Para {
+            lines: layout_text_paragraph(doc, ps, pe, inner_w, indent, base_fg),
+            align,
+            indent,
+            prefix,
+            prefix_w,
+            line_spacing,
+        });
+    }
+
+    // Autofit shrink.
+    let mut total = 0.0;
+    for p in &paras {
+        total += p.lines.len() as f64 * BASE_FONT_PX * 1.28 * p.line_spacing;
+    }
+    let k = if doc.autofit == crate::model::Autofit::Shrink && total > inner_h && total > 0.0 {
+        (inner_h / total).clamp(0.05, 1.0)
+    } else {
+        1.0
+    };
+
+    // Vertical alignment.
+    let scaled_total = total * k;
+    let mut y = o.y + BOX_PAD_Y;
+    if doc.valign == crate::model::VerticalAlign::Middle {
+        y = o.y + (o.h - scaled_total) / 2.0;
+    } else if doc.valign == crate::model::VerticalAlign::Bottom {
+        y = o.y + o.h - BOX_PAD_Y - scaled_total;
+    }
+
+    for p in &paras {
+        let line_h = BASE_FONT_PX * 1.28 * p.line_spacing * k;
+        for line in &p.lines {
+            let line_w: f64 = p.prefix_w + line.iter().map(|d| d.dw).sum::<f64>();
+            let mut x = o.x + BOX_PAD_X + p.indent;
+            if p.align == "center" {
+                x += (inner_w - p.indent - line_w) / 2.0;
+            } else if p.align == "right" {
+                x += inner_w - p.indent - line_w;
+            }
+            // bullet/number prefix (design-space, base color at 55% alpha-ish)
+            if !p.prefix.is_empty() {
+                let (pxp, pyp) = tf(x, y);
+                ops.push_str(&format!(
+                    "\nBT {} {:.2} Tf {:.2} {:.2} Td ({}) Tj ET",
+                    font_name(false, false),
+                    BASE_FONT_PX * KX * k,
+                    pxp,
+                    pyp - BASE_FONT_PX * 1.02 * KX * k,
+                    pdf_escape(&p.prefix)
+                ));
+                x += p.prefix_w;
+            }
+            for d in line {
+                let size = d.size * k;
+                let (pxp, pyp) = tf(x + d.dx, y);
+                if let Some(h) = &d.highlight {
+                    // highlight box behind the text
+                    let (bx, by) = tf(x + d.dx, y + 2.0);
+                    let bw = d.dw * KX;
+                    let bh = d.size * 1.28 * k * KY;
+                    ops.push_str(&format!(
+                        "\n{} {:.2} {:.2} {:.2} {:.2} re f",
+                        set_fill(h),
+                        bx,
+                        PH - by * KY + bh - bh, // page-space y of the box top
+                        bw,
+                        bh
+                    ));
+                }
+                ops.push_str(&set_fill(&d.color));
+                ops.push_str(&format!(
+                    "\nBT {} {:.2} Tf {:.2} {:.2} Td ({}) Tj ET",
+                    font_name_for_run(d),
+                    size,
+                    pxp,
+                    pyp - size * 1.02,
+                    pdf_escape(&d.text)
+                ));
+            }
+            y += line_h;
+        }
+    }
+    ops
+}
+
+fn font_name_for_run(d: &TextDraw) -> &'static str {
+    font_name(d.serif, d.bold)
+}
+
+/// Table object → grid lines + cell text (the app painter's geometry).
+fn table_object_pdf(o: &Shape, rows: u32, cols: u32, cells: &[String]) -> String {
+    let mut ops = String::new();
+    let rows = rows.max(1);
+    let cols = cols.max(1);
+    let cw = o.w / cols as f64;
+    let ch = o.h / rows as f64;
+    let stroke_color = set_stroke(&o.stroke.color);
+    let lw = o.stroke.width.max(0.75) * KX;
+    ops.push_str(&format!("\nq {stroke_color} {lw:.2} w"));
+    // Outer border.
+    let (x0, y0) = tf(o.x, o.y);
+    let (x1, y1) = tf(o.x + o.w, o.y + o.h);
+    ops.push_str(&format!("\n{:.2} {:.2} {:.2} {:.2} re S", x0, y1, x1 - x0, y0 - y1));
+    for r in 1..rows {
+        let (_, ly) = tf(o.x, o.y + ch * r as f64);
+        let (_, ry) = tf(o.x + o.w, o.y + ch * r as f64);
+        ops.push_str(&format!("\n{:.2} {:.2} m {:.2} {:.2} l S", x0, ly, x1, ry));
+    }
+    for c in 1..cols {
+        let (lx, _) = tf(o.x + cw * c as f64, o.y);
+        let (rx, _) = tf(o.x + cw * c as f64, o.y + o.h);
+        ops.push_str(&format!("\n{:.2} {:.2} m {:.2} {:.2} l S", lx, y0, rx, y1));
+    }
+    ops.push_str("\nQ");
+    // Cell text: the app's sizing, centered vertically, left with padding.
+    let cell_style_px = (BASE_FONT_PX * 0.62).min(ch * 0.42).max(8.0);
+    let size = cell_style_px * KX;
+    ops.push_str(&set_fill("17181A"));
+    for r in 0..rows {
+        for c in 0..cols {
+            let text = cells.get((r * cols + c) as usize).map(|s| s.as_str()).unwrap_or("");
+            if text.is_empty() {
+                continue;
+            }
+            let (px, py) = tf(o.x + cw * c as f64 + 7.0, o.y + ch * r as f64 + (ch - cell_style_px * 1.28) / 2.0);
+            ops.push_str(&format!(
+                "\nBT /F1 {:.2} Tf {:.2} {:.2} Td ({}) Tj ET",
+                size,
+                px,
+                py,
+                pdf_escape(text)
+            ));
+        }
+    }
+    ops
+}
+
+/// Icon sticker → filled rounded card + centered name (the app's icons are
+/// Material glyphs, rendered here as their own clean vector+text card).
+fn icon_object_pdf(o: &Shape, name: &str) -> String {
+    let mut ops = String::new();
+    let fill = match &o.fill {
+        Fill::Solid { color } => color.clone(),
+        _ => "F5F5F7".to_string(),
+    };
+    let (x0, y0) = tf(o.x, o.y);
+    let (x1, y1) = tf(o.x + o.w, o.y + o.h);
+    ops.push_str(&format!("\nq {} {:.2} {:.2} {:.2} {:.2} re f Q", set_fill(&fill), x0, y1, x1 - x0, y0 - y1));
+    let size = (o.w.min(o.h) * 0.16).clamp(6.0, 14.0) * KX;
+    let cy = (y0 + y1) / 2.0;
+    ops.push_str(&set_fill("17181A"));
+    ops.push_str(&format!(
+        "\nBT /F1 {:.2} Tf {:.2} {:.2} Td ({}) Tj ET",
+        size,
+        x0 + 2.0,
+        cy - size * 0.36,
+        pdf_escape(name)
+    ));
+    ops
+}
+
+/// Media card → dark card + kind label + name (the app's media view).
+fn media_object_pdf(o: &Shape, name: &str, media_kind: Option<&str>) -> String {
+    let mut ops = String::new();
+    let (x0, y0) = tf(o.x, o.y);
+    let (x1, y1) = tf(o.x + o.w, o.y + o.h);
+    let w = x1 - x0;
+    let h = y0 - y1;
+    let kind = if media_kind.unwrap_or("video") == "video" { "VIDEO" } else { "AUDIO" };
+    ops.push_str(&format!("\nq {} {:.2} {:.2} {:.2} {:.2} re f Q", set_fill("101014"), x0, y1, w, h));
+    if o.stroke.width > 0.0 {
+        ops.push_str(&format!(
+            "\nq {} {:.2} w {:.2} {:.2} {:.2} {:.2} re S Q",
+            set_stroke(&o.stroke.color),
+            o.stroke.width * KX,
+            x0,
+            y1,
+            w,
+            h
+        ));
+    }
+    let kind_size = (o.h * 0.09).clamp(8.0, 16.0) * KX;
+    let name_size = (o.h * 0.075).clamp(7.0, 14.0) * KX;
+    let cx = (x0 + x1) / 2.0;
+    let cy = (y0 + y1) / 2.0;
+    ops.push_str(&set_fill("9E9EA6"));
+    ops.push_str(&format!(
+        "\nBT /F1b {:.2} Tf {:.2} {:.2} Td ({}) Tj ET",
+        kind_size,
+        cx - w * 0.18,
+        cy + name_size * 0.4,
+        pdf_escape(kind)
+    ));
+    ops.push_str(&format!(
+        "\nBT /F1 {:.2} Tf {:.2} {:.2} Td ({}) Tj ET",
+        name_size,
+        x0 + 4.0,
+        cy - name_size,
+        pdf_escape(name)
+    ));
+    ops
+}
+
+/// Image object → `q … cm /ImN Do Q` with rotation, or a placeholder card.
+fn image_object_pdf(o: &Shape, name: Option<&str>, im_ref: Option<&str>) -> String {
+    match im_ref {
+        Some(im) => {
+            let rot = o.rotation.to_radians();
+            let (c, s) = (rot.cos(), rot.sin());
+            // image-space vectors in page coords
+            let w = o.w * KX;
+            let h = o.h * KY;
+            let ux = w * c;
+            let uy = -w * s; // design y-down → page y-up
+            let vx = h * s;
+            let vy = h * c;
+            // center in page coords
+            let (ccx, ccy) = tf(o.x + o.w / 2.0, o.y + o.h / 2.0);
+            // origin = center - (u+v)/2
+            let ox = ccx - (ux + vx) / 2.0;
+            let oy = ccy - (uy + vy) / 2.0;
+            format!("\nq {ox:.2} {oy:.2} {ux:.2} {uy:.2} {vx:.2} {vy:.2} cm /{im} Do Q")
+        }
+        None => {
+            let label = name.unwrap_or("image");
+            let (x0, y0) = tf(o.x, o.y);
+            let (x1, y1) = tf(o.x + o.w, o.y + o.h);
+            let size = (o.h * 0.08).clamp(7.0, 14.0) * KX;
+            format!(
+                "\nq {} 1 w {:.2} {:.2} {:.2} {:.2} re f Q\nq {} 1 w {:.2} {:.2} {:.2} {:.2} re S Q\n{} BT /F1 {:.2} Tf {:.2} {:.2} Td ({}) Tj ET",
+                set_fill("1C1C22"),
+                x0,
+                y1,
+                x1 - x0,
+                y0 - y1,
+                set_stroke("2A2A31"),
+                x0,
+                y1,
+                x1 - x0,
+                y0 - y1,
+                set_fill("6C6C74"),
+                size,
+                x0 + 2.0,
+                (y0 + y1) / 2.0,
+                pdf_escape(label)
+            )
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Image XObjects
+// ---------------------------------------------------------------------------
+
+/// One embedded image: the resource id it resolves, its page-space draw
+/// name, its dict, its compressed bytes and (when the alpha varies) the
+/// compressed gray alpha stream.
+struct ImageXObject {
+    rid: String,
+    name: String,
+    width: u32,
+    height: u32,
+    dict: String,
+    stream: Vec<u8>,
+    smask_stream: Option<Vec<u8>>,
+}
+
+/// Build the image XObjects for the given resolved assets. JPEGs pass
+/// through as DCTDecode; anything with RGBA embeds as FlateDecode RGB
+/// (+ an SMask when the alpha varies). A bad/missing asset is skipped —
+/// the caller renders a placeholder.
+fn build_image_xobjects(images: &BTreeMap<String, ExportImage>) -> Vec<ImageXObject> {
+    let mut out = Vec::new();
+    for (rid, asset) in images {
+        let format = asset.format.to_ascii_lowercase();
+        if format == "jpeg" || format == "jpg" {
+            out.push(ImageXObject {
+                rid: rid.clone(),
+                name: format!("Im{}", out.len()),
+                width: asset.width,
+                height: asset.height,
+                dict: format!(
+                    "<< /Type /XObject /Subtype /Image /Width {} /Height {} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length {} >>",
+                    asset.width,
+                    asset.height,
+                    asset.bytes.len()
+                ),
+                stream: asset.bytes.clone(),
+                smask_stream: None,
+            });
+            continue;
+        }
+        let Some(rgba) = asset.rgba.as_ref() else { continue };
+        let n = (asset.width as usize) * (asset.height as usize);
+        if rgba.len() < n * 4 || n == 0 {
+            continue; // bad payload → placeholder, never a broken PDF
+        }
+        // strip alpha into RGB + a gray alpha plane
+        let mut rgb = Vec::with_capacity(n * 3);
+        let mut alpha = Vec::with_capacity(n);
+        let mut any_alpha = false;
+        for i in 0..n {
+            rgb.push(rgba[i * 4]);
+            rgb.push(rgba[i * 4 + 1]);
+            rgb.push(rgba[i * 4 + 2]);
+            alpha.push(rgba[i * 4 + 3]);
+            if rgba[i * 4 + 3] != 255 {
+                any_alpha = true;
+            }
+        }
+        let flated = deflate(&rgb);
+        let smask = if any_alpha { Some(deflate(&alpha)) } else { None };
+        let smask_ref = if smask.is_some() { " /SMask 0 0 R" } else { "" };
+        out.push(ImageXObject {
+            rid: rid.clone(),
+            name: format!("Im{}", out.len()),
+            width: asset.width,
+            height: asset.height,
+            dict: format!(
+                "<< /Type /XObject /Subtype /Image /Width {} /Height {} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode{smask_ref} /Length {} >>",
+                asset.width,
+                asset.height,
+                flated.len()
+            ),
+            smask_stream: smask,
+            stream: flated,
+        });
+    }
+    out
+}
+
+fn deflate(data: &[u8]) -> Vec<u8> {
+    let mut zw = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+    zw.write_all(data).ok();
+    zw.finish().unwrap_or_default()
+}
+
+// ---------------------------------------------------------------------------
+// The writer
+// ---------------------------------------------------------------------------
+
+/// Render deck to PDF bytes. `images` maps resource ids to resolved assets
+/// (see [crate::export::ExportImage]); missing entries render as clean
+/// placeholders.
+pub fn to_pdf(deck: &Deck, images: &BTreeMap<String, ExportImage>) -> Vec<u8> {
     let mut pages_content: Vec<String> = Vec::new();
     let mut alphas: Vec<(f64, String)> = Vec::new();
     // Page width follows the deck's aspect: the design→page scale is uniform
     // (KX == KY), so width-in-points is KY × design-width. Height stays PH.
     let pw = KY * deck_dims(deck).0;
+
+    // Image XObjects are shared across pages; each page references the ones
+    // it draws by name.
+    let xobjects = build_image_xobjects(images);
+    let xobject_ref = |rid: &str| -> Option<&str> {
+        xobjects
+            .iter()
+            .find(|x| x.rid == rid)
+            .map(|x| x.name.as_str())
+    };
+
+    let base_fg = crate::dna::resolve(&deck.dna).palette.fg.clone();
 
     for slide in &deck.slides {
         let layout = layout_slide(&deck, slide);
@@ -414,21 +902,41 @@ pub fn to_pdf(deck: &Deck) -> Vec<u8> {
                 }
             }
         }
-        // manual vector overlay on top
+        // The object layer in true Z-order — content and shapes interleave
+        // exactly as `slide.objects` lists them.
         for obj in &slide.objects {
-            ops.push_str(&object_pdf(obj, &mut alphas));
+            match &obj.content {
+                Some(ObjectContent::Text { doc }) => {
+                    ops.push_str(&text_object_pdf(obj, doc, &base_fg));
+                }
+                Some(ObjectContent::Table { rows, cols, cells }) => {
+                    ops.push_str(&table_object_pdf(obj, *rows, *cols, cells));
+                }
+                Some(ObjectContent::Icon { name }) => {
+                    ops.push_str(&icon_object_pdf(obj, name));
+                }
+                Some(ObjectContent::Media { name, media_kind, .. }) => {
+                    ops.push_str(&media_object_pdf(obj, name.as_deref().unwrap_or("media"), media_kind.as_deref()));
+                }
+                Some(ObjectContent::Image { resource_id, name, .. }) => {
+                    ops.push_str(&image_object_pdf(obj, name.as_deref(), xobject_ref(resource_id)));
+                }
+                None => {
+                    ops.push_str(&object_pdf(obj, &mut alphas));
+                }
+            }
         }
         pages_content.push(ops);
     }
 
     // ---- assemble objects -------------------------------------------------
-    let mut objs: Vec<String> = Vec::new(); // object bodies, index+1 = obj num
+    let mut objs: Vec<Vec<u8>> = Vec::new(); // object bodies (index+1 = obj num)
 
     // reserve: 1 = catalog, 2 = pages tree, fonts come after.
-    objs.push(String::new()); // obj 1 Catalog (filled below)
-    objs.push(String::new()); // obj 2 Pages (filled below)
+    objs.push(Vec::new()); // obj 1 Catalog (filled below)
+    objs.push(Vec::new()); // obj 2 Pages (filled below)
 
-    // Font objects 3..=6
+    // Font objects
     let font_defs = [
         ("/F1", "Helvetica"),
         ("/F1b", "Helvetica-Bold"),
@@ -438,19 +946,55 @@ pub fn to_pdf(deck: &Deck) -> Vec<u8> {
     let mut font_refs = String::new();
     for (tag, base) in font_defs.iter() {
         let num = objs.len() + 1;
-        objs.push(format!("<< /Type /Font /Subtype /Type1 /BaseFont /{} >>", base));
+        objs.push(format!("<< /Type /Font /Subtype /Type1 /BaseFont /{} >>", base).into_bytes());
         font_refs.push_str(&format!("{} {} 0 R ", tag, num));
     }
+
+    // Image XObjects (+ their SMasks).
+    let mut xobject_refs = String::new();
+    for x in &xobjects {
+        let img_num = objs.len() + 1;
+        let smask_num = if x.smask_stream.is_some() { img_num + 1 } else { 0 };
+        let dict = if smask_num > 0 {
+            x.dict.replace("/SMask 0 0 R", &format!("/SMask {} 0 R", smask_num))
+        } else {
+            x.dict.clone()
+        };
+        objs.push(format!("{}
+stream
+", dict).into_bytes());
+        let last = objs.len() - 1;
+        objs[last].extend_from_slice(&x.stream);
+        objs[last].extend_from_slice(b"
+endstream");
+        xobject_refs.push_str(&format!("/{} {} 0 R ", x.name, img_num));
+        if let Some(smask_bytes) = &x.smask_stream {
+            let smask_dict = format!(
+                "<< /Type /XObject /Subtype /Image /Width {} /Height {} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode /Length {} >>",
+                x.width,
+                x.height,
+                smask_bytes.len()
+            );
+            objs.push(format!("{}
+stream
+", smask_dict).into_bytes());
+            let last = objs.len() - 1;
+            objs[last].extend_from_slice(smask_bytes);
+            objs[last].extend_from_slice(b"
+endstream");
+        }
+    }
+
     let resources = if alphas.is_empty() {
-        format!("<< /Font << {font_refs} >> >>")
+        format!("<< /Font << {font_refs} >> /XObject << {xobject_refs} >> >>")
     } else {
         let mut gs_refs = String::new();
         for (a, name) in &alphas {
             let num = objs.len() + 1;
-            objs.push(format!("<< /Type /ExtGState /ca {:.3} /CA {:.3} /BM /Normal >>", a, a));
+            objs.push(format!("<< /Type /ExtGState /ca {:.3} /CA {:.3} /BM /Normal >>", a, a).into_bytes());
             gs_refs.push_str(&format!("/{} {} 0 R ", name, num));
         }
-        format!("<< /Font << {font_refs} >> /ExtGState << {gs_refs} >> >>")
+        format!("<< /Font << {font_refs} >> /ExtGState << {gs_refs} >> /XObject << {xobject_refs} >> >>")
     };
 
     let mut kids = String::new();
@@ -460,33 +1004,39 @@ pub fn to_pdf(deck: &Deck) -> Vec<u8> {
         objs.push(format!(
             "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {pw:.0} {PH}] /Resources {} /Contents {content_num} 0 R >>",
             resources
-        ));
-        objs.push(format!("<< /Length {} >>\nstream\n{}\nendstream", content.len(), content));
+        ).into_bytes());
+        objs.push(format!("<< /Length {} >>\nstream\n{}\nendstream", content.len(), content).into_bytes());
         kids.push_str(&format!(" {} 0 R", page_num));
     }
 
-    objs[0] = "<< /Type /Catalog /Pages 2 0 R >>".to_string();
-    objs[1] = format!("<< /Type /Pages /Kids [{kids}] /Count {} >>", pages_content.len());
+    objs[0] = b"<< /Type /Catalog /Pages 2 0 R >>".to_vec();
+    objs[1] = format!("<< /Type /Pages /Kids [{kids}] /Count {} >>", pages_content.len()).into_bytes();
 
-    // ---- serialize --------------------------------------------------------
-    let mut out = String::from("%PDF-1.4\n");
+    // ---- serialize (binary-safe) -------------------------------------------
+    let mut out: Vec<u8> = Vec::new();
+    out.extend_from_slice(b"%PDF-1.4\n");
     let mut offsets = Vec::with_capacity(objs.len());
     for (i, body) in objs.iter().enumerate() {
         offsets.push(out.len());
-        out.push_str(&format!("{} 0 obj\n{}\nendobj\n", i + 1, body));
+        out.extend_from_slice(format!("{} 0 obj\n", i + 1).as_bytes());
+        out.extend_from_slice(body);
+        out.extend_from_slice(b"\nendobj\n");
     }
     let xref_pos = out.len();
-    out.push_str(&format!("xref\n0 {}\n", objs.len() + 1));
-    out.push_str("0000000000 65535 f \n");
+    out.extend_from_slice(format!("xref\n0 {}\n", objs.len() + 1).as_bytes());
+    out.extend_from_slice(b"0000000000 65535 f \n");
     for off in &offsets {
-        out.push_str(&format!("{:010} 00000 n \n", off));
+        out.extend_from_slice(format!("{:010} 00000 n \n", off).as_bytes());
     }
-    out.push_str(&format!(
-        "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{}\n%%EOF",
-        objs.len() + 1,
-        xref_pos
-    ));
-    out.into_bytes()
+    out.extend_from_slice(
+        format!(
+            "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{}\n%%EOF",
+            objs.len() + 1,
+            xref_pos
+        )
+        .as_bytes(),
+    );
+    out
 }
 
 #[cfg(test)]
@@ -518,7 +1068,7 @@ mod tests {
             ],
             components: Vec::new(),
         };
-        let b = to_pdf(&deck);
+        let b = to_pdf(&deck, &BTreeMap::new());
         let s = String::from_utf8_lossy(&b);
         assert!(s.starts_with("%PDF-1.4"));
         assert!(s.contains("/Count 2"));
@@ -544,7 +1094,7 @@ mod tests {
             }],
             components: Vec::new(),
         };
-        let b = to_pdf(&deck);
+        let b = to_pdf(&deck, &BTreeMap::new());
         let s = String::from_utf8_lossy(&b);
         assert!(s.contains("/MediaBox [0 0 720 540]"), "4:3 page expected 720pt wide");
     }
@@ -590,12 +1140,52 @@ mod tests {
             }],
             components: Vec::new(),
         };
-        let b = to_pdf(&deck);
+        let b = to_pdf(&deck, &BTreeMap::new());
         let s = String::from_utf8_lossy(&b);
         assert!(s.contains("/ExtGState"), "alpha state missing");
         assert!(s.contains("gs0"), "gs ref missing");
         assert!(s.contains(" m\n") || s.contains(" m ") || s.contains(" m"), "path move missing");
         assert!(s.contains(" l "), "path line missing");
         assert!(s.contains(" h f"), "close+fill missing");
+    }
+
+    /// The content-deck from the pptx tests, exported to PDF: text runs,
+    /// table cells, and an embedded image (as an XObject with a DCT or
+    /// Flate stream) must all be present.
+    #[test]
+    fn content_objects_render_text_table_and_image() {
+        let deck = crate::export::pptx::tests::content_deck_for_pdf();
+        let mut images = BTreeMap::new();
+        images.insert(
+            "r1".into(),
+            ExportImage {
+                format: "png".into(),
+                width: 2,
+                height: 1,
+                bytes: crate::export::tests_support::tiny_png(),
+                rgba: Some(vec![255, 0, 0, 255, 0, 128, 0, 128]),
+            },
+        );
+        let b = to_pdf(&deck, &images);
+        let s = String::from_utf8_lossy(&b);
+        // Text runs (WinAnsi text + bold font). The bold run splits
+        // "Hello" from " world" — assert the pieces.
+        assert!(s.contains("Hello"), "text missing");
+        assert!(s.contains("Second para"), "second paragraph missing");
+        assert!(s.contains("/F1b"), "bold run missing");
+        // Table cells + grid.
+        assert!(s.contains("(A) Tj"), "table cell A missing");
+        assert!(s.contains("(D) Tj"), "table cell D missing");
+        // Icon + media cards.
+        assert!(s.contains("(star) Tj"), "icon label missing");
+        assert!(s.contains("(clip.mp4) Tj"), "media label missing");
+        // Image XObject + draw op.
+        assert!(s.contains("/Subtype /Image"), "image xobject missing");
+        assert!(s.contains("/FlateDecode"), "flate filter missing");
+        assert!(s.contains("/Im0 Do"), "image draw op missing");
+        assert!(s.contains("/SMask"), "alpha smask missing");
+        // A missing image asset (r_missing → media card) renders a
+        // placeholder, never a broken ref.
+        assert!(!s.contains("/Im1 Do"), "no phantom xobject ref");
     }
 }

@@ -426,7 +426,7 @@ fn sh_clip(subject: &[(f64, f64)], window: &[(f64, f64)]) -> Vec<(f64, f64)> {
         }
         let a = window[i];
         let b = window[(i + 1) % n];
-        let mut input = std::mem::take(&mut out);
+        let input = std::mem::take(&mut out);
         let m = input.len();
         for j in 0..m {
             let cur = input[j];

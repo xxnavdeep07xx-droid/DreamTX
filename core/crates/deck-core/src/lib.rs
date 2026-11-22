@@ -8,6 +8,7 @@
 pub mod command;
 pub mod dna;
 pub mod export;
+pub mod font_metrics;
 pub mod fonts;
 pub mod layout;
 pub mod model;
