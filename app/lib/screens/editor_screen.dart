@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
@@ -1076,6 +1077,33 @@ class _EditorScreenState extends State<EditorScreen>
       setState(() {
         _typing = false;
         _frozenStripFootprint = footprint;
+        // An EXTERNAL focus loss (this listener firing without
+        // [_endTyping] — the system took the focus, another field claimed
+        // it) must clear the typing state's sheet-down flag HERE too:
+        // otherwise the sheet that stood down for the keyboard stays down
+        // and later SNAPS into place instead of animating through the
+        // entrance now. Same machinery [_endTyping] runs — only once ever,
+        // because both paths clear the flag before the other checks it.
+        if (_sheetHiddenForTyping) {
+          _sheetHiddenForTyping = false;
+          if (_mode == _Mode.editing && _isSheetTab(_navTab)) {
+            final resumingExit = _sheetClosing;
+            _sheetClosing = false;
+            _sheetEntering = !resumingExit;
+            _drawerExtent = null;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted ||
+                  _typing ||
+                  !_sheetEntering ||
+                  !_isSheetTab(_navTab) ||
+                  _mode != _Mode.editing ||
+                  _drawerDragging) {
+                return;
+              }
+              setState(() => _sheetEntering = false);
+            });
+          }
+        }
       });
       _flushTextSession();
     }
@@ -2437,72 +2465,122 @@ class _EditorScreenState extends State<EditorScreen>
 
   // ---- export -------------------------------------------------------------------
 
-  /// The image/media assets the exporters need, resolved from the
+  /// The image assets the exporters need, resolved from the
   /// resource store: resource id -> encoded bytes + format (+ decoded RGBA
   /// for the PDF's FlateDecode path, downscaled so a photo never ships
   /// tens of megabytes of raw pixels over the FFI boundary).
+  ///
+  /// ONLY image objects ship bytes — media objects render a card in every
+  /// export format (the system player plays the local file; the exports
+  /// never embed video/audio), so they are skipped here entirely.
   Future<Map<String, Map<String, dynamic>>> _exportImageAssets(
       {required bool withRgba}) async {
     final out = <String, Map<String, dynamic>>{};
-    final ids = <String>{};
+    // resource id -> the object's OWN declared scope (brand vs deck).
+    final wanted = <String, bool>{};
     for (final slide in _slides) {
       for (final obj in ((slide['objects'] as List?) ?? const [])
           .whereType<Map>()) {
         final content = obj['content'];
         if (content is! Map) continue;
-        final kind = content['kind'];
-        if (kind != 'image' && kind != 'media') continue;
+        if (content['kind'] != 'image') continue;
         final id = content['resource_id']?.toString();
-        if (id != null && id.isNotEmpty) ids.add(id);
+        if (id != null && id.isNotEmpty) {
+          wanted.putIfAbsent(id, () => content['brand'] == true);
+        }
       }
     }
-    if (ids.isEmpty) return out;
-    for (final id in ids) {
+    if (wanted.isEmpty) return out;
+    final deckId = (_deck['id'] ?? '').toString();
+    for (final want in wanted.entries) {
       try {
-        // Both scopes: the object declares which one it lives in.
-        final deckId = (_deck['id'] ?? '').toString();
-        for (final brand in [false, true]) {
-          final store = await ResourceStore.open();
-          final path = await store.resolve(
-              brand: brand, deckId: brand ? null : deckId, id: id);
-          if (path == null) continue;
-          final file = File(path);
-          if (!await file.exists()) continue;
-          final bytes = await file.readAsBytes();
-          if (bytes.isEmpty) continue;
-          final ext =
-              path.toLowerCase().split('.').last;
-          final format = switch (ext) {
-            'jpg' || 'jpeg' => 'jpeg',
-            'gif' => 'gif',
-            _ => 'png',
-          };
-          final entry = <String, dynamic>{
-            'format': format,
-            'bytes': base64Encode(bytes),
-          };
-          if (withRgba && format != 'jpeg') {
-            final rgba = await _decodedRgba(path);
-            if (rgba != null) {
-              entry['width'] = rgba.$1;
-              entry['height'] = rgba.$2;
-              entry['rgba'] = base64Encode(rgba.$3);
-            }
-          } else {
-            // Even without the pixel payload the exporter needs no size
-            // for pptx (the pic box is the object's own geometry).
-            entry['width'] = 1;
-            entry['height'] = 1;
-          }
-          out[id] = entry;
-          break;
+        // The object declares which scope it lives in — brand assets
+        // resolve from the brand tree, deck assets from this deck's.
+        final store = await ResourceStore.open();
+        final path = await store.resolve(
+            brand: want.value, deckId: want.value ? null : deckId, id: want.key);
+        if (path == null) continue;
+        final file = File(path);
+        if (!await file.exists()) continue;
+        var bytes = await file.readAsBytes();
+        if (bytes.isEmpty) continue;
+        final ext = path.toLowerCase().split('.').last;
+        var format = switch (ext) {
+          'jpg' || 'jpeg' => 'jpeg',
+          'gif' => 'gif',
+          'png' => 'png',
+          _ => 'other', // webp/bmp/heic/… — see the re-encode below
+        };
+        // PPTX embeds `bytes` VERBATIM as ppt/media/imageN.<format>: a
+        // webp/bmp/heic file cannot ship under a png label — that writes a
+        // broken image part. Decode it and re-encode as REAL PNG bytes.
+        // (The PDF path needs no re-encode: it consumes the decoded RGBA
+        // pixels, never the raw file.)
+        if (format == 'other' && !withRgba) {
+          final png = await _encodeAsPng(path);
+          if (png == null) continue; // undecodable → placeholder, never broken
+          bytes = png;
+          format = 'png';
         }
+        if (format == 'other') {
+          // The PDF path with an exotic source keeps flowing through the
+          // RGBA decode below — the pixels, not the raw bytes, are what it
+          // consumes; the tag stays 'png' so any bytes-only consumer on
+          // that path can never claim a webp is a jpeg.
+          format = 'png';
+        }
+        final entry = <String, dynamic>{
+          'format': format,
+          'bytes': base64Encode(bytes),
+        };
+        if (withRgba && format != 'jpeg') {
+          final rgba = await _decodedRgba(path);
+          if (rgba != null) {
+            entry['width'] = rgba.$1;
+            entry['height'] = rgba.$2;
+            entry['rgba'] = base64Encode(rgba.$3);
+          } else {
+            // A failed decode exports a placeholder — never a broken
+            // image, and never a half entry either.
+            continue;
+          }
+        } else {
+          // Even without the pixel payload the exporter needs no size
+          // for pptx (the pic box is the object's own geometry).
+          entry['width'] = 1;
+          entry['height'] = 1;
+        }
+        out[want.key] = entry;
       } catch (_) {
         // One unreadable asset exports a placeholder — never a failed
         // export. See object_content_layer's missing-asset card.
       }
     }
     return out;
+  }
+
+  /// One local image file re-encoded as real PNG bytes — the PPTX exporter
+  /// embeds `ppt/media/*` parts verbatim, so a webp/bmp/heic source must be
+  /// decoded and PNG-encoded before it can ship (a raw file under a `png`
+  /// label is a broken image part in the exported deck). Returns null when
+  /// the file cannot be decoded (a placeholder follows).
+  Future<Uint8List?> _encodeAsPng(String path) async {
+    try {
+      final data = await File(path).readAsBytes();
+      final codec = await ui.instantiateImageCodec(data);
+      final frame = await codec.getNextFrame();
+      final image = frame.image;
+      try {
+        final bd = await image.toByteData(format: ui.ImageByteFormat.png);
+        if (bd == null) return null;
+        return bd.buffer.asUint8List(bd.offsetInBytes, bd.lengthInBytes);
+      } finally {
+        image.dispose();
+        codec.dispose();
+      }
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Decoded RGBA of an image file, downscaled to a bounded pixel budget

@@ -561,15 +561,22 @@ fn text_object_pdf(o: &Shape, doc: &TextDoc, base_fg: &str) -> String {
                 let size = d.size * k;
                 let (pxp, pyp) = tf(x + d.dx, y);
                 if let Some(h) = &d.highlight {
-                    // highlight box behind the text
+                    // highlight box behind the text: page-space top at
+                    // `by` (design y+2), width `bw` (design dw × KX), and
+                    // height `bh = d.size * 1.28 * k` — d.size is ALREADY
+                    // page-space (layout bakes KX in), so the height needs
+                    // no second KY factor (KX == KY). The rect's origin is
+                    // its BOTTOM-left, one bh below the box top: the old
+                    // emit double-converted `by` (`PH - by * KY`) and
+                    // double-scaled the height, throwing the box off-page.
                     let (bx, by) = tf(x + d.dx, y + 2.0);
                     let bw = d.dw * KX;
-                    let bh = d.size * 1.28 * k * KY;
+                    let bh = d.size * 1.28 * k;
                     ops.push_str(&format!(
                         "\n{} {:.2} {:.2} {:.2} {:.2} re f",
                         set_fill(h),
                         bx,
-                        PH - by * KY + bh - bh, // page-space y of the box top
+                        by - bh,
                         bw,
                         bh
                     ));
@@ -1187,5 +1194,104 @@ mod tests {
         // A missing image asset (r_missing → media card) renders a
         // placeholder, never a broken ref.
         assert!(!s.contains("/Im1 Do"), "no phantom xobject ref");
+    }
+
+    /// A highlighted run paints its background box AT the run's line,
+    /// inside the page: the old emit double-converted the box's
+    /// page-space Y (`PH - by * KY` on the already-converted `by`) and
+    /// double-scaled its height (KY on the already-page-space `d.size`),
+    /// parking highlights far above the text they belong to.
+    #[test]
+    fn highlight_rects_stay_inside_the_page() {
+        let text_doc = TextDoc {
+            text: "highlighted words".into(),
+            runs: vec![TextRun {
+                start: 0,
+                end: 11,
+                bold: None,
+                italic: None,
+                underline: None,
+                strike: None,
+                subscript: None,
+                superscript: None,
+                color: None,
+                highlight: Some("FFF3B0".into()),
+                font_family: None,
+                font_size: Some(32.0),
+            }],
+            paras: vec![],
+            valign: VerticalAlign::Top,
+            autofit: Autofit::None,
+        };
+        let deck = Deck {
+            id: "d".into(),
+            title: "T".into(),
+            version: 1,
+            dna: Dna { family: DnaFamily::SwissEditorial, seed: 3 },
+            aspect: "16:9".into(),
+            slides: vec![Slide {
+                id: "s1".into(),
+                archetype: Archetype::Cover,
+                content: SlideContent::Cover { kicker: None, title: "Hi".into(), subtitle: None },
+                objects: vec![Shape {
+                    id: "txt".into(),
+                    preset: "rectangle".into(),
+                    x: 100.0, y: 100.0, w: 400.0, h: 200.0,
+                    rotation: 0.0, opacity: 1.0, locked: false,
+                    group: None, component: None,
+                    fill: Fill::None,
+                    stroke: crate::model::Stroke::default(),
+                    effects: crate::model::Effects::default(),
+                    points: None, holes: None, closed: true,
+                    content: Some(ObjectContent::Text { doc: text_doc }),
+                }],
+            }],
+            components: Vec::new(),
+        };
+        let b = to_pdf(&deck, &BTreeMap::new());
+        let s = String::from_utf8_lossy(&b);
+
+        // The highlight fill ("FFF3B0" → "1.000 0.953 0.706 rg"): collect
+        // every rect op drawn with it. One line in the stream is
+        // "<fill> x y w h re f".
+        let hl_fill = set_fill("FFF3B0");
+        let mut rects: Vec<(f64, f64, f64, f64)> = Vec::new();
+        for line in s.lines() {
+            if !line.contains(" re f") || !line.contains(&hl_fill) {
+                continue;
+            }
+            let toks: Vec<&str> = line.split_whitespace().collect();
+            let rg = toks.iter().position(|t| *t == "rg").expect("fill op before rect");
+            let nums: Vec<f64> = toks[rg + 1..]
+                .iter()
+                .take(4)
+                .map(|t| t.parse().expect("rect numbers"))
+                .collect();
+            assert_eq!(nums.len(), 4, "the rect op carries x y w h");
+            rects.push((nums[0], nums[1], nums[2], nums[3]));
+        }
+        assert!(!rects.is_empty(), "the highlighted run painted its box");
+
+        // Page bounds: a 16:9 deck is 960×540pt.
+        for &(x, y, w, h) in &rects {
+            assert!(x >= 0.0 && x + w <= 960.0,
+                "highlight box x inside the page: {x}+{w}");
+            assert!(y >= 0.0 && y + h <= 540.0,
+                "highlight box y inside the page: {y}+{h}");
+        }
+
+        // And AT the run's own line: the box's page-space TOP is
+        // PH - (y_design + 2) * KY with y_design = o.y + BOX_PAD_Y = 110
+        // → 456.0, its height is d.size * 1.28 = 32 * KX * 1.28 = 30.72,
+        // and its left is (o.x + BOX_PAD_X) * KX = 85.5. The old emit
+        // put the top at ~192 — hundreds of points above the text.
+        let (x, y, w, h) = rects[0];
+        let top = y + h;
+        assert!((top - 456.0).abs() < 0.5,
+            "highlight top at the run's page-space line top: {top}");
+        assert!((x - 85.5).abs() < 0.5,
+            "highlight left at the run's page-space x: {x}");
+        assert!((h - 30.72).abs() < 0.5,
+            "highlight height covers the whole line: {h}");
     }
 }

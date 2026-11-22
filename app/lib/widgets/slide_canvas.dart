@@ -46,6 +46,17 @@ class SlideCanvas extends StatelessWidget {
   }
 
   void _handleTap(Offset designPos) {
+    final key = textKeyAt(layout, designPos);
+    if (key != null) onTextTap?.call(key);
+  }
+
+  /// The layout's own text element under a design-space position, if any
+  /// (the content `key` of the first text element whose rect covers the
+  /// position). Shared by this canvas's own tap handler and by
+  /// [ShapesLayer]'s background-tap forward — the overlay rides opaque
+  /// above the canvas while the deck is being edited, so template text
+  /// reaches this test through the forward instead of its own gesture.
+  static String? textKeyAt(Map<String, dynamic> layout, Offset designPos) {
     final elements = (layout['elements'] as List? ?? []);
     for (final e in elements) {
       if (e is! Map || e['type'] != 'text') continue;
@@ -55,11 +66,14 @@ class SlideCanvas extends StatelessWidget {
       final y = (e['y'] as num).toDouble();
       final w = (e['w'] as num).toDouble();
       final h = (e['h'] as num).toDouble();
-      if (designPos.dx >= x && designPos.dx <= x + w && designPos.dy >= y && designPos.dy <= y + h) {
-        onTextTap?.call(key);
-        return;
+      if (designPos.dx >= x &&
+          designPos.dx <= x + w &&
+          designPos.dy >= y &&
+          designPos.dy <= y + h) {
+        return key;
       }
     }
+    return null;
   }
 }
 

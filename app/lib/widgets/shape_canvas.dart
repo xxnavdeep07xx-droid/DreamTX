@@ -27,6 +27,7 @@ class ShapesLayer extends StatefulWidget {
     this.onCommit,
     this.onGestureStart,
     this.onScribble,
+    this.onBackgroundTap,
     this.overlayOnly = false,
   });
 
@@ -51,6 +52,13 @@ class ShapesLayer extends StatefulWidget {
 
   /// selection change (null = deselect)
   final void Function(String?)? onSelect;
+  /// tap over NO object with NOTHING selected (design-space position) —
+  /// the stage forwards it so the ARCHETYPE's own text slots stay tappable
+  /// in editing mode: this layer rides opaque above [SlideCanvas] and would
+  /// otherwise swallow every tap that misses an object. A tap that clears
+  /// an active selection never forwards (the deselect IS the tap's job),
+  /// and object taps never forward — selection stays owned here.
+  final void Function(Offset designPos)? onBackgroundTap;
   /// live geometry change during a gesture (no engine round-trip)
   final void Function(Map<String, dynamic>)? onLive;
   /// gesture finished → commit this object to the engine
@@ -193,6 +201,13 @@ class _ShapesLayerState extends State<ShapesLayer> {
     }
     final obj = _objectAt(design);
     widget.onSelect?.call(obj?['id'] as String?);
+    // A tap over NO object, with NOTHING selected, forwards the design-space
+    // position up — [SlideStage] hit-tests the archetype layout's text slots
+    // and enters template-text editing. With an object selected the tap's
+    // whole job was the deselect above (a second tap edits the text).
+    if (obj == null && widget.selectedId == null) {
+      widget.onBackgroundTap?.call(design);
+    }
   }
 
   void _onPanStart(DragStartDetails d) {

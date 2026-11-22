@@ -637,13 +637,17 @@ pub fn to_pptx(deck: &Deck, images: &BTreeMap<String, ExportImage>) -> Vec<u8> {
     // ---- media inventory (deterministic ids, BTreeMap order) ----------------
     // image1.ext, image2.ext … one file per unique resource id referenced by
     // any slide; slides reference them through their own rels files.
+    // ONLY image objects enter the inventory — media objects render their
+    // card (media_sp) and never reference an image part: embedding a
+    // video/audio file as `ppt/media/imageN.png` produces a broken part
+    // no player could open, so it must not happen even when the caller
+    // still carries a resolved asset for the id.
     let mut media: Vec<(String, String, Vec<u8>)> = Vec::new(); // (resource id, filename, bytes)
     let mut exts: Vec<&str> = Vec::new();
     for slide in &deck.slides {
         for o in &slide.objects {
             let rid = match &o.content {
                 Some(ObjectContent::Image { resource_id, .. }) => resource_id,
-                Some(ObjectContent::Media { resource_id, .. }) => resource_id,
                 _ => continue,
             };
             if media.iter().any(|(id, _, _)| id == rid) {
@@ -766,17 +770,12 @@ pub fn to_pptx(deck: &Deck, images: &BTreeMap<String, ExportImage>) -> Vec<u8> {
                 Some(ObjectContent::Icon { name }) => {
                     shapes.push_str(&icon_sp(obj, name, &base_fg, id));
                 }
-                Some(ObjectContent::Media { name, media_kind, resource_id, .. }) => {
-                    if let Some(idx) = media_index(resource_id) {
-                        let rel = format!("rId{}", idx + 2);
-                        slide_image_rels.push_str(&format!(
-                            r#"<Relationship Id="{rel}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/{}"/>"#,
-                            media[idx].1
-                        ));
-                        shapes.push_str(&image_sp(obj, name.as_deref(), Some(&rel), id));
-                    } else {
-                        shapes.push_str(&media_sp(obj, name.as_deref().unwrap_or("media"), media_kind.as_deref(), id));
-                    }
+                Some(ObjectContent::Media { name, media_kind, .. }) => {
+                    // The media card — always. It never references an image
+                    // part (the inventory holds images only), so a resolved
+                    // video/audio asset can never leak its raw bytes into
+                    // ppt/media as a fake image.
+                    shapes.push_str(&media_sp(obj, name.as_deref().unwrap_or("media"), media_kind.as_deref(), id));
                 }
                 Some(ObjectContent::Image { resource_id, name, .. }) => {
                     match media_index(resource_id).map(|idx| (idx, format!("rId{}", idx + 2))) {
@@ -1051,6 +1050,70 @@ pub(crate) mod tests {
 
         // A missing image asset exports a clean placeholder, never a hole.
         assert!(xml.contains("clip.mp4"), "placeholder fallback");
+    }
+
+    #[test]
+    fn media_objects_export_as_cards_not_embedded_bytes() {
+        use std::io::Read;
+        // A PRESENT asset for the media resource id: the exporter must
+        // STILL render the media card (media_sp) — media objects never
+        // enter the ppt/media inventory, so raw video/audio bytes can
+        // never land in the package as a fake imageN.png part that no
+        // player could open (the old code embedded them whenever the
+        // caller carried a resolved asset for the id).
+        let mut images = BTreeMap::new();
+        // The deck's REAL image asset (r1 → the tiny png) AND a staged
+        // asset for the media object's own resource id.
+        images.insert(
+            "r1".into(),
+            ExportImage {
+                format: "png".into(),
+                width: 2,
+                height: 1,
+                bytes: crate::export::tests_support::tiny_png(),
+                rgba: None,
+            },
+        );
+        images.insert(
+            "r_missing".into(),
+            ExportImage {
+                format: "png".into(),
+                width: 2,
+                height: 1,
+                bytes: b"these-are-not-image-bytes".to_vec(),
+                rgba: None,
+            },
+        );
+        let b = to_pptx(&content_deck(), &images);
+        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(b)).expect("zip readable");
+
+        let mut xml = String::new();
+        zip.by_name("ppt/slides/slide1.xml").expect("slide1 present").read_to_string(&mut xml).unwrap();
+        // The media object is a CARD (name + kind label + roundRect body),
+        // never a <p:pic> — only the real image object is a picture.
+        assert!(xml.contains("clip.mp4"), "the media card carries the name");
+        assert!(xml.contains("VIDEO"), "the media card carries its kind label");
+        assert_eq!(xml.matches("<p:pic>").count(), 1,
+            "exactly one picture part: the image object only");
+        // The slide's rels reference exactly the image's media file (plus
+        // the slide's own layout rel) — the media object adds no
+        // relationship of any kind.
+        let mut rels = String::new();
+        zip.by_name("ppt/slides/_rels/slide1.xml.rels").expect("rels present").read_to_string(&mut rels).unwrap();
+        assert_eq!(rels.matches("relationships/image").count(), 1,
+            "only the image's relationship exists");
+        assert_eq!(rels.matches("<Relationship ").count(), 2,
+            "the slide rels: the layout rel + the image rel, nothing else");
+        assert!(rels.contains("Target=\"../media/image1.png\""));
+        // The package carries exactly ONE media part — the real image.
+        // The staged video bytes must never appear anywhere.
+        let media_parts: Vec<String> = zip
+            .file_names()
+            .filter(|n| n.starts_with("ppt/media/"))
+            .map(String::from)
+            .collect();
+        assert_eq!(media_parts, vec!["ppt/media/image1.png".to_string()],
+            "no second media part ever carries the video bytes");
     }
 
     #[test]

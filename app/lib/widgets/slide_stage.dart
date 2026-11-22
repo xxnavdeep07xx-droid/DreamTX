@@ -111,23 +111,37 @@ class SlideStage extends StatelessWidget {
               final y = ((obj['y'] as num?) ?? 0).toDouble() * scale;
               final w = ((obj['w'] as num?) ?? 1).toDouble() * scale;
               final h = ((obj['h'] as num?) ?? 1).toDouble() * scale;
+              // Rotation around the object's bbox center — the same
+              // center+angle [ShapesLayer]'s gesture math and selection
+              // chrome rotate around, and the same Transform
+              // [ObjectContentLayer] applies when it lays out the whole
+              // list itself. A rotated text box, image, icon, media card or
+              // table turns on the canvas (and presents) exactly like its
+              // exports do.
+              final rot = ((obj['rotation'] ?? 0) as num?)?.toDouble() ?? 0.0;
+              final contentChild = ObjectContent.hasContent(obj)
+                  ? ObjectContentLayer(
+                      objects: [obj],
+                      designW: designW,
+                      designH: designH,
+                      baseColor: baseColor,
+                      baseFamily: baseFamily,
+                      baseFontSize: baseFontSize,
+                      resolveResourcePath: resolveResourcePath,
+                      singleObject: true,
+                    )
+                  : ShapeObjectPaint(obj: obj, scale: scale);
               return Positioned(
                 left: x,
                 top: y,
                 width: w,
                 height: h,
-                child: ObjectContent.hasContent(obj)
-                    ? ObjectContentLayer(
-                        objects: [obj],
-                        designW: designW,
-                        designH: designH,
-                        baseColor: baseColor,
-                        baseFamily: baseFamily,
-                        baseFontSize: baseFontSize,
-                        resolveResourcePath: resolveResourcePath,
-                        singleObject: true,
+                child: rot != 0
+                    ? Transform.rotate(
+                        angle: rot * math.pi / 180.0,
+                        child: contentChild,
                       )
-                    : ShapeObjectPaint(obj: obj, scale: scale),
+                    : contentChild,
               );
             }(),
           // The interaction + selection overlay on TOP of everything: all
@@ -146,6 +160,19 @@ class SlideStage extends StatelessWidget {
             onCommit: onCommit,
             onGestureStart: onGestureStart,
             onScribble: onScribble,
+            // This layer rides OPAQUE above the archetype canvas, so it
+            // forwards taps that hit NO object (with nothing selected) —
+            // the stage hit-tests the canvas's own text slots and invokes
+            // [onTextTap], keeping built-in template text (Cover title,
+            // Split bullets…) directly tappable while the deck is being
+            // edited. Read-only stages pass no [onTextTap] and forward
+            // nothing.
+            onBackgroundTap: onTextTap == null
+                ? null
+                : (designPos) {
+                    final key = SlideCanvas.textKeyAt(layout, designPos);
+                    if (key != null) onTextTap!(key);
+                  },
             overlayOnly: true,
           ),
           // The WYSIWYG typing field for the selected text box.

@@ -292,7 +292,6 @@ class TextBoxPainter extends CustomPainter {
       p.painter.paint(canvas, Offset(x, dy));
       dy += p.painter.height;
     }
-    canvas.restore();
 
     // Sub/superscript baseline shift: the run spans render at 0.65 size
     // (the shrink the edit field shows too) and the painter additionally
@@ -300,27 +299,51 @@ class TextBoxPainter extends CustomPainter {
     // typeset, not just small text. The spans were laid out in the
     // paragraph painter with transparent color (see [_appendRunSpans]);
     // here each sub/sup run piece is re-painted at its measured box
-    // position, shifted by the typographic offset.
+    // position, shifted by the typographic offset. The overlay runs
+    // INSIDE the same save/scale transform as the paragraphs themselves —
+    // the autofit shrink (k) scales its positions and font sizes exactly
+    // like it scales the paragraph glyphs (it used to run after the
+    // restore, painting unscaled pieces at unshifted positions whenever
+    // k < 1).
     for (final p in paragraphs) {
       if (!p.hasSubSuper) continue;
-      _paintSubSuperOverlay(canvas, p, k);
+      _paintSubSuperOverlay(canvas, p);
     }
+    canvas.restore();
   }
 
   /// Re-paint the sub/superscript runs of one paragraph with their baseline
   /// shift, positioned from the paragraph painter's own boxes — the
   /// paragraph layout (line breaks, sizes) is authoritative and unchanged.
-  void _paintSubSuperOverlay(Canvas canvas, _ParaLayout p, double k) {
+  ///
+  /// The paragraph painter's coordinate space is its OWN: the optional
+  /// list prefix ("•  " / "1.  ") followed by the paragraph's slice of
+  /// [doc.text]. Doc offsets and painter offsets therefore differ by
+  /// `p.start` and `p.prefixLen`: a doc offset `o` inside the paragraph
+  /// renders at painter offset `o - p.start + p.prefixLen`, and a painter
+  /// offset maps back with `- p.prefixLen + p.start`. Every run is CLIPPED
+  /// to the paragraph's rendered range first — a sub/sup run that spans
+  /// several paragraphs (or crosses a list prefix) only repaints the
+  /// piece THIS painter actually laid out.
+  void _paintSubSuperOverlay(Canvas canvas, _ParaLayout p) {
     final tp = p.painter;
+    int docOffset(int tpLocal) => tpLocal - p.prefixLen + p.start;
     for (final r in doc.runs) {
       final isSub = r.subscript == true;
       final isSup = r.superscript == true;
       if (!isSub && !isSup) continue;
       if (r.end <= r.start) continue; // pending marks never render
-      // Position every glyph-run box the painter produced for this run
-      // and paint the piece at the box's own x, shifted vertically.
+      // Clip the run to this paragraph's RENDERED text ([p.start, p.end)).
+      final rs = math.max(r.start, p.start);
+      final rend = math.min(r.end, p.end);
+      if (rs >= rend) continue;
+      // Position every glyph-run box the painter produced for this run's
+      // piece and paint the piece at the box's own x, shifted vertically.
       final boxes = tp.getBoxesForSelection(
-        TextSelection(baseOffset: r.start, extentOffset: r.end),
+        TextSelection(
+          baseOffset: rs - p.start + p.prefixLen,
+          extentOffset: rend - p.start + p.prefixLen,
+        ),
       );
       if (boxes.isEmpty) continue;
       // The run's style at its own (already-shrunk) size, but with a real
@@ -328,19 +351,22 @@ class TextBoxPainter extends CustomPainter {
       final style = richTextStyle(r, base: _base).copyWith(
         color: _colorForRun(r),
       );
-      var pieceStart = r.start;
+      var pieceStart = rs - p.start + p.prefixLen; // painter-local
       var lastTop = boxes.first.top;
       for (final box in boxes) {
-        // A new line begins when the box's top moves: re-anchor.
+        // A new line begins when the box's top moves: re-anchor the slice
+        // at the new line's FIRST glyph so a wrapped fragment is never
+        // skipped (the piece covers exactly that line's boxes).
         if ((box.top - lastTop).abs() > 1.0) {
           lastTop = box.top;
-          pieceStart = _offsetForBoxEnd(tp, box);
+          pieceStart = _offsetForBoxStart(tp, box);
         }
         final pieceEnd = _offsetForBoxEnd(tp, box);
         if (pieceEnd > pieceStart) {
-          final text = doc.text.substring(
-              pieceStart.clamp(0, doc.text.length),
-              pieceEnd.clamp(0, doc.text.length));
+          // Painter-local offsets → doc offsets for slicing the doc's text.
+          final ds = docOffset(pieceStart).clamp(0, doc.text.length);
+          final de = docOffset(pieceEnd).clamp(0, doc.text.length);
+          final text = doc.text.substring(ds, de);
           final boxH = box.bottom - box.top;
           // Typographic offsets: a subscript's baseline sits BELOW the
           // line's (about a third of the x-height down), a superscript's
@@ -358,6 +384,15 @@ class TextBoxPainter extends CustomPainter {
         }
       }
     }
+  }
+
+  /// The text offset at a box's LEFT edge (the first glyph of the box's
+  /// line) — used to re-anchor a run piece when the layout wraps.
+  int _offsetForBoxStart(TextPainter tp, TextBox box) {
+    final pos = tp.getPositionForOffset(
+      Offset(box.left + 0.5, (box.top + box.bottom) / 2),
+    );
+    return pos.offset;
   }
 
   /// The text offset just past a box's glyphs (used to slice run pieces).
@@ -420,8 +455,14 @@ class TextBoxPainter extends CustomPainter {
         textAlign: align == 'justify' ? TextAlign.justify : TextAlign.left,
         textDirection: TextDirection.ltr,
       )..layout(maxWidth: boxW - indent * indentStep);
-      out.add(_ParaLayout(painter: tp, align: align, indent: indent)
-        ..hasSubSuper = hasSubSuper);
+      out.add(_ParaLayout(
+        painter: tp,
+        align: align,
+        indent: indent,
+        start: s,
+        end: s + text.length,
+        prefixLen: prefix.length,
+      )..hasSubSuper = hasSubSuper);
     }
     return out;
   }
@@ -470,12 +511,30 @@ class TextBoxPainter extends CustomPainter {
 }
 
 class _ParaLayout {
-  _ParaLayout({required this.painter, required this.align, required this.indent});
+  _ParaLayout({
+    required this.painter,
+    required this.align,
+    required this.indent,
+    required this.start,
+    required this.end,
+    required this.prefixLen,
+  });
   final TextPainter painter;
   final String align;
   final int indent;
 
-  /// Where the paragraph was painted (design px) — the sub/superscript
+  /// The paragraph's slice of the doc's text: [start, end) in doc offsets
+  /// (end excludes the stripped trailing `\n`). The sub/superscript
+  /// overlay maps doc↔painter offsets through these + [prefixLen].
+  final int start;
+  final int end;
+
+  /// The list prefix's UTF-16 length ("•  " / "1.  ") — the painter's text
+  /// is prefix + paragraph slice, so painter offsets run ahead of doc
+  /// offsets by this much.
+  final int prefixLen;
+
+  /// Where the paragraph was painted (scaled-space px) — the sub/superscript
   /// overlay re-paints run pieces at these anchors.
   double paintX = 0;
   double paintY = 0;

@@ -170,14 +170,29 @@ class MainActivity : FlutterActivity() {
      * ACTION_VIEW over a FileProvider URI (the provider + its paths are
      * injected by this script). Returns false when the file is gone or no
      * activity can handle the type; the Dart side surfaces that quietly.
+     *
+     * Files can live OUTSIDE the provider's declared roots: the resource
+     * store writes under getApplicationDocumentsDirectory(), which on
+     * Android is `<data>/app_flutter/` — a SIBLING of `files/`, not inside
+     * it — so `files-path` does not cover it and getUriForFile throws
+     * IllegalArgumentException. Such files are staged into the cache
+     * (a covered root) as `media-preview-<name>` and the CACHED uri is
+     * shared; any previous staging file is deleted first so one preview
+     * at a time ever occupies the cache.
      */
     private fun openMedia(path: String, mime: String): Boolean {
         val file = File(path)
         if (!file.exists() || !file.canRead()) return false
         return try {
-            val uri = FileProvider.getUriForFile(
-                this, "$packageName.fileprovider", file
-            )
+            val uri = try {
+                FileProvider.getUriForFile(
+                    this, "$packageName.fileprovider", file
+                )
+            } catch (_: IllegalArgumentException) {
+                // Outside every declared root (app_flutter and friends):
+                // stage a cache copy and share THAT uri.
+                stagedMediaUri(file) ?: return false
+            }
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, mime)
                 addFlags(
@@ -202,6 +217,30 @@ class MainActivity : FlutterActivity() {
             false
         }
     }
+
+    /**
+     * Copies a file outside the provider's roots into cacheDir and returns
+     * the provider uri for the staged copy (null when the copy fails).
+     * Deletes any previous `media-preview-*` file first — the cache never
+     * accumulates stale previews.
+     */
+    private fun stagedMediaUri(source: File): Uri? {
+        return try {
+            cacheDir.listFiles()?.forEach { f ->
+                if (f.name.startsWith("media-preview-")) f.delete()
+            }
+            val safe = source.name.replace(Regex("[^A-Za-z0-9._-]"), "_")
+            val target = File(cacheDir, "media-preview-" + safe)
+            source.inputStream().use { input ->
+                target.outputStream().use { output -> input.copyTo(output) }
+            }
+            FileProvider.getUriForFile(
+                this, "$packageName.fileprovider", target
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
 }
 """
 
@@ -224,7 +263,9 @@ MANIFEST_PROVIDER = """        <!-- The media playback channel shares resolved l
 FILE_PATHS_XML = """<?xml version="1.0" encoding="utf-8"?>
 <!-- The resource store's roots the media channel may share with the system
      player: the app's own documents tree (where deck resources live) and
-     its cache (the SAF import staging area). -->
+     its cache (the SAF import staging area AND the media preview copies —
+     files under app_flutter/, which files-path does NOT cover, are staged
+     there by MainActivity.stagedMediaUri). -->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <files-path name="documents" path="." />
     <cache-path name="cache" path="." />
