@@ -4,12 +4,14 @@ import 'dart:ui' show PathMetric;
 import 'package:material_ui/material_ui.dart';
 
 import '../core/color_utils.dart';
+import '../core/ink_math.dart';
 import '../core/object_content.dart';
 
 /// Interactive vector overlay layer: paints every object (fills, gradients,
 /// strokes, arrows, shadows, glow) and — when `interactive` — handles
-/// selection, move/resize/rotate with smart-guide snapping, and freeform
-/// scribble capture. Coordinates live in the deck's design space (1280×720
+/// selection, move/resize/rotate with smart-guide snapping, and freehand
+/// ink capture ([InkTool] — the Draw tab's pen/highlighter). Coordinates
+/// live in the deck's design space (1280×720
 /// for 16:9 decks — [designW]/[designH] carry other aspects), exactly like
 /// the Rust engine's model.
 
@@ -19,20 +21,21 @@ class ShapesLayer extends StatefulWidget {
     required this.objects,
     this.selectedId,
     this.interactive = false,
-    this.scribbleMode = false,
+    this.inkTool,
+    this.inkStyle = const InkStyle(colorHex: 'D03028', width: 8.0),
     this.designW = 1280,
     this.designH = 720,
     this.onSelect,
     this.onLive,
     this.onCommit,
     this.onGestureStart,
-    this.onScribble,
+    this.onStroke,
     this.onBackgroundTap,
     this.overlayOnly = false,
   });
 
   /// When true the layer paints NO object bodies — only the selection
-  /// chrome, the scribble-in-progress and the smart guides — and exists
+  /// chrome, the stroke-in-progress and the smart guides — and exists
   /// for its gestures. [SlideStage] paints each object itself (a plain
   /// shape via [ShapeObjectPaint], a content object via the content
   /// layer) so shapes and content objects interleave in the deck's TRUE
@@ -43,7 +46,15 @@ class ShapesLayer extends StatefulWidget {
   final List<Map<String, dynamic>> objects;
   final String? selectedId;
   final bool interactive;
-  final bool scribbleMode;
+
+  /// The armed Draw tool (null = not drawing: gestures fall through to
+  /// selection / move / resize / rotate). While armed, the layer's pan
+  /// captures ink and its taps are consumed — no selection while drawing.
+  final InkTool? inkTool;
+
+  /// The armed tool's style — the live preview paints with it verbatim,
+  /// so what the finger sees is exactly what the committed stroke gets.
+  final InkStyle inkStyle;
 
   /// The deck's design-space frame — non-16:9 aspects lay objects out in
   /// their true frame instead of stretching the classic one.
@@ -65,8 +76,9 @@ class ShapesLayer extends StatefulWidget {
   final void Function(Map<String, dynamic>)? onCommit;
   /// gesture started → snapshot deck for undo
   final VoidCallback? onGestureStart;
-  /// scribble finished (design-space points) → create a freeform object
-  final void Function(List<Offset>)? onScribble;
+  /// stroke finished (the pipeline's smoothed design-space polyline) →
+  /// the editor commits it as a path object in the tool's style
+  final void Function(List<Offset>)? onStroke;
 
   @override
   State<ShapesLayer> createState() => _ShapesLayerState();
@@ -76,7 +88,12 @@ class _ShapesLayerState extends State<ShapesLayer> {
   static const double snapTol = 6.0;
 
   _Grab? _grab;
-  List<Offset> _scribblePts = [];
+
+  /// The growing raw capture (>=6px spacing, gesture-thinned) and the
+  /// pipeline's output of it — the preview paints the output, the commit
+  /// hands it over: same list, same frame.
+  List<Offset> _rawPts = [];
+  List<Offset> _strokePts = [];
   List<_GuideLine> _guides = [];
 
   double _scale = 1.0;
@@ -106,7 +123,8 @@ class _ShapesLayerState extends State<ShapesLayer> {
                 objects: widget.objects,
                 selectedId: widget.selectedId,
                 guides: _guides,
-                scribblePts: _scribblePts,
+                strokePts: _strokePts,
+                inkStyle: widget.inkStyle,
                 overlayOnly: widget.overlayOnly,
                 designW: widget.designW,
                 designH: widget.designH,
@@ -192,7 +210,8 @@ class _ShapesLayerState extends State<ShapesLayer> {
 
   void _onTap(TapUpDetails d) {
     if (!widget.interactive) return;
-    if (widget.scribbleMode) return;
+    // An armed ink tool consumes the canvas — no selection while drawing.
+    if (widget.inkTool != null) return;
     final design = _toDesign(d.localPosition);
     final sel = widget.selectedId == null ? null : _find(widget.selectedId!);
     if (sel != null) {
@@ -213,8 +232,11 @@ class _ShapesLayerState extends State<ShapesLayer> {
   void _onPanStart(DragStartDetails d) {
     if (!widget.interactive) return;
     final design = _toDesign(d.localPosition);
-    if (widget.scribbleMode) {
-      setState(() => _scribblePts = [design]);
+    if (widget.inkTool != null) {
+      setState(() {
+        _rawPts = [design];
+        _strokePts = [design];
+      });
       return;
     }
     final sel = widget.selectedId == null ? null : _find(widget.selectedId!);
@@ -248,9 +270,16 @@ class _ShapesLayerState extends State<ShapesLayer> {
   void _onPanUpdate(DragUpdateDetails d) {
     if (!widget.interactive) return;
     final design = _toDesign(d.localPosition);
-    if (widget.scribbleMode) {
-      if (_scribblePts.isNotEmpty && (_scribblePts.last - design).distance < 4) return;
-      setState(() => _scribblePts.add(design));
+    if (widget.inkTool != null) {
+      // Capture thinning (>=6px, was 4): the gesture-level filter and the
+      // pipeline's first stage agree, so inkCapture never sees near-
+      // duplicates. The preview IS the pipeline, recomputed on the
+      // growing raw list — the last frame paints exactly what commits.
+      if (_rawPts.isNotEmpty && (design - _rawPts.last).distance < 6) {
+        return;
+      }
+      _rawPts.add(design);
+      setState(() => _strokePts = inkCapture(_rawPts));
       return;
     }
     final grab = _grab;
@@ -320,11 +349,14 @@ class _ShapesLayerState extends State<ShapesLayer> {
   }
 
   void _onPanEnd(DragEndDetails d) {
-    if (widget.scribbleMode) {
-      final pts = List<Offset>.from(_scribblePts);
-      setState(() => _scribblePts = []);
-      if (pts.length >= 2 && widget.onScribble != null) {
-        widget.onScribble!(pts);
+    if (widget.inkTool != null) {
+      final pts = _strokePts;
+      setState(() {
+        _rawPts = [];
+        _strokePts = [];
+      });
+      if (pts.length >= 2 && widget.onStroke != null) {
+        widget.onStroke!(pts);
       }
       return;
     }
@@ -344,7 +376,8 @@ class _ShapesLayerState extends State<ShapesLayer> {
     setState(() {
       _grab = null;
       _guides = [];
-      _scribblePts = [];
+      _rawPts = [];
+      _strokePts = [];
     });
   }
 
@@ -408,7 +441,7 @@ class _ShapesLayerState extends State<ShapesLayer> {
 /// shadows, glow) at its design-space rect, rotated — the per-object
 /// rendering [SlideStage] interleaves in the deck's true Z-order between
 /// the content objects. Non-interactive by design: selection, gestures and
-/// scribble stay in the [ShapesLayer] riding on top.
+/// ink capture stay in the [ShapesLayer] riding on top.
 class ShapeObjectPaint extends StatelessWidget {
   const ShapeObjectPaint({
     super.key,
@@ -505,7 +538,8 @@ class _ShapesPainter extends CustomPainter {
     required this.objects,
     required this.selectedId,
     required this.guides,
-    required this.scribblePts,
+    required this.strokePts,
+    required this.inkStyle,
     this.overlayOnly = false,
     this.designW = 1280,
     this.designH = 720,
@@ -514,7 +548,11 @@ class _ShapesPainter extends CustomPainter {
   final List<Map<String, dynamic>> objects;
   final String? selectedId;
   final List<_GuideLine> guides;
-  final List<Offset> scribblePts;
+
+  /// The stroke-in-progress (the pipeline output of the growing raw
+  /// capture) and the armed tool's style.
+  final List<Offset> strokePts;
+  final InkStyle inkStyle;
   final bool overlayOnly;
 
   /// The deck's design frame — the smart guide lines run to the frame's
@@ -536,18 +574,24 @@ class _ShapesPainter extends CustomPainter {
         paintObject(canvas, obj);
       }
     }
-    // scribble-in-progress
-    if (scribblePts.length >= 2) {
-      final p = Path()..moveTo(scribblePts.first.dx, scribblePts.first.dy);
-      for (final pt in scribblePts.skip(1)) {
+    // The stroke-in-progress: the pipeline output painted with the tool's
+    // REAL style — same color, same width, same opacity, round caps and
+    // joins, the exact paint the committed object renders with (see
+    // [paintObject]). The old preview lied (iOS-red, width 3, butt
+    // caps); this one is the commit, frame for frame.
+    if (strokePts.length >= 2) {
+      final p = Path()..moveTo(strokePts.first.dx, strokePts.first.dy);
+      for (final pt in strokePts.skip(1)) {
         p.lineTo(pt.dx, pt.dy);
       }
       canvas.drawPath(
         p,
         Paint()
-          ..color = const Color(0xFFFF3B30)
-          ..strokeWidth = 3
-          ..style = PaintingStyle.stroke,
+          ..color = shapeColor(inkStyle.colorHex, inkStyle.opacity)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = inkStyle.width
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round,
       );
     }
     // selection overlay
@@ -577,7 +621,8 @@ class _ShapesPainter extends CustomPainter {
       oldDelegate.objects != objects ||
       oldDelegate.selectedId != selectedId ||
       oldDelegate.guides != guides ||
-      oldDelegate.scribblePts != scribblePts ||
+      oldDelegate.strokePts != strokePts ||
+      oldDelegate.inkStyle != inkStyle ||
       oldDelegate.overlayOnly != overlayOnly ||
       oldDelegate.designW != designW ||
       oldDelegate.designH != designH;

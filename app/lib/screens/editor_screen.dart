@@ -13,6 +13,7 @@ import 'package:share_plus/share_plus.dart';
 import '../core/aspects.dart';
 import '../core/bridge.dart';
 import '../core/color_utils.dart';
+import '../core/ink_math.dart';
 import '../core/media_pickers.dart';
 import '../core/media_playback.dart';
 import '../core/object_content.dart';
@@ -103,6 +104,10 @@ class _EditorScreenState extends State<EditorScreen>
   Color _baseTextColor = const Color(0xFF17181A);
   String? _baseTextFamily;
   int _paletteForVersion = -1;
+
+  /// The deck's resolved DNA accent (RRGGBB) — the Draw pen's default
+  /// color, refreshed with the palette so ink matches the deck identity.
+  String _dnaAccentHex = 'D03028';
 
   /// Live style edits from the object panel (one undo snapshot per
   /// selection, debounced commit — same contract as the text session).
@@ -384,6 +389,10 @@ class _EditorScreenState extends State<EditorScreen>
     }
     // The deck colors first, then the studio's standard swatches.
     _deckPalette = [...colors, ...kSwatchPalette];
+    final accentHex = palette['accent']?.toString();
+    if (accentHex != null && accentHex.length == 6) {
+      _dnaAccentHex = accentHex.toUpperCase();
+    }
     final fg = palette['fg']?.toString();
     _baseTextColor = fg != null && fg.length == 6
         ? hexToColor(fg)
@@ -731,9 +740,16 @@ class _EditorScreenState extends State<EditorScreen>
     }
   }
 
-  void _onScribbleDone(List<Offset> pts) {
+  /// A stroke finished: the capture pipeline's smoothed design-space
+  /// polyline ([inkCapture] — the same list the live preview painted its
+  /// last frame with) lands as a plain `path` object in the deck's model,
+  /// styled exactly as the preview showed it. NOT auto-selected: drawing
+  /// focus — the selection chrome stays away while the tool is armed, and
+  /// the stroke is selectable the moment drawing ends.
+  void _onStrokeDone(List<Offset> pts) {
     final slideId = _slideId;
     if (slideId == null || pts.length < 2) return;
+    final style = InkStyle(colorHex: _dnaAccentHex, width: 8.0);
     var minx = pts.first.dx;
     var miny = pts.first.dy;
     var maxx = minx;
@@ -761,12 +777,12 @@ class _EditorScreenState extends State<EditorScreen>
       'w': w,
       'h': h,
       'rotation': 0.0,
-      'opacity': 1.0,
+      'opacity': style.opacity,
       'locked': false,
       'fill': {'type': 'none'},
       'stroke': {
-        'color': 'D03028',
-        'width': 3.0,
+        'color': style.colorHex,
+        'width': style.width,
         'dash': 'solid',
         'start_arrow': 'none',
         'end_arrow': 'none'
@@ -783,7 +799,6 @@ class _EditorScreenState extends State<EditorScreen>
     });
     if (r['ok'] == true && r['deck'] is Map) {
       _mutate(r['deck'] as Map);
-      _prepareSelectionFor(shape['id'] as String?);
     }
   }
 
@@ -2714,7 +2729,17 @@ class _EditorScreenState extends State<EditorScreen>
                                         _resolveResourcePath,
                                     selectedId: _selectedObjectId,
                                     interactive: _mode == _Mode.editing,
-                                    scribbleMode: _scribbleMode,
+                                    // The Draw tab's armed tool: today the
+                                    // freehand toggle maps to the pen; the
+                                    // toolbox row (next PR) feeds the full
+                                    // tool/color/width state. The style is
+                                    // the committed style — the preview and
+                                    // the object agree by construction.
+                                    inkTool:
+                                        _scribbleMode ? InkTool.pen : null,
+                                    inkStyle: InkStyle(
+                                        colorHex: _dnaAccentHex,
+                                        width: 8.0),
                                     onTextTap: _mode == _Mode.viewing
                                         ? null
                                         : _editText,
@@ -2722,7 +2747,7 @@ class _EditorScreenState extends State<EditorScreen>
                                     onLive: _liveObject,
                                     onCommit: _commitObject,
                                     onGestureStart: _objectGestureStart,
-                                    onScribble: _onScribbleDone,
+                                    onStroke: _onStrokeDone,
                                     textController: _selectedObject != null &&
                                             ObjectContent.isText(
                                                 _selectedObject!)

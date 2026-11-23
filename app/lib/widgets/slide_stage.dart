@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../core/ink_math.dart';
 import '../core/object_content.dart';
 import 'object_content_layer.dart';
 import 'rich_doc.dart';
@@ -19,7 +20,8 @@ import 'text_edit_field.dart';
 ///     vector body — interleaved, so Bring Forward / Send Backward
 ///     ([`move_object_z`]) reads exactly on screen;
 ///  3. the [ShapesLayer] overlay — selection chrome, resize/rotate knobs,
-///     scribble capture, smart guides — riding ON TOP of everything
+///     ink capture (the Draw tab's tools), smart guides — riding ON TOP of
+///     everything
 ///     (non-interactive + invisible when the stage is presented);
 ///  4. optionally the live [TextEditFieldLayer] while the selected text box
 ///     is being typed into (the editor only).
@@ -39,13 +41,14 @@ class SlideStage extends StatelessWidget {
     required this.resolveResourcePath,
     this.selectedId,
     this.interactive = false,
-    this.scribbleMode = false,
+    this.inkTool,
+    this.inkStyle = const InkStyle(colorHex: 'D03028', width: 8.0),
     this.onTextTap,
     this.onSelect,
     this.onLive,
     this.onCommit,
     this.onGestureStart,
-    this.onScribble,
+    this.onStroke,
     this.textController,
     this.textFocusNode,
     this.typing = false,
@@ -73,13 +76,17 @@ class SlideStage extends StatelessWidget {
   /// passes nothing — the stage is read-only there).
   final String? selectedId;
   final bool interactive;
-  final bool scribbleMode;
+
+  /// The Draw tab's armed tool (null = not drawing) and its style —
+  /// passed verbatim to [ShapesLayer], which captures and previews ink.
+  final InkTool? inkTool;
+  final InkStyle inkStyle;
   final void Function(String key)? onTextTap;
   final void Function(String?)? onSelect;
   final void Function(Map<String, dynamic>)? onLive;
   final void Function(Map<String, dynamic>)? onCommit;
   final VoidCallback? onGestureStart;
-  final void Function(List<Offset>)? onScribble;
+  final void Function(List<Offset>)? onStroke;
 
   /// The live text session's controller/focus — present (with [typing])
   /// while the selected text box is being typed into on the canvas.
@@ -146,20 +153,21 @@ class SlideStage extends StatelessWidget {
             }(),
           // The interaction + selection overlay on TOP of everything: all
           // gestures, the selection chrome, resize/rotate knobs, the
-          // scribble capture and the smart guides. Paint-only in the
+          // ink capture and the smart guides. Paint-only in the
           // presenter (nothing selected, not interactive).
           ShapesLayer(
             objects: objects,
             selectedId: selectedId,
             interactive: interactive,
-            scribbleMode: scribbleMode,
+            inkTool: inkTool,
+            inkStyle: inkStyle,
             designW: designW,
             designH: designH,
             onSelect: onSelect,
             onLive: onLive,
             onCommit: onCommit,
             onGestureStart: onGestureStart,
-            onScribble: onScribble,
+            onStroke: onStroke,
             // This layer rides OPAQUE above the archetype canvas, so it
             // forwards taps that hit NO object (with nothing selected) —
             // the stage hit-tests the canvas's own text slots and invokes
