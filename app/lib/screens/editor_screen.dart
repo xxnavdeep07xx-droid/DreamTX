@@ -33,6 +33,7 @@ part 'editor_nav_bar.dart';
 part 'editor_filmstrip.dart';
 part 'presenter_screen.dart';
 part 'editor_sheets.dart';
+part 'editor_sheet_builders.dart';
 
 
 /// Screen 2 — Editor. Canvas + filmstrip + a PowerPoint-style bottom ribbon —
@@ -1381,38 +1382,10 @@ class _EditorScreenState extends State<EditorScreen>
       }
       final choice = await dreamSheet<Map<String, dynamic>>(
         context,
-        builder: (sheetContext) => SizedBox(
-          height: MediaQuery.of(sheetContext).size.height * 0.55,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Text(
-                    brand ? 'Brand resources — images' : 'Deck resources — images',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                  ),
-                ),
-                for (final e in images)
-                  ListTile(
-                    leading: Image(
-                      image: FileImage(
-                          File(_resourcePathOf(e, brand: brand) ?? '')),
-                      width: 44,
-                      height: 44,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          const Icon(Icons.image_outlined, size: 22),
-                    ),
-                    title: Text('${e['name']}',
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
-                    subtitle: Text(
-                        '${((e['size'] ?? 0) as num).toInt() ~/ 1024} KB',
-                        style: const TextStyle(fontSize: 11.5)),
-                    onTap: () => Navigator.pop(sheetContext, e),
-                  ),
-            ],
-          ),
+        builder: (sheetContext) => _ImageResourceSheet(
+          brand: brand,
+          images: images,
+          pathOf: (e) => _resourcePathOf(e, brand: brand),
         ),
       );
       if (choice == null || !mounted) return;
@@ -1948,22 +1921,8 @@ class _EditorScreenState extends State<EditorScreen>
         (meta['archetypes'] as List? ?? []).map((e) => e.toString()).toList();
     final choice = await dreamSheet<String>(
       context,
-      builder: (context) => ListView(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              'Add slide${suggested.isEmpty ? '' : ' — suggested next: $suggested'}',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-          ),
-          ...archetypes.map((a) => ListTile(
-                leading: const Icon(Icons.dashboard_outlined),
-                title: Text(a),
-                onTap: () => Navigator.pop(context, a),
-              )),
-        ],
-      ),
+      builder: (context) =>
+          _ArchetypeSheet(suggested: suggested, archetypes: archetypes),
     );
     if (choice == null) return;
     final add = Bridge.command(
@@ -2074,44 +2033,8 @@ class _EditorScreenState extends State<EditorScreen>
     if (i < 0 || i >= _slides.length) return;
     final action = await dreamSheet<String>(
       context,
-      builder: (context) => ListView(
-        shrinkWrap: true,
-        children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-              child: Text('Slide ${i + 1} of ${_slides.length}',
-                  style: Theme.of(context).textTheme.titleMedium),
-            ),
-            ListTile(
-              leading: const Icon(Icons.edit_outlined),
-              title: const Text('Edit content'),
-              onTap: () => Navigator.pop(context, 'edit'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.content_copy),
-              title: const Text('Duplicate'),
-              onTap: () => Navigator.pop(context, 'dup'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.arrow_upward),
-              title: const Text('Move left'),
-              enabled: i > 0,
-              onTap: () => Navigator.pop(context, 'left'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.arrow_downward),
-              title: const Text('Move right'),
-              enabled: i < _slides.length - 1,
-              onTap: () => Navigator.pop(context, 'right'),
-            ),
-            ListTile(
-              leading: Icon(Icons.delete_outline,
-                  color: Theme.of(context).colorScheme.error),
-              title: const Text('Delete'),
-              onTap: () => Navigator.pop(context, 'del'),
-            ),
-          ],
-        ),
+      builder: (context) =>
+          _SlideActionsSheet(index: i, count: _slides.length),
     );
     switch (action) {
       case 'edit':
@@ -2167,28 +2090,7 @@ class _EditorScreenState extends State<EditorScreen>
   Future<void> _filesNewDeck() async {
     final kind = await dreamSheet<String>(
       context,
-      builder: (context) => ListView(
-        padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
-        children: [
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 20),
-            child: Text('New deck',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-            ),
-            ListTile(
-              leading: const Icon(Icons.note_add, color: kPurple),
-              title: const Text('Blank'),
-              subtitle: const Text('Starts empty — no template content'),
-              onTap: () => Navigator.pop(context, 'blank'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.auto_awesome, color: kPurple),
-              title: const Text('Template'),
-              subtitle: const Text('A design family composes the deck'),
-              onTap: () => Navigator.pop(context, 'template'),
-            ),
-          ],
-        ),
+      builder: (context) => const _NewDeckSheet(),
     );
     if (kind == null) return;
 
@@ -2204,23 +2106,7 @@ class _EditorScreenState extends State<EditorScreen>
     if (kind == 'template') {
       final fam = await dreamSheet<String>(
         context,
-        builder: (context) => ListView(
-          padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
-          children: [
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 20),
-                child: Text('Design family',
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-              ),
-              for (final (id, label) in _designFamilies)
-                ListTile(
-                  leading: const Icon(Icons.palette, color: kPurple),
-                  title: Text(label),
-                  onTap: () => Navigator.pop(context, id),
-                ),
-            ],
-          ),
+        builder: (context) => const _DesignFamilySheet(),
       );
       if (fam == null) return;
       family = fam;
@@ -2260,28 +2146,7 @@ class _EditorScreenState extends State<EditorScreen>
   Future<void> _filesOpenDeck() async {
     final kind = await dreamSheet<String>(
       context,
-      builder: (context) => ListView(
-        padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
-        children: [
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 20),
-            child: Text('Open a deck',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-            ),
-            ListTile(
-              leading: const Icon(Icons.history, color: kPurple),
-              title: const Text('Recents'),
-              subtitle: const Text('Decks saved on this device'),
-              onTap: () => Navigator.pop(context, 'recents'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.upload_file, color: kPurple),
-              title: const Text('Browse files'),
-              subtitle: const Text('DreamTX deck (.json) — .pptx import isn\u2019t supported'),
-              onTap: () => Navigator.pop(context, 'browse'),
-            ),
-          ],
-        ),
+      builder: (context) => const _OpenDeckSheet(),
     );
     if (kind == 'recents') {
       await _openRecentDeck();
@@ -2303,32 +2168,8 @@ class _EditorScreenState extends State<EditorScreen>
     final currentId = _deck['id'].toString();
     final choice = await dreamSheet<Map<String, dynamic>>(
       context,
-      builder: (context) => SizedBox(
-        height: MediaQuery.of(context).size.height * 0.6,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
-            children: [
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 20),
-                child: Text('Recents',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-              ),
-              for (final d in decks)
-                ListTile(
-                  leading: const Icon(Icons.layers_outlined, color: kPurple),
-                  title: Text((d['title'] ?? 'Untitled').toString(),
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
-                  subtitle: Text(
-                    '${((d['slides'] as List?) ?? []).length} slides · '
-                    '${((d['dna'] ?? const {})['family'] ?? '').toString().replaceAll('_', ' ')}'
-                    '${d['id'].toString() == currentId ? ' · this deck' : ''}',
-                    style: const TextStyle(fontSize: 11.5),
-                  ),
-                  onTap: () => Navigator.pop(context, d),
-                ),
-            ],
-        ),
-      ),
+      builder: (context) =>
+          _RecentsSheet(decks: decks, currentId: currentId),
     );
     if (choice == null || !mounted) return;
     await Navigator.pushReplacement(
@@ -2395,35 +2236,8 @@ class _EditorScreenState extends State<EditorScreen>
             .toList();
     final choice = await dreamSheet<String>(
       context,
-      builder: (context) => ListView(
-        padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Aspect ratio',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 4),
-                  Text('Current: $current · ${dimsLabel(current)}',
-                      style: const TextStyle(fontSize: 12.5, color: kText2)),
-                ],
-              ),
-            ),
-            for (final a in aspects)
-              ListTile(
-                leading: Icon(
-                  a == current ? Icons.check_circle : Icons.crop_free,
-                  color: a == current ? kPurple : kText2,
-                ),
-                title: Text(a),
-                subtitle: Text(dimsLabel(a),
-                    style: const TextStyle(fontSize: 11.5)),
-                onTap: () => Navigator.pop(context, a),
-              ),
-          ],
-        ),
+      builder: (context) =>
+          _AspectSheet(current: current, aspects: aspects),
     );
     if (choice == null || choice == current) return;
 
@@ -3804,74 +3618,14 @@ class _EditorScreenState extends State<EditorScreen>
   Future<void> _showComments() async {
     await dreamSheet<void>(
       context,
-      builder: (context) => StatefulBuilder(
-            builder: (context, setSheet) => Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-                  child: Text('Comments',
-                      style: Theme.of(context).textTheme.titleMedium),
-                ),
-                if (_comments.isEmpty)
-                  const SizedBox(
-                    height: 120,
-                    child: Center(
-                        child: Text('No comments yet — leave the first one.',
-                            style: _rowHint)),
-                  )
-                else
-                  Flexible(
-                    child: ListView(
-                      shrinkWrap: true,
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      children: [
-                        for (final c in _comments)
-                          ListTile(
-                            dense: true,
-                            leading: const Icon(Icons.person_outline,
-                                size: 20, color: kText2),
-                            title: Text(c['text'] ?? ''),
-                            subtitle: const Text('You · just now'),
-                          ),
-                      ],
-                    ),
-                  ),
-                const Divider(height: 1, color: kHairline),
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _commentField,
-                          minLines: 1,
-                          maxLines: 4,
-                          decoration: const InputDecoration(
-                            isDense: true,
-                            hintText: 'Add a comment',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Post comment',
-                        icon: const Icon(Icons.send, size: 20),
-                        onPressed: () {
-                          final text = _commentField.text.trim();
-                          if (text.isEmpty) return;
-                          setState(() => _comments.add({'text': text}));
-                          _commentField.clear();
-                          setSheet(() {});
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+      builder: (context) => _CommentsSheet(
+        comments: _comments,
+        field: _commentField,
+        onPost: (text) {
+          setState(() => _comments.add({'text': text}));
+          _commentField.clear();
+        },
+      ),
     );
   }
 
@@ -3884,47 +3638,9 @@ class _EditorScreenState extends State<EditorScreen>
   Future<void> _showExportSheet() async {
     await dreamSheet<void>(
       context,
-      builder: (context) => Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Text('Export deck',
-                  style: Theme.of(context).textTheme.titleMedium),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: _busy
-                      ? null
-                      : () {
-                          Navigator.pop(context);
-                          _export('export_pptx');
-                        },
-                  icon: const Icon(Icons.description, size: 18),
-                  label: const Text('PowerPoint (.pptx)'),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton.tonalIcon(
-                  onPressed: _busy
-                      ? null
-                      : () {
-                          Navigator.pop(context);
-                          _export('export_pdf');
-                        },
-                  icon: const Icon(Icons.picture_as_pdf, size: 18),
-                  label: const Text('PDF (.pdf)'),
-                ),
-              ),
-            ),
-          ],
+      builder: (context) => _ExportSheet(
+        busy: _busy,
+        onExport: (op) => _export(op),
       ),
     );
   }
