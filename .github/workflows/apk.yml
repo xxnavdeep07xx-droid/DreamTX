@@ -3,6 +3,10 @@ name: apk
 on:
   workflow_dispatch:
   push:
+    # Every merge to main builds a fresh installable APK (Actions artifact
+    # "dreamtx-apk") so the app can be device-tested at any commit; tag
+    # pushes do that AND publish the same APKs to a GitHub Release.
+    branches: [main]
     tags: ["v*"]
 
 jobs:
