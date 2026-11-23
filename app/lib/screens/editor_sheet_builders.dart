@@ -329,7 +329,7 @@ class _CommentsSheet extends StatefulWidget {
     required this.onPost,
   });
 
-  final List<Map<String, dynamic>> comments;
+  final List<Map<String, String>> comments;
 
   /// The editor-owned input controller — posting reads and clears it.
   final TextEditingController field;
