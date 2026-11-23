@@ -287,3 +287,157 @@ class _SheetPortalClipper extends CustomClipper<Rect> {
   bool shouldReclip(_SheetPortalClipper oldClipper) =>
       oldClipper.boundary != boundary;
 }
+
+/// One item of the filmstrip rail: a slide card (carrying its TRUE slide
+/// index — the rail is a flattened view that omits folded sections'
+/// slides, so a list position is never a slide index) or a section divider
+/// (carrying its marker).
+class _RailItem {
+  const _RailItem.section(this.section) : slideIndex = -1;
+  const _RailItem.slide(this.slideIndex) : section = null;
+
+  /// The section marker this divider renders; null on a slide card.
+  final Map<String, dynamic>? section;
+
+  /// The slide's index in the deck; -1 on a section divider.
+  final int slideIndex;
+
+  bool get isSection => section != null;
+}
+
+/// A section divider in the filmstrip rail — structure, not content: a
+/// slim card over the charcoal band carrying the signature gradient as
+/// its left edge strip (the boundary rule's own three stops, run
+/// vertically) and the section's name rotated to read top-to-bottom — the
+/// rail's one text axis. Tap folds the section's slides out of the rail
+/// and folds a head-count pill in; tap again restores them. Long-press
+/// renames or removes. The card deliberately reads quieter than the white
+/// slide cards — translucent fill, hairline border, secondary type — a
+/// boundary the eye files as chrome, not content.
+class _SectionChip extends StatelessWidget {
+  const _SectionChip({
+    required this.id,
+    required this.name,
+    required this.collapsed,
+    required this.count,
+    required this.onToggle,
+    required this.onLongPress,
+  });
+
+  /// The section marker id (also the widget key's suffix).
+  final String id;
+
+  /// The section's display name (rotated).
+  final String name;
+
+  /// Folded state: the section's slides are out of the rail.
+  final bool collapsed;
+
+  /// How many slides the section owns (the folded pill's head-count).
+  final int count;
+
+  final VoidCallback onToggle;
+  final VoidCallback onLongPress;
+
+  /// The edge strip: the divider rule's three stops (kPurple → kMagenta →
+  /// kOrange) run VERTICALLY — the chip is the rule's own child.
+  static const LinearGradient _edgeSweep = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [kPurple, kMagenta, kOrange],
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(6),
+      child: SizedBox(
+        key: ValueKey('section_chip_$id'),
+        width: 44,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: onToggle,
+          onLongPress: onLongPress,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: kHairline),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(9),
+                child: Stack(
+                  children: [
+                    // The signature edge: 3dp of the rule's own sweep,
+                    // flush to the card's left side.
+                    const Positioned(
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      child: SizedBox(
+                        width: 3,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(gradient: _edgeSweep),
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 6, 3, 4),
+                      child: Column(
+                        children: [
+                          // The rotated name — pre-rotation width is the
+                          // vertical run, capped at 52dp (the name's
+                          // budget under the affordance) with an ellipsis.
+                          Expanded(
+                            child: Center(
+                              child: RotatedBox(
+                                quarterTurns: 1,
+                                child: ConstrainedBox(
+                                  constraints:
+                                      const BoxConstraints(maxWidth: 52),
+                                  child: Text(
+                                    name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                        fontSize: 10.5,
+                                        color: kText2,
+                                        fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          // The fold state's affordance: a chevron while
+                          // open, the hidden head-count while folded.
+                          if (collapsed)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                color:
+                                    Colors.white.withValues(alpha: 0.14),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text('$count',
+                                  style: const TextStyle(
+                                      fontSize: 10,
+                                      height: 1.2,
+                                      color: kText2,
+                                      fontWeight: FontWeight.w700)),
+                            )
+                          else
+                            const Icon(Icons.chevron_right,
+                                size: 14, color: kText2),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+    );
+  }
+}
