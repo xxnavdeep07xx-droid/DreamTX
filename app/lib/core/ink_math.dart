@@ -149,7 +149,10 @@ double _segmentDistance(Offset p, Offset a, Offset b) {
   final ab = b - a;
   final len2 = ab.distanceSquared;
   if (len2 == 0) return (p - a).distance;
-  var t = ((p - a).dot(ab)) / len2;
+  // The clamped projection parameter — written out because dart:ui's
+  // Offset carries no dot product, only the operators.
+  final ap = p - a;
+  var t = (ap.dx * ab.dx + ap.dy * ab.dy) / len2;
   if (t < 0) t = 0;
   if (t > 1) t = 1;
   return (p - (a + ab * t)).distance;
