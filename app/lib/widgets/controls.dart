@@ -76,6 +76,7 @@ class DreamColorChips extends StatelessWidget {
     this.horizontal = false,
     this.chipSize = 28,
     this.noneTooltip = 'No color',
+    this.hideNone = false,
   });
 
   /// The palette to show (deck colors + the studio standards).
@@ -99,15 +100,20 @@ class DreamColorChips extends StatelessWidget {
   /// The "no color" chip's tooltip.
   final String noneTooltip;
 
+  /// Hide the "no color" chip entirely — for pickers where a null pick is
+  /// meaningless (ink has no "no color"); the row starts at the swatches.
+  final bool hideNone;
+
   @override
   Widget build(BuildContext context) {
     final chips = [
-      _NoColorChip(
-        size: chipSize,
-        selected: selected == null,
-        tooltip: noneTooltip,
-        onTap: () => onPick(null),
-      ),
+      if (!hideNone)
+        _NoColorChip(
+          size: chipSize,
+          selected: selected == null,
+          tooltip: noneTooltip,
+          onTap: () => onPick(null),
+        ),
       for (final c in palette)
         _SwatchChip(
           color: c,
