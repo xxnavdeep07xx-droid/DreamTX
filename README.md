@@ -37,7 +37,7 @@ and color. Three curated deck DNAs ship in v1 — **Swiss editorial** (default),
 pacing governor (no same archetype twice in a row, density rhythm, whitespace
 budget) so decks never look template-stamped.
 
-## What's in the app (v0.2.37)
+## What's in the app (v0.2.38)
 
 **Look** — dark studio theme (black chrome, charcoal surfaces, red accents,
 one purple→pink→orange signature gradient on create actions and the live
@@ -117,7 +117,7 @@ refuses updates across signers).
   pairing Registry DO (code+secret, TTL, attempt limiting), Deck DO with
   hibernating WebSocket broadcast and version log. Not yet deployed.
 - Flutter: everything under "What's in the app" above; the widget suite
-  (75 tests at v0.2.37; 106 after the Draw toolbox) keeps the contracts.
+  (106 tests at v0.2.38 — the Draw toolbox added 31) keeps the contracts.
 - CI: cargo test (native + wasm32), worker typecheck + end-to-end MCP flow
   against a local workerd, flutter analyze + widget tests, resolved-pin and
   lock-drift gates, per-ABI release-signed APK on tags.
@@ -141,7 +141,7 @@ refuses updates across signers).
 ## Milestones
 
 - **M0** scaffold + green CI
-- **M1** installable APK from GitHub Releases — done (v0.1.0 → v0.2.37;
+- **M1** installable APK from GitHub Releases — done (v0.1.0 → v0.2.38;
   release-signed since v0.2.1, per-ABI since v0.2.36)
 - **M2** Worker deployed (needs Cloudflare token) + MCP end-to-end = **v1**
 
