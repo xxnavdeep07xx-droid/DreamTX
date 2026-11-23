@@ -263,6 +263,68 @@ class _SlideActionsSheet extends StatelessWidget {
   }
 }
 
+/// **Object actions** — the long-press context menu for a canvas object
+/// (the mobile answer to PowerPoint's right-click). Pops the action code
+/// (`'copy'` / `'dup'` / `'copyStyle'` / `'applyStyle'` / `'del'`); the
+/// orchestrating method maps it onto the deck. Apply style stays disabled
+/// until a style has been picked up — the subtitle says what's missing.
+class _ObjectActionsSheet extends StatelessWidget {
+  const _ObjectActionsSheet({required this.canApplyStyle});
+
+  /// Whether the style clipboard holds a pickup (Copy style ran first).
+  final bool canApplyStyle;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      shrinkWrap: true,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+          child: Text('Object actions',
+              style: Theme.of(context).textTheme.titleMedium),
+        ),
+        ListTile(
+          leading: const Icon(Icons.copy_all_outlined),
+          title: const Text('Copy'),
+          subtitle: const Text('Then long-press the canvas to paste',
+              style: TextStyle(fontSize: 11.5)),
+          onTap: () => Navigator.pop(context, 'copy'),
+        ),
+        ListTile(
+          leading: const Icon(Icons.content_copy),
+          title: const Text('Duplicate'),
+          onTap: () => Navigator.pop(context, 'dup'),
+        ),
+        ListTile(
+          leading: const Icon(Icons.format_paint_outlined),
+          title: const Text('Copy style'),
+          subtitle: const Text('Pick up fill, stroke, opacity, effects',
+              style: TextStyle(fontSize: 11.5)),
+          onTap: () => Navigator.pop(context, 'copyStyle'),
+        ),
+        ListTile(
+          leading: const Icon(Icons.format_paint),
+          title: const Text('Apply style'),
+          enabled: canApplyStyle,
+          subtitle: Text(
+              canApplyStyle
+                  ? 'The picked-up style, on this object'
+                  : 'Copy a style first',
+              style: const TextStyle(fontSize: 11.5)),
+          onTap: () => Navigator.pop(context, 'applyStyle'),
+        ),
+        ListTile(
+          leading: Icon(Icons.delete_outline,
+              color: Theme.of(context).colorScheme.error),
+          title: const Text('Delete'),
+          onTap: () => Navigator.pop(context, 'del'),
+        ),
+      ],
+    );
+  }
+}
+
 /// **Resource images** — the importable images of the deck's or the brand's
 /// SAF resource store. Pops the chosen entry; thumbnails resolve through
 /// [pathOf] (the editor's cached `_resourcePathOf`) so they render on the
