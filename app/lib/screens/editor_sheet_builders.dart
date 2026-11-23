@@ -14,7 +14,7 @@ part of 'editor_screen.dart';
 /// **New deck** — Blank, or a design family composes it. Pops `'blank'` /
 /// `'template'`.
 class _NewDeckSheet extends StatelessWidget {
-  const _NewDeckSheet({super.key});
+  const _NewDeckSheet();
 
   @override
   Widget build(BuildContext context) {
@@ -46,7 +46,7 @@ class _NewDeckSheet extends StatelessWidget {
 /// **Design family** — which family composes a new template deck. Pops the
 /// family id.
 class _DesignFamilySheet extends StatelessWidget {
-  const _DesignFamilySheet({super.key});
+  const _DesignFamilySheet();
 
   @override
   Widget build(BuildContext context) {
@@ -72,7 +72,7 @@ class _DesignFamilySheet extends StatelessWidget {
 /// **Open a deck** — Recents (this device) or Browse Files. Pops `'recents'`
 /// / `'browse'`.
 class _OpenDeckSheet extends StatelessWidget {
-  const _OpenDeckSheet({super.key});
+  const _OpenDeckSheet();
 
   @override
   Widget build(BuildContext context) {
@@ -104,7 +104,7 @@ class _OpenDeckSheet extends StatelessWidget {
 /// **Recents** — the decks on this device, newest first. Pops the chosen deck
 /// map; the current deck is flagged inline.
 class _RecentsSheet extends StatelessWidget {
-  const _RecentsSheet({super.key, required this.decks, required this.currentId});
+  const _RecentsSheet({required this.decks, required this.currentId});
 
   final List<Map<String, dynamic>> decks;
   final String currentId;
@@ -143,7 +143,7 @@ class _RecentsSheet extends StatelessWidget {
 /// **Aspect ratio** — the current ratio plus the supported presets. Pops the
 /// chosen aspect string.
 class _AspectSheet extends StatelessWidget {
-  const _AspectSheet({super.key, required this.current, required this.aspects});
+  const _AspectSheet({required this.current, required this.aspects});
 
   final String current;
   final List<String> aspects;
@@ -185,7 +185,7 @@ class _AspectSheet extends StatelessWidget {
 /// **Add slide** — the curated archetype list, with the pacing engine's
 /// suggestion in the header. Pops the archetype label.
 class _ArchetypeSheet extends StatelessWidget {
-  const _ArchetypeSheet({super.key, required this.suggested, required this.archetypes});
+  const _ArchetypeSheet({required this.suggested, required this.archetypes});
 
   final String suggested;
   final List<String> archetypes;
@@ -215,7 +215,7 @@ class _ArchetypeSheet extends StatelessWidget {
 /// (`'edit'` / `'dup'` / `'left'` / `'right'` / `'del'`); the orchestrating
 /// method maps it onto the deck.
 class _SlideActionsSheet extends StatelessWidget {
-  const _SlideActionsSheet({super.key, required this.index, required this.count});
+  const _SlideActionsSheet({required this.index, required this.count});
 
   final int index;
   final int count;
@@ -269,7 +269,6 @@ class _SlideActionsSheet extends StatelessWidget {
 /// first frame.
 class _ImageResourceSheet extends StatelessWidget {
   const _ImageResourceSheet({
-    super.key,
     required this.brand,
     required this.images,
     required this.pathOf,
@@ -323,7 +322,6 @@ class _ImageResourceSheet extends StatelessWidget {
 /// the shared field) and then rebuilds the sheet.
 class _CommentsSheet extends StatefulWidget {
   const _CommentsSheet({
-    super.key,
     required this.comments,
     required this.field,
     required this.onPost,
@@ -417,7 +415,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
 /// **Export deck** — the two format actions. Each pops the sheet first, then
 /// hands the operation to [onExport] (the editor's `_export` pipeline).
 class _ExportSheet extends StatelessWidget {
-  const _ExportSheet({super.key, required this.busy, required this.onExport});
+  const _ExportSheet({required this.busy, required this.onExport});
 
   final bool busy;
 
