@@ -155,11 +155,29 @@ Map<String, dynamic> _fakeBump(Map<String, dynamic> deck) {
   return deck;
 }
 
+/// One slide, copied one level deep (fresh objects list + fresh object
+/// maps) — the unit of the fake engine's copy semantics.
+Map<String, dynamic> _fakeSlideCopy(Map s) =>
+    Map<String, dynamic>.from(s)..['objects'] = [
+      for (final o in (s['objects'] as List? ?? const []))
+        if (o is Map) Map<String, dynamic>.from(o),
+    ];
+
 void _fakeForEachSlide(Map<String, dynamic> deck, String slideId,
     void Function(Map<String, dynamic> slide) fn) {
+  // The REAL engine round-trips every command through JSON — the deck it
+  // returns never aliases the caller's maps. The object ops below MUTATE
+  // the slide they are handed, so they get a COPY here, re-linked into a
+  // fresh slides list; the caller's own slide instances (and any deck
+  // snapshot sharing them — the editor's undo stack) are never touched.
+  final out = <Map<String, dynamic>>[];
   for (final s in (deck['slides'] as List? ?? const [])) {
-    if (s is Map<String, dynamic> && s['id'] == slideId) fn(s);
+    if (s is! Map) continue;
+    final copy = _fakeSlideCopy(s);
+    if (s['id'] == slideId) fn(copy);
+    out.add(copy);
   }
+  deck['slides'] = out;
 }
 
 Map<String, dynamic> _fakeObjectOp(Map<String, dynamic> req,

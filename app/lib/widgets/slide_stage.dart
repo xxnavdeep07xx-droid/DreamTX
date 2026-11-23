@@ -49,6 +49,7 @@ class SlideStage extends StatelessWidget {
     this.onCommit,
     this.onGestureStart,
     this.onStroke,
+    this.onEraseHits,
     this.textController,
     this.textFocusNode,
     this.typing = false,
@@ -87,6 +88,10 @@ class SlideStage extends StatelessWidget {
   final void Function(Map<String, dynamic>)? onCommit;
   final VoidCallback? onGestureStart;
   final void Function(List<Offset>)? onStroke;
+
+  /// The eraser's sweep/tap batch — the marked scribble ids. Passed
+  /// verbatim to [ShapesLayer]; the editor owns the delete chain.
+  final void Function(List<String>)? onEraseHits;
 
   /// The live text session's controller/focus — present (with [typing])
   /// while the selected text box is being typed into on the canvas.
@@ -168,6 +173,7 @@ class SlideStage extends StatelessWidget {
             onCommit: onCommit,
             onGestureStart: onGestureStart,
             onStroke: onStroke,
+            onEraseHits: onEraseHits,
             // This layer rides OPAQUE above the archetype canvas, so it
             // forwards taps that hit NO object (with nothing selected) —
             // the stage hit-tests the canvas's own text slots and invokes

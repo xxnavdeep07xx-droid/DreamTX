@@ -83,8 +83,11 @@ class _DrawToolboxState {
   /// mode inside Draw (the canvas regains taps; the knobs return). Arming
   /// through a tap is the moment the editor clears the selection: the
   /// armed tool consumes canvas taps, so the chrome would be untouchable.
-  _DrawToolboxState toolTapped(InkTool t) =>
-      armed && tool == t ? _copy(armed: false) : _copy(armed: true, tool: t);
+  /// Any tool tap also collapses the palette band (the design: a tool tap
+  /// or a chip pick collapses it).
+  _DrawToolboxState toolTapped(InkTool t) => armed && tool == t
+      ? _copy(armed: false, expanded: false)
+      : _copy(armed: true, tool: t, expanded: false);
 
   /// A palette pick in the expanded band: the ACTIVE tool's color memory,
   /// and the band collapses (the design: chip pick collapses).
@@ -199,27 +202,37 @@ class _DrawToolboxRow extends StatelessWidget {
               active: state.armed && state.tool == InkTool.highlighter,
               onTap: () => onChanged(state.toolTapped(InkTool.highlighter)),
             ),
-            // The hairline that separates tools from settings.
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 6),
-              width: 1,
-              height: 26,
-              color: kHairline,
+            _DrawToolButton(
+              icon: Icons.backspace_outlined,
+              tooltip: 'Eraser',
+              active: state.armed && state.tool == InkTool.eraser,
+              onTap: () => onChanged(state.toolTapped(InkTool.eraser)),
             ),
-            _ColorChipButton(
-              colorHex: state.colorHexFor(defaultPenHex: defaultPenHex),
-              tooltip: state.tool == InkTool.pen
-                  ? 'Pen color'
-                  : 'Highlighter color',
-              onTap: () => onChanged(state.bandToggled()),
-            ),
-            // The width chip is the pen's: the highlighter is fixed-width
-            // by design, so its settings are just the color.
-            if (state.tool == InkTool.pen)
-              _WidthChipButton(
-                label: _penWidthLabel(state.penWidth),
+            // The settings side — hidden for the eraser (it has none: the
+            // sweep's reach is fixed, its targets are scribbles only).
+            if (state.tool != InkTool.eraser) ...[
+              // The hairline that separates tools from settings.
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 6),
+                width: 1,
+                height: 26,
+                color: kHairline,
+              ),
+              _ColorChipButton(
+                colorHex: state.colorHexFor(defaultPenHex: defaultPenHex),
+                tooltip: state.tool == InkTool.pen
+                    ? 'Pen color'
+                    : 'Highlighter color',
                 onTap: () => onChanged(state.bandToggled()),
               ),
+              // The width chip is the pen's: the highlighter is fixed-width
+              // by design, so its settings are just the color.
+              if (state.tool == InkTool.pen)
+                _WidthChipButton(
+                  label: _penWidthLabel(state.penWidth),
+                  onTap: () => onChanged(state.bandToggled()),
+                ),
+            ],
           ],
         ),
       );

@@ -1,5 +1,6 @@
 library;
 
+import 'dart:math' as math;
 import 'dart:ui' show Offset;
 
 /// Ink capture for the Draw tab. Pure functions, no widget deps —
@@ -191,4 +192,102 @@ Offset _quadAt(Offset a, Offset c, Offset b, double t) {
     u * u * a.dx + 2 * u * t * c.dx + t * t * b.dx,
     u * u * a.dy + 2 * u * t * c.dy + t * t * b.dy,
   );
+}
+
+// ---------------------------------------------------------------------------
+// The eraser — sweep sampling + the scribble-signature hit-test
+// ---------------------------------------------------------------------------
+
+/// The eraser's base reach in design px (≈7.5dp on screen for a 16:9
+/// deck): the corridor radius before the target's own half stroke width
+/// is added.
+const double kInkEraserRadius = 24.0;
+
+/// Densify one pointer step into corridor samples — the eraser must cover
+/// the path BETWEEN pointer updates too, so a fast swipe never jumps over
+/// a stroke. Both endpoints are included; the step (12px design) is under
+/// half the corridor, so consecutive discs overlap generously.
+List<Offset> inkSweepSamples(Offset from, Offset to, {double step = 12.0}) {
+  final d = (to - from).distance;
+  if (d <= step) return [from, to];
+  final n = (d / step).ceil();
+  return [
+    for (var i = 0; i <= n; i++)
+      Offset(
+        from.dx + (to.dx - from.dx) * i / n,
+        from.dy + (to.dy - from.dy) * i / n,
+      ),
+  ];
+}
+
+/// The objects an eraser sweep touches — ONLY scribble-signature path
+/// objects: `preset == 'path'`, no `content` payload, not `locked`.
+/// Content objects (text boxes, images, icons, media, tables) and preset
+/// shapes keep their explicit delete flows — an accidental eraser sweep
+/// must never eat content. Rotation is honored: each probe point is
+/// rotated into the object's local frame around its bbox center, the
+/// same center+angle the gesture math and selection chrome rotate around.
+///
+/// The corridor is [radius] (design px, [kInkEraserRadius] by default)
+/// plus half the target's own stroke width; the probe is any [sweep]
+/// sample within that reach of the object's normalized polyline.
+List<String> inkEraseHits(
+  List<Map<String, dynamic>> objects,
+  List<Offset> sweep, {
+  double radius = kInkEraserRadius,
+}) {
+  final hits = <String>[];
+  for (final obj in objects) {
+    if (obj['preset'] != 'path') continue;
+    if (obj['content'] != null) continue;
+    if (obj['locked'] == true) continue;
+    final pts = obj['points'];
+    if (pts is! List || pts.length < 2) continue;
+    final ox = ((obj['x'] ?? 0) as num).toDouble();
+    final oy = ((obj['y'] ?? 0) as num).toDouble();
+    final ow = ((obj['w'] ?? 1) as num).toDouble();
+    final oh = ((obj['h'] ?? 1) as num).toDouble();
+    final rot = ((obj['rotation'] ?? 0) as num?)?.toDouble() ?? 0.0;
+    final stroke = obj['stroke'];
+    final halfStroke = stroke is Map
+        ? ((stroke['width'] ?? 0) as num).toDouble() / 2
+        : 0.0;
+    final reach = radius + halfStroke;
+    final cx = ox + ow / 2;
+    final cy = oy + oh / 2;
+    // The polyline in the object's local (unrotated) frame.
+    final poly = <Offset>[
+      for (final pt in pts.whereType<Map>())
+        Offset(
+          ox + ((pt['x'] ?? 0) as num).toDouble() * ow,
+          oy + ((pt['y'] ?? 0) as num).toDouble() * oh,
+        ),
+    ];
+    var touched = false;
+    for (final s in sweep) {
+      if (touched) break;
+      // Rotate the probe into the local frame (rotation == 0 fast path).
+      Offset p = s;
+      if (rot != 0) {
+        final r = -rot * math.pi / 180.0;
+        final dx = s.dx - cx;
+        final dy = s.dy - cy;
+        p = Offset(
+          cx + dx * math.cos(r) - dy * math.sin(r),
+          cy + dx * math.sin(r) + dy * math.cos(r),
+        );
+      }
+      // The bbox prefilter, inflated by the reach.
+      if (p.dx < ox - reach || p.dx > ox + ow + reach) continue;
+      if (p.dy < oy - reach || p.dy > oy + oh + reach) continue;
+      for (var i = 1; i < poly.length; i++) {
+        if (_segmentDistance(p, poly[i - 1], poly[i]) <= reach) {
+          touched = true;
+          break;
+        }
+      }
+    }
+    if (touched) hits.add(obj['id'] as String);
+  }
+  return hits;
 }

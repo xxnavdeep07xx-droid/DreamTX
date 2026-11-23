@@ -163,4 +163,121 @@ void main() {
       expect(a == d, isFalse);
     });
   });
+/// A scribble-signature path object at (x, y), a horizontal polyline.
+Map<String, dynamic> scribbleObj(String id,
+    {double x = 400,
+    double y = 300,
+    double w = 200,
+    double h = 40,
+    double rotation = 0,
+    double strokeW = 8,
+    bool locked = false,
+    Map? content}) {
+  return <String, dynamic>{
+    'id': id,
+    'preset': 'path',
+    'x': x,
+    'y': y,
+    'w': w,
+    'h': h,
+    'rotation': rotation,
+    'opacity': 1.0,
+    'locked': locked,
+    'fill': {'type': 'none'},
+    'stroke': {
+      'color': 'C25E00',
+      'width': strokeW,
+      'dash': 'solid',
+      'start_arrow': 'none',
+      'end_arrow': 'none'
+    },
+    'effects': <String, dynamic>{},
+    'points': [
+      {'x': 0.0, 'y': 0.5},
+      {'x': 0.5, 'y': 0.5},
+      {'x': 1.0, 'y': 0.5},
+    ],
+    'closed': false,
+    if (content != null) 'content': content,
+  };
+}
+
+group('inkEraseHits: the scribble signature', () {
+  test('a sweep over the polyline hits the path object', () {
+    final objs = [scribbleObj('ink1')];
+    // The polyline sits at y = 300 + 0.5*40 = 320, x in 400..600.
+    expect(inkEraseHits(objs, const [Offset(500, 320)]), ['ink1']);
+  });
+
+  test('a content object inside the sweep is NEVER hit', () {
+    final objs = [
+      scribbleObj('ink1'),
+      scribbleObj('tb1', content: {'kind': 'text', 'doc': {'text': 'x'}}),
+    ];
+    final hits = inkEraseHits(objs, const [Offset(500, 320), Offset(480, 318)]);
+    expect(hits, ['ink1']);
+  });
+
+  test('a locked scribble resists the eraser', () {
+    final objs = [scribbleObj('ink1', locked: true)];
+    expect(inkEraseHits(objs, const [Offset(500, 320)]), isEmpty);
+  });
+
+  test('a preset shape is never hit (not the eraser\'s business)', () {
+    final rect = scribbleObj('r1')..['preset'] = 'rectangle';
+    expect(inkEraseHits([rect], const [Offset(500, 320)]), isEmpty);
+  });
+});
+
+group('inkEraseHits: the corridor', () {
+  test('the reach is the radius + half the stroke width', () {
+    final objs = [scribbleObj('ink1', strokeW: 8)]; // reach = 24 + 4 = 28
+    // Just inside: 27px above the polyline.
+    expect(inkEraseHits(objs, const [Offset(500, 320 - 27)]), ['ink1']);
+    // Just outside: 30px above.
+    expect(inkEraseHits(objs, const [Offset(500, 320 - 30)]), isEmpty);
+  });
+
+  test('rotation is honored — the probe rotates into the local frame', () {
+    // Rotated 90 degrees around its center (500, 320): the polyline runs
+    // vertically through x=500, y in 220..420.
+    final objs = [scribbleObj('ink1', rotation: 90)];
+    expect(inkEraseHits(objs, const [Offset(500, 260)]), ['ink1'],
+        reason: 'on the rotated polyline');
+    expect(inkEraseHits(objs, const [Offset(460, 320)]), isEmpty,
+        reason: 'off the rotated polyline (would hit unrotated)');
+  });
+
+  test('any sample of the sweep counts, not just the endpoints', () {
+    final objs = [scribbleObj('ink1')];
+    // The sweep's endpoints are far from the stroke; one middle sample
+    // lands on it.
+    expect(
+      inkEraseHits(objs, const [Offset(200, 100), Offset(500, 320), Offset(900, 600)]),
+      ['ink1'],
+    );
+  });
+});
+
+group('inkSweepSamples: the corridor densifier', () {
+  test('a short step keeps both endpoints', () {
+    final s = inkSweepSamples(const Offset(0, 0), const Offset(10, 0));
+    expect(s, const [Offset(0, 0), Offset(10, 0)]);
+  });
+
+  test('a long step is densified under the step size, on the segment', () {
+    final s = inkSweepSamples(const Offset(0, 0), const Offset(100, 0));
+    expect(s.length, greaterThanOrEqualTo(9)); // 100 / 12 -> 9 intervals
+    expect(s.first, const Offset(0, 0));
+    expect(s.last, const Offset(100, 0));
+    for (final p in s) {
+      expect(p.dy, 0);
+      expect(p.dx, inInclusiveRange(0, 100));
+    }
+    // Consecutive samples are <= step apart — no jump-over gaps.
+    for (var i = 1; i < s.length; i++) {
+      expect((s[i] - s[i - 1]).distance, lessThanOrEqualTo(12.01));
+    }
+  });
+});
 }

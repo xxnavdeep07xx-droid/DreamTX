@@ -761,6 +761,36 @@ class _EditorScreenState extends State<EditorScreen>
     }
   }
 
+  /// The eraser's sweep (or tap) finished: delete every marked
+  /// scribble in ONE chained pass — deck -> deck -> deck — so the whole
+  /// sweep is a single undo step (the deck snapshot lands in the stack
+  /// once, after the last delete; undo restores every stroke at once).
+  /// The ids came from the layer's hit-test, which only ever marks
+  /// scribble-signature path objects — content is immune by construction.
+  void _onEraseHits(List<String> ids) {
+    if (ids.isEmpty) return;
+    final slideId = _slideId;
+    if (slideId == null) return;
+    Map? deck = _deck;
+    var changed = false;
+    for (final id in ids) {
+      final r = Bridge.command({
+        'op': 'delete_object',
+        'deck': deck,
+        'slide_id': slideId,
+        'object_id': id,
+      });
+      if (r['ok'] == true && r['deck'] is Map) {
+        deck = r['deck'] as Map;
+        changed = true;
+      } else {
+        _toast('Could not erase: ${r['error']}');
+        break;
+      }
+    }
+    if (changed) _mutate(deck);
+  }
+
   /// The Draw toolbox's one mutation point (the row's onChanged): state
   /// in, state out. Arming through a tool tap clears the selection (draw
   /// focus — the armed tool consumes canvas taps); style edits and band
@@ -2781,6 +2811,7 @@ class _EditorScreenState extends State<EditorScreen>
                                     onCommit: _commitObject,
                                     onGestureStart: _objectGestureStart,
                                     onStroke: _onStrokeDone,
+                                    onEraseHits: _onEraseHits,
                                     textController: _selectedObject != null &&
                                             ObjectContent.isText(
                                                 _selectedObject!)
