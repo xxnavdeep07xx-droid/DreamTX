@@ -50,6 +50,8 @@ class SlideStage extends StatelessWidget {
     this.onGestureStart,
     this.onStroke,
     this.onEraseHits,
+    this.onObjectLongPress,
+    this.onCanvasLongPress,
     this.textController,
     this.textFocusNode,
     this.typing = false,
@@ -92,6 +94,14 @@ class SlideStage extends StatelessWidget {
   /// The eraser's sweep/tap batch — the marked scribble ids. Passed
   /// verbatim to [ShapesLayer]; the editor owns the delete chain.
   final void Function(List<String>)? onEraseHits;
+
+  /// Long-press wiring (editing only; the presenter passes nothing —
+  /// read-only stages never build the recognizers): an object long-press
+  /// opens its actions sheet, an empty-canvas long-press pastes the
+  /// object clipboard at the pressed point. Passed verbatim to
+  /// [ShapesLayer].
+  final void Function(Map<String, dynamic> obj)? onObjectLongPress;
+  final void Function(Offset designPos)? onCanvasLongPress;
 
   /// The live text session's controller/focus — present (with [typing])
   /// while the selected text box is being typed into on the canvas.
@@ -174,6 +184,8 @@ class SlideStage extends StatelessWidget {
             onGestureStart: onGestureStart,
             onStroke: onStroke,
             onEraseHits: onEraseHits,
+            onObjectLongPress: onObjectLongPress,
+            onCanvasLongPress: onCanvasLongPress,
             // This layer rides OPAQUE above the archetype canvas, so it
             // forwards taps that hit NO object (with nothing selected) —
             // the stage hit-tests the canvas's own text slots and invokes

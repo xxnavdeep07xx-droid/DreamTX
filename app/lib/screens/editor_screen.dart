@@ -1828,6 +1828,120 @@ class _EditorScreenState extends State<EditorScreen>
     setState(() => _selectedObjectId = newId);
   }
 
+  // ---- long-press object actions + the clipboards (Home, redistributed) ---
+  //
+  // The long-press is the mobile context menu: an object opens its action
+  // sheet (copy / duplicate / the format painter / delete — the layers
+  // sheet keeps the deep ops), an empty-canvas long-press pastes the
+  // object clipboard at the pressed point. The clipboards live on the
+  // editor state, not the OS clipboard: deck objects are JSON documents,
+  // not text, and they must survive every deck edit short of a deck
+  // switch.
+
+  /// The copied object, deep-copied at copy time (JSON round-trip — the
+  /// same trip every engine op takes, so later edits of the original can
+  /// never alias into the clipboard). Paste assigns a fresh id.
+  Map<String, dynamic>? _objectClipboard;
+
+  /// The format painter's pickup: the universal shape chrome (`fill`,
+  /// `stroke`, `opacity`, `effects`) — the fields every object carries and
+  /// both exporters already render. Text typography (RichDoc spans) is a
+  /// v2 pickup; v1 paints chrome only.
+  Map<String, dynamic>? _styleClipboard;
+
+  /// Long-press on an object: make it the selection (the panel shows the
+  /// target), then pop the actions sheet. Selection happens through the
+  /// prepare path, NOT `_onObjectSelected` — a long-press must never read
+  /// as the tap's second tap, so holding the already-selected text box
+  /// opens this menu and the keyboard stays down.
+  Future<void> _objectActions(Map<String, dynamic> obj) async {
+    final id = obj['id'] as String;
+    if (_selectedObjectId != id) {
+      _prepareSelectionFor(id);
+      if (_mode == _Mode.editing && _navTab != _NavTab.insert) {
+        _setNavTab(_NavTab.insert);
+      }
+    }
+    final action = await dreamSheet<String>(
+      context,
+      builder: (context) =>
+          _ObjectActionsSheet(canApplyStyle: _styleClipboard != null),
+    );
+    switch (action) {
+      case 'copy':
+        _copyObject(obj);
+      case 'dup':
+        _duplicateObject(id);
+      case 'copyStyle':
+        _copyStyle(obj);
+      case 'applyStyle':
+        _applyStyle(obj);
+      case 'del':
+        _deleteObject(id);
+    }
+  }
+
+  /// Long-press on empty canvas: paste the clipboard with its top-left at
+  /// the press, clamped inside the slide. No clipboard, no-op — a stray
+  /// hold on the canvas must never punish the user with a toast.
+  void _pasteObjectAt(Offset design) {
+    final clip = _objectClipboard;
+    final slideId = _slideId;
+    if (clip == null || slideId == null) return;
+    final copy = Map<String, dynamic>.from(clip);
+    final newId = _newObjectId();
+    copy['id'] = newId;
+    final w = (clip['w'] as num?)?.toDouble() ?? 0.0;
+    final h = (clip['h'] as num?)?.toDouble() ?? 0.0;
+    copy['x'] = design.dx.clamp(0.0, math.max(0.0, _designDims.$1 - w));
+    copy['y'] = design.dy.clamp(0.0, math.max(0.0, _designDims.$2 - h));
+    final r = Bridge.command({
+      'op': 'add_object',
+      'deck': _deck,
+      'slide_id': slideId,
+      'shape': copy
+    });
+    if (r['ok'] != true || r['deck'] is! Map) {
+      _toast('Could not paste: ${r['error']}');
+      return;
+    }
+    _mutate(r['deck'] as Map);
+    setState(() => _selectedObjectId = newId);
+  }
+
+  /// Copy for the object clipboard. The JSON round-trip is the point, not
+  /// an implementation detail: it guarantees the clipboard is exactly what
+  /// the engine would serialize, and a non-round-trippable object cannot
+  /// be pasted back anyway — the copy would be a lie, so it stays null.
+  void _copyObject(Map<String, dynamic> obj) {
+    try {
+      _objectClipboard =
+          jsonDecode(jsonEncode(obj)) as Map<String, dynamic>;
+      _toast('Copied — long-press the canvas to paste');
+    } catch (_) {
+      _objectClipboard = null;
+    }
+  }
+
+  /// Format painter, pickup half: grab the universal chrome fields.
+  void _copyStyle(Map<String, dynamic> obj) {
+    _styleClipboard = {
+      for (final k in const ['fill', 'stroke', 'opacity', 'effects'])
+        if (obj.containsKey(k)) k: obj[k],
+    };
+    _toast('Style copied');
+  }
+
+  /// Format painter, apply half: the picked chrome onto the pressed
+  /// object. One `update_object` through [_styleChanged] = one undo step.
+  void _applyStyle(Map<String, dynamic> obj) {
+    final style = _styleClipboard;
+    if (style == null || style.isEmpty) return;
+    final updated = Map<String, dynamic>.from(obj);
+    updated.addAll(style);
+    _styleChanged(updated);
+  }
+
   void _reflectObject(String id) {
     for (final o in _objects) {
       if (o['id'] != id) continue;
@@ -2812,6 +2926,8 @@ class _EditorScreenState extends State<EditorScreen>
                                     onGestureStart: _objectGestureStart,
                                     onStroke: _onStrokeDone,
                                     onEraseHits: _onEraseHits,
+                                    onObjectLongPress: _objectActions,
+                                    onCanvasLongPress: _pasteObjectAt,
                                     textController: _selectedObject != null &&
                                             ObjectContent.isText(
                                                 _selectedObject!)

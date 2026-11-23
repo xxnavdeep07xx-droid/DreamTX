@@ -31,6 +31,8 @@ class ShapesLayer extends StatefulWidget {
     this.onGestureStart,
     this.onStroke,
     this.onEraseHits,
+    this.onObjectLongPress,
+    this.onCanvasLongPress,
     this.onBackgroundTap,
     this.overlayOnly = false,
   });
@@ -86,6 +88,18 @@ class ShapesLayer extends StatefulWidget {
   /// editor owns the delete_object chain and the single undo step.
   final void Function(List<String>)? onEraseHits;
 
+  /// long-press over an OBJECT (edit mode, no armed tool) — the editor
+  /// opens the object's actions sheet (copy / duplicate / format painter /
+  /// delete). The editor owns the selection itself, deliberately NOT
+  /// through the tap path: a hold on the already-selected text box must
+  /// open the menu, never the tap's second-tap typing.
+  final void Function(Map<String, dynamic> obj)? onObjectLongPress;
+
+  /// long-press over NO object (design-space position) — the editor's
+  /// paste target: the object clipboard, when one exists, lands with its
+  /// top-left exactly here.
+  final void Function(Offset designPos)? onCanvasLongPress;
+
   @override
   State<ShapesLayer> createState() => _ShapesLayerState();
 }
@@ -138,6 +152,13 @@ class _ShapesLayerState extends State<ShapesLayer> {
         child: GestureDetector(
         behavior: widget.interactive ? HitTestBehavior.opaque : HitTestBehavior.translucent,
         onTapUp: widget.interactive ? _onTap : null,
+        // The context menu coexists with tap and pan in the arena: a quick
+        // release still taps, a move still drags — only a held finger
+        // (500ms, slop-still) opens the sheet. An armed ink tool consumes
+        // the canvas entirely, long-press included (the tap rule, again).
+        onLongPressStart: widget.interactive && widget.inkTool == null
+            ? _onLongPress
+            : null,
         onPanStart: widget.interactive ? _onPanStart : null,
         onPanUpdate: widget.interactive ? _onPanUpdate : null,
         onPanEnd: widget.interactive ? _onPanEnd : null,
@@ -274,6 +295,23 @@ class _ShapesLayerState extends State<ShapesLayer> {
     // whole job was the deselect above (a second tap edits the text).
     if (obj == null && widget.selectedId == null) {
       widget.onBackgroundTap?.call(design);
+    }
+  }
+
+  /// Long-press = the object's context menu, or the paste target on empty
+  /// canvas — the mobile answer to PowerPoint's right-click. The hit-test
+  /// is the tap's own `_objectAt` (locked objects stay untargetable, same
+  /// as every other gesture), and the design position rides verbatim so
+  /// paste lands under the finger. No onSelect here — the editor's action
+  /// flow selects without ever entering the tap's typing path.
+  void _onLongPress(LongPressStartDetails d) {
+    if (!widget.interactive || widget.inkTool != null) return;
+    final design = _toDesign(d.localPosition);
+    final obj = _objectAt(design);
+    if (obj != null) {
+      widget.onObjectLongPress?.call(obj);
+    } else {
+      widget.onCanvasLongPress?.call(design);
     }
   }
 
