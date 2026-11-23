@@ -62,6 +62,16 @@ edit WYSIWYG on the canvas — a horizontally scrollable toolbar rides above
 the keyboard while typing; with the keyboard closed, the full panel carries
 Quick Tools / Character / Paragraph & Box.
 
+**Draw toolbox** — the ribbon's contextual band: pen (the deck's DNA
+accent by default, S/M/L widths) and a translucent highlighter (28dp
+marker, 35% opacity — which the PPTX and PDF exporters already honor, so
+ink exports translucent too). Strokes are smoothed at capture time
+(Douglas-Peucker + quadratic-midpoint resampling, a 400-point budget)
+and land as first-class path objects — movable, restylable, z-ordered,
+1:1 in exports, MCP-visible. The stroke eraser sweeps scribbles only
+(text boxes, images, shapes are immune by signature), dims its targets
+live, and commits the whole sweep as one undo step.
+
 **Files drawer & resources** — Open · Browse over Android SAF (folder import
 through the host channel); per-deck resource libraries for images and media;
 deleting an object / slide / deck sweeps unreferenced assets (respecting the
@@ -72,7 +82,7 @@ shapes in one true Z-order (Bring Forward / Send Backward reads on screen and
 in exports); selectable / draggable in every editing tab; media objects
 resolve their file and play through the system player.
 
-**Design mode** (editor toolbar) — 36 preset shapes + freeform scribble;
+**Design mode** (editor toolbar) — 36 preset shapes + the Draw toolbox's ink;
 move / resize / rotate handles with 15-degree snap and smart guides (snap to
 slide edges, centers, other objects); fills: solid, linear + radial gradient;
 stroke: width, dash styles, start/end arrowheads; effects: shadow, glow,
@@ -107,7 +117,7 @@ refuses updates across signers).
   pairing Registry DO (code+secret, TTL, attempt limiting), Deck DO with
   hibernating WebSocket broadcast and version log. Not yet deployed.
 - Flutter: everything under "What's in the app" above; the widget suite
-  (75 tests at v0.2.37) keeps the contracts.
+  (75 tests at v0.2.37; 106 after the Draw toolbox) keeps the contracts.
 - CI: cargo test (native + wasm32), worker typecheck + end-to-end MCP flow
   against a local workerd, flutter analyze + widget tests, resolved-pin and
   lock-drift gates, per-ABI release-signed APK on tags.
@@ -121,6 +131,8 @@ refuses updates across signers).
 - Boolean ops support convex shapes (union of concave shapes uses the convex
   hull).
 - Picture/pattern fills and image placeholders are not in v1.
+- Highlighter strokes darken where they overlap (each stroke is its own
+  object; a single composited ink plane is a v2 hook).
 - Components are one instance per slide.
 - Media objects export as their card (video/audio bytes are not embedded in
   PPTX/PDF).

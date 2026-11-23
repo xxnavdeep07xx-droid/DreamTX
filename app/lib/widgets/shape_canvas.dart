@@ -30,6 +30,7 @@ class ShapesLayer extends StatefulWidget {
     this.onCommit,
     this.onGestureStart,
     this.onStroke,
+    this.onEraseHits,
     this.onBackgroundTap,
     this.overlayOnly = false,
   });
@@ -80,6 +81,11 @@ class ShapesLayer extends StatefulWidget {
   /// the editor commits it as a path object in the tool's style
   final void Function(List<Offset>)? onStroke;
 
+  /// eraser sweep finished (or a tap-erase) — the ids of the scribbles
+  /// the sweep marked. The layer NEVER deletes: it collects and dims; the
+  /// editor owns the delete_object chain and the single undo step.
+  final void Function(List<String>)? onEraseHits;
+
   @override
   State<ShapesLayer> createState() => _ShapesLayerState();
 }
@@ -94,6 +100,19 @@ class _ShapesLayerState extends State<ShapesLayer> {
   /// hands it over: same list, same frame.
   List<Offset> _rawPts = [];
   List<Offset> _strokePts = [];
+
+  /// The eraser's live sweep: the scribbles marked for deletion (a fresh
+  /// Set per accumulation — the painter's identity-based repaint check
+  /// depends on it) and the finger's design-space position for the disc.
+  Set<String> _eraseHits = {};
+  Offset? _erasePos;
+
+  /// The eraser's raw pointer-down position (pre-slop). The drag
+  /// recognizer reports the SLOP-CROSSED position as the pan start (the
+  /// default dragStartBehavior), so without this a finger landing exactly
+  /// on a thin stroke and dragging away would never probe the spot it
+  /// touched.
+  Offset? _eraserDownPos;
   List<_GuideLine> _guides = [];
 
   double _scale = 1.0;
@@ -105,7 +124,18 @@ class _ShapesLayerState extends State<ShapesLayer> {
               widget.designW / widget.designH
           ? constraints.biggest.height / widget.designH
           : constraints.biggest.width / widget.designW;
-      return GestureDetector(
+      // The Listener is the arena-neutral shell: it sees EVERY pointer
+      // down, before any recognizer exists. Only the eraser needs the
+      // true down position — the drag recognizer reports the SLOP-CROSSED
+      // position as the pan start (dragStartBehavior.start), so a finger
+      // landing exactly on a thin stroke and dragging away would never
+      // probe the spot it touched without this.
+      return Listener(
+        onPointerDown:
+            widget.interactive && widget.inkTool == InkTool.eraser
+                ? _onEraserPointerDown
+                : null,
+        child: GestureDetector(
         behavior: widget.interactive ? HitTestBehavior.opaque : HitTestBehavior.translucent,
         onTapUp: widget.interactive ? _onTap : null,
         onPanStart: widget.interactive ? _onPanStart : null,
@@ -125,12 +155,15 @@ class _ShapesLayerState extends State<ShapesLayer> {
                 guides: _guides,
                 strokePts: _strokePts,
                 inkStyle: widget.inkStyle,
+                eraseHitIds: _eraseHits,
+                erasePos: _erasePos,
                 overlayOnly: widget.overlayOnly,
                 designW: widget.designW,
                 designH: widget.designH,
               ),
             ),
           ),
+        ),
         ),
       );
     });
@@ -208,8 +241,23 @@ class _ShapesLayerState extends State<ShapesLayer> {
 
   // ---- gestures ---------------------------------------------------------------
 
+  /// The eraser's raw pointer observer (see the Listener wiring in
+  /// build): records where the finger FIRST landed, before any gesture
+  /// recognizer exists.
+  void _onEraserPointerDown(PointerDownEvent event) {
+    _eraserDownPos = _toDesign(event.localPosition);
+  }
+
   void _onTap(TapUpDetails d) {
     if (!widget.interactive) return;
+    // The eraser taps too: a stationary tap on a scribble erases it (the
+    // same hit-test the sweep uses, one probe point).
+    if (widget.inkTool == InkTool.eraser) {
+      final design = _toDesign(d.localPosition);
+      final hits = inkEraseHits(widget.objects, [design]);
+      if (hits.isNotEmpty) widget.onEraseHits?.call(hits);
+      return;
+    }
     // An armed ink tool consumes the canvas — no selection while drawing.
     if (widget.inkTool != null) return;
     final design = _toDesign(d.localPosition);
@@ -232,6 +280,20 @@ class _ShapesLayerState extends State<ShapesLayer> {
   void _onPanStart(DragStartDetails d) {
     if (!widget.interactive) return;
     final design = _toDesign(d.localPosition);
+    if (widget.inkTool == InkTool.eraser) {
+      // The sweep begins: hits accumulate live and render dimmed; the
+      // deletes fire once, on pointer-up. The first probe covers the raw
+      // down position AND the corridor to the slop-crossed start.
+      final origin = _eraserDownPos;
+      final probes = origin == null || origin == design
+          ? <Offset>[design]
+          : inkSweepSamples(origin, design);
+      setState(() {
+        _eraseHits = {...inkEraseHits(widget.objects, probes)};
+        _erasePos = design;
+      });
+      return;
+    }
     if (widget.inkTool != null) {
       setState(() {
         _rawPts = [design];
@@ -270,6 +332,19 @@ class _ShapesLayerState extends State<ShapesLayer> {
   void _onPanUpdate(DragUpdateDetails d) {
     if (!widget.interactive) return;
     final design = _toDesign(d.localPosition);
+    if (widget.inkTool == InkTool.eraser) {
+      // Densify the step into corridor samples (a fast swipe must not
+      // jump over a stroke) and accumulate every newly marked scribble.
+      final prev = _erasePos;
+      final samples =
+          prev == null ? <Offset>[design] : inkSweepSamples(prev, design);
+      final fresh = inkEraseHits(widget.objects, samples);
+      setState(() {
+        _erasePos = design;
+        if (fresh.isNotEmpty) _eraseHits = {..._eraseHits, ...fresh};
+      });
+      return;
+    }
     if (widget.inkTool != null) {
       // Capture thinning (>=6px, was 4): the gesture-level filter and the
       // pipeline's first stage agree, so inkCapture never sees near-
@@ -349,6 +424,17 @@ class _ShapesLayerState extends State<ShapesLayer> {
   }
 
   void _onPanEnd(DragEndDetails d) {
+    if (widget.inkTool == InkTool.eraser) {
+      // Pointer-up is the commit: the whole sweep is one batch of ids.
+      final hits = _eraseHits;
+      setState(() {
+        _eraseHits = {};
+        _erasePos = null;
+        _eraserDownPos = null;
+      });
+      if (hits.isNotEmpty) widget.onEraseHits?.call(hits.toList());
+      return;
+    }
     if (widget.inkTool != null) {
       final pts = _strokePts;
       setState(() {
@@ -378,6 +464,9 @@ class _ShapesLayerState extends State<ShapesLayer> {
       _guides = [];
       _rawPts = [];
       _strokePts = [];
+      _eraseHits = {};
+      _erasePos = null;
+      _eraserDownPos = null;
     });
   }
 
@@ -540,6 +629,8 @@ class _ShapesPainter extends CustomPainter {
     required this.guides,
     required this.strokePts,
     required this.inkStyle,
+    required this.eraseHitIds,
+    required this.erasePos,
     this.overlayOnly = false,
     this.designW = 1280,
     this.designH = 720,
@@ -553,6 +644,13 @@ class _ShapesPainter extends CustomPainter {
   /// capture) and the armed tool's style.
   final List<Offset> strokePts;
   final InkStyle inkStyle;
+
+  /// The eraser's live state: the ids marked for deletion (dimmed under
+  /// veils) and the finger's position (the reach disc). Fresh Set
+  /// instances on accumulation — the identity-based repaint check rides
+  /// that.
+  final Set<String> eraseHitIds;
+  final Offset? erasePos;
   final bool overlayOnly;
 
   /// The deck's design frame — the smart guide lines run to the frame's
@@ -594,6 +692,29 @@ class _ShapesPainter extends CustomPainter {
           ..strokeJoin = StrokeJoin.round,
       );
     }
+    // The eraser's live state: every swept scribble dims under a veil
+    // (marked for deletion — the deletes fire on pointer-up), and a soft
+    // disc follows the finger showing the sweep's reach.
+    for (final obj in objects) {
+      final id = obj['id'];
+      if (id is! String || !eraseHitIds.contains(id)) continue;
+      _paintEraseVeil(canvas, obj);
+    }
+    if (erasePos != null) {
+      canvas.drawCircle(
+        erasePos!,
+        kInkEraserRadius,
+        Paint()..color = const Color(0x29FFFFFF),
+      );
+      canvas.drawCircle(
+        erasePos!,
+        kInkEraserRadius,
+        Paint()
+          ..color = const Color(0xB3FFFFFF)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5,
+      );
+    }
     // selection overlay
     if (selectedId != null) {
       for (final o in objects) {
@@ -623,6 +744,8 @@ class _ShapesPainter extends CustomPainter {
       oldDelegate.guides != guides ||
       oldDelegate.strokePts != strokePts ||
       oldDelegate.inkStyle != inkStyle ||
+      oldDelegate.eraseHitIds != eraseHitIds ||
+      oldDelegate.erasePos != erasePos ||
       oldDelegate.overlayOnly != overlayOnly ||
       oldDelegate.designW != designW ||
       oldDelegate.designH != designH;
@@ -669,6 +792,27 @@ void _paintSelection(Canvas canvas, Map obj) {
   canvas.drawLine(Offset(rect.center.dx, rect.top), Offset(rect.center.dx, rect.top - 28), outline);
   canvas.drawCircle(rh, hs, handle);
   canvas.drawCircle(rh, hs, handleBorder);
+  canvas.restore();
+}
+
+/// The eraser's mark: a translucent veil over the object's (rotated) bbox
+/// — the "slated for deletion" read while the sweep runs. The deletes
+/// themselves fire on pointer-up (the layer only collects).
+void _paintEraseVeil(Canvas canvas, Map obj) {
+  final rot = ((obj['rotation'] ?? 0) as num?)?.toDouble() ?? 0.0;
+  final x = ((obj['x'] ?? 0) as num).toDouble();
+  final y = ((obj['y'] ?? 0) as num).toDouble();
+  final w = ((obj['w'] ?? 1) as num).toDouble();
+  final h = ((obj['h'] ?? 1) as num).toDouble();
+  final c = Offset(x + w / 2, y + h / 2);
+  canvas.save();
+  canvas.translate(c.dx, c.dy);
+  canvas.rotate(rot * math.pi / 180);
+  canvas.translate(-c.dx, -c.dy);
+  canvas.drawRect(
+    Rect.fromLTWH(x, y, w, h),
+    Paint()..color = const Color(0x66141417),
+  );
   canvas.restore();
 }
 
