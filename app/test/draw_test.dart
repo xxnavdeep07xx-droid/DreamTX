@@ -84,6 +84,13 @@ void main() {
       of: find.byTooltip('Highlighter'),
       matching: find.byIcon(Icons.highlight)));
 
+  /// The palette band's cross-fade state — the honest observable for the
+  /// band's expansion (the faded-out child stays mounted in the tree, so
+  /// finders can't be used for this).
+  CrossFadeState bandState(WidgetTester tester) =>
+      tester.widget<AnimatedCrossFade>(
+          find.byKey(const ValueKey('draw_palette_band'))).crossFadeState;
+
   testWidgets('entering Draw arms the pen and swaps the toggle for the toolbox',
       (tester) async {
     await pumpEditor(tester);
@@ -197,6 +204,7 @@ void main() {
     // Open the band from the compact color chip.
     await tester.tap(find.byTooltip('Pen color'));
     await tester.pumpAndSettle();
+    expect(bandState(tester), CrossFadeState.showSecond);
     expect(find.byType(DreamColorChips), findsOneWidget);
     expect(find.byType(DreamChoiceChip), findsNWidgets(3),
         reason: 'the pen width presets S/M/L ride the band');
@@ -211,8 +219,8 @@ void main() {
     expect(muted, findsOneWidget);
     await tester.tap(muted);
     await tester.pumpAndSettle();
-    // The band collapsed on the pick; the compact swatch carries the pick.
-    expect(find.byType(DreamColorChips), findsNothing);
+    // The band collapsed on the pick.
+    expect(bandState(tester), CrossFadeState.showFirst);
     // The pen inks in the picked color now.
     await drawStroke(tester);
     expect(recordedObjectOps, hasLength(1));
@@ -228,12 +236,13 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Pen color'));
     await tester.pumpAndSettle();
+    expect(bandState(tester), CrossFadeState.showSecond);
     final wide = find.byWidgetPredicate(
         (w) => w is DreamChoiceChip && w.label == 'L');
     expect(wide, findsOneWidget);
     await tester.tap(wide);
     await tester.pumpAndSettle();
-    expect(find.byType(DreamColorChips), findsNothing,
+    expect(bandState(tester), CrossFadeState.showFirst,
         reason: 'the pick collapses the band');
     await drawStroke(tester);
     expect((recordedObjectOps.last['shape'] as Map)['stroke']['width'], 16.0);

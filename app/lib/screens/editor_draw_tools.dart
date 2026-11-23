@@ -151,28 +151,32 @@ class _DrawToolboxRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedCrossFade(
-      duration: MediaQuery.of(context).disableAnimations
-          ? Duration.zero
-          : const Duration(milliseconds: 200),
-      sizeCurve: Curves.easeInOutCubic,
-      // Top-aligned: the compact row stays put at the band's top while
-      // the palette band grows beneath it — the row never drifts.
-      alignment: Alignment.topCenter,
-      crossFadeState:
-          state.expanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-      firstChild: SizedBox(
-          height: 48, width: double.infinity, child: _toolRow()),
-      secondChild: SizedBox(
-        height: 48 + 46,
-        width: double.infinity,
-        child: Column(
-          children: [
-            SizedBox(height: 48, child: _toolRow()),
-            SizedBox(height: 46, child: _paletteBand()),
-          ],
+    return Column(
+      // The band above gives unbounded height; the toolbox sizes itself
+      // (48 + the cross-faded band), never tries to fill it.
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(height: 48, width: double.infinity, child: _toolRow()),
+        // The expandable palette band: 0 <-> 46dp — the typing toolbar's
+        // palette-row reveal (the tool row stays ONE instance; only the
+        // band cross-fades, so tooltips/semantics never duplicate).
+        AnimatedCrossFade(
+          key: const ValueKey('draw_palette_band'),
+          duration: MediaQuery.of(context).disableAnimations
+              ? Duration.zero
+              : const Duration(milliseconds: 200),
+          sizeCurve: Curves.easeInOutCubic,
+          crossFadeState: state.expanded
+              ? CrossFadeState.showSecond
+              : CrossFadeState.showFirst,
+          firstChild: const SizedBox(height: 0, width: double.infinity),
+          secondChild: SizedBox(
+            height: 46,
+            width: double.infinity,
+            child: _paletteBand(),
+          ),
         ),
-      ),
+      ],
     );
   }
 
