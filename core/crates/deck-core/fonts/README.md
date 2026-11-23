@@ -2,7 +2,8 @@
 
 This directory no longer embeds the DejaVu TTFs (~2.16 MB). The layout
 solver's font metrics ship as a pre-generated static table instead:
-`../src/font_metrics.rs`, produced by `../../..//scripts/gen_font_table.py`.
+`../src/font_metrics.rs`, produced from the repo root by
+`scripts/gen_font_table.py`.
 
 - `measure()` and `wrap()` return bit-identical widths to the old embedded
   TTF + ttf-parser path (the table stores each cmap-mapped codepoint's

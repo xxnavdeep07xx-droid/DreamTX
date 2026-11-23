@@ -15,13 +15,17 @@
 
 ```
 core/crates/deck-core   Rust engine: deck model, DNAs, pacing governor,
-                        layout solver, .pptx/.pdf export, FFI + wasm entry
+                        layout solver, .pptx/.pdf export, FFI + wasm entry;
+                        font metrics as a generated advance table (no TTFs)
 app/                    Flutter app (Android). Run `flutter create .` once
                         (see app/README) — platform folders are CI-generated.
 worker/                 Cloudflare Worker: MCP endpoint, pairing Registry DO,
                         per-deck Deck DO (state, version log, WS hibernation)
-scripts/                Local dev helpers (build android .so, typecheck worker)
-.github/workflows       CI: core tests (native+wasm), worker typecheck, APK release
+scripts/                Local dev helpers (build android .so, typecheck
+                        worker, regenerate the font advance table)
+.github/workflows       CI: core tests (native+wasm), worker typecheck + MCP
+                        flow against real workerd, flutter analyze + widget
+                        suite, per-ABI release-signed APK on tags
 ```
 
 ## Design philosophy (the moat)
@@ -33,7 +37,7 @@ and color. Three curated deck DNAs ship in v1 — **Swiss editorial** (default),
 pacing governor (no same archetype twice in a row, density rhythm, whitespace
 budget) so decks never look template-stamped.
 
-## What's in the app (v0.2.2)
+## What's in the app (v0.2.37)
 
 **Look** — dark studio theme (black chrome, charcoal surfaces, red accents,
 one purple→pink→orange signature gradient on create actions and the live
@@ -43,56 +47,90 @@ slide's filmstrip ring).
 long-press a deck card for open / rename / delete; immersive full-screen
 mode (system bars hidden, edge-swipe to reveal).
 
-**Editor (per deck)** — canvas + filmstrip; add / duplicate / reorder /
-delete slides (long-press a thumbnail); full per-slide content forms for
-all 9 archetypes (cover, agenda, section, statement, stat wall, split,
-comparison, chart hero, closing); design family (DNA) switcher; undo/redo
-(60 steps); deck rename.
+**Editor** — canvas + filmstrip; a PowerPoint-style ribbon (AI · Files ·
+Insert · Draw · Design · Transitions · Animations · Slide show · Review ·
+View · Help); add / duplicate / reorder / delete slides (long-press a
+thumbnail); full per-slide content forms for all 9 archetypes (cover, agenda,
+section, statement, stat wall, split, comparison, chart hero, closing);
+design family (DNA) switcher; undo/redo (60 steps, safe mid-typing); deck
+rename; comments.
 
-**Design mode** (v0.2, editor toolbar) — 36 preset shapes + freeform
-scribble; move / resize / rotate handles with 15-degree snap and smart
-guides (snap to slide edges, centers, other objects); fills: solid,
-linear + radial gradient; stroke: width, dash styles, start/end
-arrowheads; effects: shadow, glow, opacity; boolean ops (union /
-subtract / intersect — convex shapes); group / ungroup, lock, 6-way align,
-layers panel (reorder / lock / delete); components: save a selection as a
-reusable component, place it on any slide, update it globally. Objects
-export 1:1 into PPTX and PDF.
+**Insert drawer** — rides the ribbon's top edge like Files: a 3×2 grid
+(Text Box, Image, Shapes, Table, Icons / Stickers, Media); inserting or
+tapping an object swaps the grid for that object's editing panel. Text boxes
+edit WYSIWYG on the canvas — a horizontally scrollable toolbar rides above
+the keyboard while typing; with the keyboard closed, the full panel carries
+Quick Tools / Character / Paragraph & Box.
 
-**Export** — .pptx and .pdf via the share sheet.
+**Files drawer & resources** — Open · Browse over Android SAF (folder import
+through the host channel); per-deck resource libraries for images and media;
+deleting an object / slide / deck sweeps unreferenced assets (respecting the
+undo stack).
+
+**Objects on canvas** — text boxes, images, icons, media, tables and vector
+shapes in one true Z-order (Bring Forward / Send Backward reads on screen and
+in exports); selectable / draggable in every editing tab; media objects
+resolve their file and play through the system player.
+
+**Design mode** (editor toolbar) — 36 preset shapes + freeform scribble;
+move / resize / rotate handles with 15-degree snap and smart guides (snap to
+slide edges, centers, other objects); fills: solid, linear + radial gradient;
+stroke: width, dash styles, start/end arrowheads; effects: shadow, glow,
+opacity; boolean ops (union / subtract / intersect — convex shapes); group /
+ungroup, lock, 6-way align, layers panel (reorder / lock / delete);
+components: save a selection as a reusable component, place it on any slide,
+update it globally. Objects export 1:1 into PPTX and PDF.
+
+**Presenter** — the editor's own stage (the shared SlideStage render) at the
+deck's own aspect ratio, never a hardcoded one.
+
+**Export** — .pptx and .pdf via the share sheet, rendered on a background
+isolate (the UI never freezes): real object content in both — styled text
+runs, tables, icon cards, images embedded as real assets (PPTX media parts /
+PDF XObjects), media as its card — with per-slide Z-order honored.
 
 **AI via MCP** — pairing sheet ready; goes live when the Worker deploys (M2).
 
-Release APKs are signed with a release keystore (stored as GitHub Actions
-secrets). Installs from releases before v0.2.1 were debug-signed — uninstall
-those before installing v0.2.1+ (Android refuses updates across signers).
+Release APKs are release-signed (keystore stored as GitHub Actions secrets)
+and split per ABI (arm64-v8a / armeabi-v7a / x86_64 — each device downloads
+only its own slice, ~60-65% smaller). Installs from releases before v0.2.1
+were debug-signed — uninstall those before installing v0.2.1+ (Android
+refuses updates across signers).
 
-## State of this scaffold (M1 done)
+## State (M1 done)
 
 - Rust core: real model, 3 DNAs + variation, pacing, layout solver, pptx +
-  pdf exporters, JSON command protocol, FFI + wasm exports, smoke tests.
+  pdf exporters with real object content, JSON command protocol, FFI + wasm
+  exports; font metrics as a pre-generated ~130 KB advance table (DejaVu TTFs
+  and ttf-parser dropped — same widths, slimmer binaries); smoke tests.
 - Worker: full MCP (initialize/tools list/call) over Streamable HTTP + SSE,
   pairing Registry DO (code+secret, TTL, attempt limiting), Deck DO with
   hibernating WebSocket broadcast and version log. Not yet deployed.
-- Flutter: decks list, editor (canvas + filmstrip, full content editing,
-  design mode with the vector layer above), DNA variant cycling, export via
-  share sheet, pair sheet.
-- CI: cargo test (native + wasm32), worker typecheck, APK build + Release
-  (release-signed since v0.2.1).
+- Flutter: everything under "What's in the app" above; the widget suite
+  (75 tests at v0.2.37) keeps the contracts.
+- CI: cargo test (native + wasm32), worker typecheck + end-to-end MCP flow
+  against a local workerd, flutter analyze + widget tests, resolved-pin and
+  lock-drift gates, per-ABI release-signed APK on tags.
 
-Known v0.2 limits: PDF export is Latin-first (base-14 fonts, non-Latin is
-transliterated; full font embedding/subsetting lands with CJK metrics in M2),
-CJK glyph widths are approximated (metrics font is DejaVu), android platform
-folders are generated in CI, boolean ops support convex shapes (union of
-concave shapes uses the convex hull), picture/pattern fills and image
-placeholders are not in v1, components are one instance per slide, layout
-assistance is smart guides (no auto-layout collision avoidance yet).
+## Known v0.2 limits
+
+- PDF export is Latin-first (base-14 fonts, non-Latin is transliterated; full
+  font embedding/subsetting lands with CJK metrics in M2).
+- CJK glyph widths are approximated (the advance table is DejaVu-derived).
+- Android platform folders are generated in CI, not committed.
+- Boolean ops support convex shapes (union of concave shapes uses the convex
+  hull).
+- Picture/pattern fills and image placeholders are not in v1.
+- Components are one instance per slide.
+- Media objects export as their card (video/audio bytes are not embedded in
+  PPTX/PDF).
+- Layout assistance is smart guides (no auto-layout collision avoidance yet).
 
 ## Milestones
 
 - **M0** scaffold + green CI
-- **M1** installable APK from GitHub Releases — done (v0.1.0 → v0.2.1;
-  releases are release-signed from v0.2.1)
+- **M1** installable APK from GitHub Releases — done (v0.1.0 → v0.2.37;
+  release-signed since v0.2.1, per-ABI since v0.2.36)
 - **M2** Worker deployed (needs Cloudflare token) + MCP end-to-end = **v1**
 
 ## Local dev
@@ -111,5 +149,8 @@ cd app && flutter create --org com.dreamtx . && flutter pub get
 flutter run
 ```
 
-Fonts bundled in `core/crates/deck-core/fonts/` are DejaVu (Bitstream Vera /
-Public Domain license terms) — see `fonts/README.md`.
+The layout solver's font metrics ship as a generated advance table —
+`core/crates/deck-core/src/font_metrics.rs`, produced from the repo root by
+`scripts/gen_font_table.py` from the DejaVu faces (Bitstream Vera / Public
+Domain license terms). No TTFs are embedded at build time — see
+`core/crates/deck-core/fonts/README.md`.
