@@ -2,7 +2,7 @@
 
 Short notes for building test APKs, installing them, and collecting startup
 evidence when something misbehaves on a phone. Companion to the release
-process (tag push → CI → `app-release.apk` on the GitHub Release).
+process (tag push → CI → per-ABI APKs on the GitHub Release).
 
 ## Building a test APK (release mode)
 
@@ -12,27 +12,28 @@ Flutter/Android SDK in this environment.
 - **Without publishing a release** (preferred for test builds): on GitHub →
   Actions → **apk** workflow → *Run workflow* on `main` (workflow_dispatch).
   The build (~15 min) ends with two artifacts on the run page:
-  - `dreamtx-apk` — `app-release.apk`, release-signed exactly like a store
-     build;
+  - `dreamtx-apk` — the three per-ABI `app-*-release.apk` (arm64-v8a /
+     armeabi-v7a / x86_64), release-signed exactly like a store build, plus
+     `debug-info` for symbolicating release stack traces;
   - `pubspec-lock` — the exact resolved dependency lock used by the build
      (traceability: which plugin versions are actually inside the APK).
 - **Full release**: bump `version:` in `app/pubspec.yaml` (build number must
-  exceed the last distributed APK — currently **29**), commit, `git tag
+  exceed the last distributed APK — currently **42**), commit, `git tag
   vX.Y.Z`, push the tag. CI verifies the resolved `path_provider_android`
   pin (must be `2.2.23`, the pre-JNI build), enforces the committed
   `app/pubspec.lock` byte-for-byte, runs `flutter analyze` + the widget smoke
-  suite, builds the 3-ABI Rust core, and attaches `app-release.apk` to the
-  tag's Release.
+  suite, builds the 3-ABI Rust core, and attaches the three per-ABI APKs to
+  the tag's Release.
 
 To download an artifact: run page → *Artifacts* → download zip → extract
-`app-release.apk`. (Artifacts require a GitHub login; releases don't.)
+the APKs. (Artifacts require a GitHub login; releases don't.)
 
 ## Installing on the phone
 
 ```bash
-adb install -r app-release.apk          # in-place update, data kept
-# curl fallback from the phone itself:
-# curl -LO https://github.com/xxnavdeep07xx-droid/DreamTX/releases/download/vX.Y.Z/app-release.apk
+adb install -r app-arm64-v8a-release.apk   # in-place update, data kept
+# curl fallback from the phone itself (pick your ABI):
+# curl -LO https://github.com/xxnavdeep07xx-droid/DreamTX/releases/download/vX.Y.Z/app-arm64-v8a-release.apk
 ```
 
 Sideloading **over the running app** is supported (writes are atomic and the
