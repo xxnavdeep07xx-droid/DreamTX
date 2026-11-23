@@ -35,6 +35,7 @@ part 'editor_filmstrip.dart';
 part 'presenter_screen.dart';
 part 'editor_sheets.dart';
 part 'editor_sheet_builders.dart';
+part 'editor_draw_tools.dart';
 
 
 /// Screen 2 — Editor. Canvas + filmstrip + a PowerPoint-style bottom ribbon —
@@ -78,7 +79,12 @@ class _EditorScreenState extends State<EditorScreen>
 
   // ---- design (vector overlay) state -------------------------------------------
   bool _designMode = false;
-  bool _scribbleMode = false;
+
+  /// The Draw tab's toolbox (armed tool + per-tool colors + pen width +
+  /// the palette band) — ONE field replacing the old `_scribbleMode` bool;
+  /// the row widget in editor_draw_tools.dart owns the surface, this class
+  /// owns only the field and the state machine around it.
+  _DrawToolboxState _drawToolbox = const _DrawToolboxState();
   String? _selectedObjectId;
   List<Map<String, dynamic>> _objectPresets = const [];
   int _oidSeq = 0;
@@ -290,7 +296,7 @@ class _EditorScreenState extends State<EditorScreen>
       _typing = false;
       _navTab = null;
       _designMode = false;
-      _scribbleMode = false;
+      _drawToolbox = _drawToolbox.disarmed();
       _sheetEntering = false;
       _sheetClosing = false;
       _drawerExtent = null;
@@ -563,12 +569,15 @@ class _EditorScreenState extends State<EditorScreen>
 
   /// Ribbon state machine: one contextual row at a time, tapped again to
   /// collapse. Tabs that work on the canvas overlay (Insert, Draw) double
-  /// as design mode, so leaving them clears scribble/selection — but the
-  /// selection SURVIVES a Files ⇄ Insert switch (both are sheet tabs over
-  /// the same design mode canvas).
+  /// as design mode, so leaving them disarms the toolbox and clears the
+  /// selection — but the selection SURVIVES a Files ⇄ Insert switch (both
+  /// are sheet tabs over the same design mode canvas). Entering Draw arms
+  /// the toolbox (the last-used tool); Draw ⇄ Insert keeps the selection
+  /// and only disarms.
   void _setNavTab(_NavTab? tab) {
     final wasSheet = _isSheetTab(_navTab);
     final willBeSheet = _isSheetTab(tab);
+    final wasDraw = _navTab == _NavTab.draw;
     // The sheet's height where it stands RIGHT NOW (before the tab flips) —
     // what the exit slide holds when it reverses. ONE machinery for both
     // drawers: a held extent if one exists, the shared resting half detent
@@ -583,9 +592,21 @@ class _EditorScreenState extends State<EditorScreen>
       if (willBeSheet) _lastSheetTab = tab!;
       _designMode = tab == _NavTab.insert || tab == _NavTab.draw;
       if (!_designMode) {
-        _scribbleMode = false;
+        _drawToolbox = _drawToolbox.disarmed();
         _selectedObjectId = null;
         _disposeTextSession();
+      } else if (tab == _NavTab.draw) {
+        // Entering Draw: arm the last-used tool (the pen by default) and
+        // clear the selection — draw focus. The armed tool consumes
+        // canvas taps, so the selection chrome would be untouchable;
+        // re-tapping the active tool inside the row disarms it (select
+        // mode without leaving Draw).
+        _drawToolbox = _drawToolbox.rearmed();
+        _selectedObjectId = null;
+      } else if (wasDraw) {
+        // Draw -> Insert: the same design-mode canvas. Only disarm — the
+        // selection survives, exactly like Files <-> Insert.
+        _drawToolbox = _drawToolbox.disarmed();
       }
       if (tab != _NavTab.insert) {
         // Leaving the typing state: any tab switch closes the keyboard and
@@ -740,6 +761,18 @@ class _EditorScreenState extends State<EditorScreen>
     }
   }
 
+  /// The Draw toolbox's one mutation point (the row's onChanged): state
+  /// in, state out. Arming through a tool tap clears the selection (draw
+  /// focus — the armed tool consumes canvas taps); style edits and band
+  /// toggles never touch anything but the toolbox.
+  void _setDrawToolbox(_DrawToolboxState next) {
+    setState(() {
+      final nowArmed = next.armed && !_drawToolbox.armed;
+      _drawToolbox = next;
+      if (nowArmed) _selectedObjectId = null;
+    });
+  }
+
   /// A stroke finished: the capture pipeline's smoothed design-space
   /// polyline ([inkCapture] — the same list the live preview painted its
   /// last frame with) lands as a plain `path` object in the deck's model,
@@ -749,7 +782,8 @@ class _EditorScreenState extends State<EditorScreen>
   void _onStrokeDone(List<Offset> pts) {
     final slideId = _slideId;
     if (slideId == null || pts.length < 2) return;
-    final style = InkStyle(colorHex: _dnaAccentHex, width: 8.0);
+    final style =
+        _drawToolbox.inkStyleFor(defaultPenHex: _dnaAccentHex);
     var minx = pts.first.dx;
     var miny = pts.first.dy;
     var maxx = minx;
@@ -2729,17 +2763,16 @@ class _EditorScreenState extends State<EditorScreen>
                                         _resolveResourcePath,
                                     selectedId: _selectedObjectId,
                                     interactive: _mode == _Mode.editing,
-                                    // The Draw tab's armed tool: today the
-                                    // freehand toggle maps to the pen; the
-                                    // toolbox row (next PR) feeds the full
-                                    // tool/color/width state. The style is
-                                    // the committed style — the preview and
-                                    // the object agree by construction.
-                                    inkTool:
-                                        _scribbleMode ? InkTool.pen : null,
-                                    inkStyle: InkStyle(
-                                        colorHex: _dnaAccentHex,
-                                        width: 8.0),
+                                    // The Draw toolbox: the armed tool
+                                    // and its style (the row under the
+                                    // canvas owns the state; the preview
+                                    // and the committed object agree by
+                                    // construction — same InkStyle).
+                                    inkTool: _drawToolbox.armed
+                                        ? _drawToolbox.tool
+                                        : null,
+                                    inkStyle: _drawToolbox.inkStyleFor(
+                                        defaultPenHex: _dnaAccentHex),
                                     onTextTap: _mode == _Mode.viewing
                                         ? null
                                         : _editText,
@@ -2848,6 +2881,10 @@ class _EditorScreenState extends State<EditorScreen>
                   _navTab != _NavTab.transitions &&
                   _navTab != _NavTab.animations &&
                   _navTab != _NavTab.help)
+                // Draw is the one tab whose row changes height: the
+                // toolbox's palette band cross-fades the band 48 <-> 94,
+                // the same reveal the typing toolbar's palette row does —
+                // every other tab stays a constant 48.
                 Container(
                   decoration: const BoxDecoration(
                     color: kSurface,
@@ -2856,7 +2893,7 @@ class _EditorScreenState extends State<EditorScreen>
                       bottom: BorderSide(color: kHairline),
                     ),
                   ),
-                  height: 48,
+                  height: _navTab == _NavTab.draw ? null : 48,
                   child: _contextualRow(),
                 ),
               // ---- filmstrip (stories-style, gradient ring on the live slide) --
@@ -3475,14 +3512,14 @@ class _EditorScreenState extends State<EditorScreen>
         // (the same sheet layer as Files) replaces this band.
         return const SizedBox.shrink();
       case _NavTab.draw:
-        return Row(
-          children: [
-            IconButton(
-              tooltip: 'Freehand draw',
-              icon: Icon(Icons.gesture, color: _scribbleMode ? kText : kText2),
-              onPressed: () => setState(() => _scribbleMode = !_scribbleMode),
-            ),
-          ],
+        // The toolbox: pen / highlighter with per-tool colors, the pen's
+        // widths, the expandable palette band (the row lives in the
+        // editor_draw_tools part file; the editor owns the ONE state).
+        return _DrawToolboxRow(
+          state: _drawToolbox,
+          defaultPenHex: _dnaAccentHex,
+          palette: _deckPalette,
+          onChanged: _setDrawToolbox,
         );
       case _NavTab.design:
         final current = ((_deck['dna'] ?? const {})['family'] ?? '').toString();
@@ -3593,7 +3630,7 @@ class _EditorScreenState extends State<EditorScreen>
       if (m == _Mode.viewing) {
         _navTab = null;
         _designMode = false;
-        _scribbleMode = false;
+        _drawToolbox = _drawToolbox.disarmed();
         _selectedObjectId = null;
         _sheetHiddenForTyping = false;
       }
