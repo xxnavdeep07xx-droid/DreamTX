@@ -32,6 +32,7 @@ class ObjectContentLayer extends StatelessWidget {
     required this.baseFontSize,
     required this.resolveResourcePath,
     this.singleObject = false,
+    this.tableMeta,
   });
 
   final List<Map<String, dynamic>> objects;
@@ -56,6 +57,12 @@ class ObjectContentLayer extends StatelessWidget {
   /// Resolves an image/media content payload to a readable file path (the
   /// app's resource store scopes), or null when the asset is gone.
   final String? Function(Map<String, dynamic> content) resolveResourcePath;
+
+  /// The deck-level table metadata (`deck['tables']`): objectId → the
+  /// table's entry (style fields + merge regions). App-owned deck data the
+  /// core drops on round-trips — the editor carries it; read-only stages
+  /// just pass the deck's map. Null/absent entries render plain tables.
+  final Map<String, dynamic>? tableMeta;
 
   @override
   Widget build(BuildContext context) {
@@ -118,7 +125,16 @@ class ObjectContentLayer extends StatelessWidget {
       case kContentMedia:
         return _MediaView(obj: obj, resolve: resolveResourcePath);
       case kContentTable:
-        return _TableView(obj: obj, baseColor: baseColor, baseFamily: baseFamily, baseFontSize: baseFontSize);
+        return _TableView(
+          obj: obj,
+          entry: tableMeta == null
+              ? null
+              : (tableMeta![obj['id']?.toString()] as Map?)
+                  ?.cast<String, dynamic>(),
+          baseColor: baseColor,
+          baseFamily: baseFamily,
+          baseFontSize: baseFontSize,
+        );
     }
     return const SizedBox.shrink();
   }
@@ -529,7 +545,7 @@ class _ParaLayout {
   final int start;
   final int end;
 
-  /// The list prefix's UTF-16 length ("•  " / "1.  ") — the painter's text
+  /// The list prefix's UTF-16 length ("\u2022  " / "1.  ") — the painter's text
   /// is prefix + paragraph slice, so painter offsets run ahead of doc
   /// offsets by this much.
   final int prefixLen;
@@ -785,12 +801,18 @@ class _MediaView extends StatelessWidget {
 class _TableView extends StatelessWidget {
   const _TableView({
     required this.obj,
+    required this.entry,
     required this.baseColor,
     required this.baseFamily,
     required this.baseFontSize,
   });
 
   final Map<String, dynamic> obj;
+
+  /// The table's deck-level metadata entry (merges + style fields), or
+  /// null for a plain unmerged table.
+  final Map<String, dynamic>? entry;
+
   final Color baseColor;
   final String? baseFamily;
   final double baseFontSize;
@@ -806,6 +828,11 @@ class _TableView extends StatelessWidget {
     final strokeWidth = stroke is Map
         ? (((stroke['width'] ?? 1.5) as num).toDouble().clamp(0.75, 4.0))
         : 1.5;
+    final merges = ObjectContent.tableMergesOf(entry,
+        rows: rows, cols: cols);
+    final style = ObjectContent.tableStyleOf(entry);
+    final hasHeader = style == 'header' || style == 'header_banded';
+    final hasBand = style == 'banded' || style == 'header_banded';
     return LayoutBuilder(builder: (context, constraints) {
       final w = ((obj['w'] as num?) ?? 1).toDouble();
       final h = ((obj['h'] as num?) ?? 1).toDouble();
@@ -823,8 +850,18 @@ class _TableView extends StatelessWidget {
             rows: rows,
             cols: cols,
             cells: cells,
+            merges: merges,
             gridColor: gridColor,
             strokeWidth: strokeWidth,
+            headerFill: hasHeader
+                ? hexToColor((entry?['accent'] ?? '17181A').toString())
+                : null,
+            headerText: hasHeader
+                ? hexToColor((entry?['on_accent'] ?? 'FFFFFF').toString())
+                : null,
+            bandFill: hasBand
+                ? hexToColor((entry?['band'] ?? 'F7F6F3').toString())
+                : null,
             cellStyle: TextStyle(
               color: baseColor,
               fontFamily: baseFamily,
@@ -843,47 +880,94 @@ class _TablePainter extends CustomPainter {
     required this.rows,
     required this.cols,
     required this.cells,
+    required this.merges,
     required this.gridColor,
     required this.strokeWidth,
+    required this.headerFill,
+    required this.headerText,
+    required this.bandFill,
     required this.cellStyle,
   });
 
   final int rows, cols;
   final List<String> cells;
+
+  /// Merge regions `{'r','c','rs','cs'}` — validated by [ObjectContent.
+  /// tableMergesOf] against rows x cols. A merged region paints as ONE
+  /// cell: one fill, one border, one centered text block.
+  final List<Map<String, dynamic>> merges;
+
   final Color gridColor;
   final double strokeWidth;
+
+  /// Style fills (null = plain): the header row fill + its text color, and
+  /// the banded-row tint. DNA-derived hexes resolved at style-apply time.
+  final Color? headerFill;
+  final Color? headerText;
+  final Color? bandFill;
+
   final TextStyle cellStyle;
+
+  /// The merge region whose anchor sits at (r, c), or null.
+  Map<String, dynamic>? _regionAt(int r, int c) {
+    for (final m in merges) {
+      final mr = (m['r'] as num).toInt(), mc = (m['c'] as num).toInt();
+      final rs = (m['rs'] as num).toInt(), cs = (m['cs'] as num).toInt();
+      if (r >= mr && r < mr + rs && c >= mc && c < mc + cs) return m;
+    }
+    return null;
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
     final w = size.width, h = size.height;
-    final paint = Paint()
+    final strokePaint = Paint()
       ..color = gridColor
       ..strokeWidth = strokeWidth
       ..style = PaintingStyle.stroke;
+    final fillPaint = Paint()..style = PaintingStyle.fill;
     final cw = w / cols, ch = h / rows;
-    // Outer border.
-    canvas.drawRect(Rect.fromLTWH(0, 0, w, h), paint);
-    // Inner rules.
-    for (var r = 1; r < rows; r++) {
-      canvas.drawLine(Offset(0, r * ch), Offset(w, r * ch), paint);
-    }
-    for (var c = 1; c < cols; c++) {
-      canvas.drawLine(Offset(c * cw, 0), Offset(c * cw, h), paint);
-    }
-    // Cell text.
     const pad = 7.0;
+    // Per-cell painting (not continuous rules): every cell — merged or
+    // single — paints its own rect, so a merged region naturally reads as
+    // one cell (no interior rules) and styles tint per row.
     for (var r = 0; r < rows; r++) {
       for (var c = 0; c < cols; c++) {
+        final region = _regionAt(r, c);
+        if (region != null) {
+          // Only the anchor paints a region; covered cells are skipped.
+          if ((region['r'] as num).toInt() != r ||
+              (region['c'] as num).toInt() != c) {
+            continue;
+          }
+        }
+        final rs = (region?['rs'] as num?)?.toInt() ?? 1;
+        final cs = (region?['cs'] as num?)?.toInt() ?? 1;
+        final rect = Rect.fromLTWH(c * cw, r * ch, cs * cw, rs * ch);
+        final isHeader = headerFill != null && r == 0;
+        final isBand = bandFill != null && r % 2 == 1;
+        if (isHeader) {
+          fillPaint.color = headerFill!;
+          canvas.drawRect(rect, fillPaint);
+        } else if (isBand) {
+          fillPaint.color = bandFill!;
+          canvas.drawRect(rect, fillPaint);
+        }
+        canvas.drawRect(rect, strokePaint);
         final text = cells[r * cols + c];
         if (text.isEmpty) continue;
         final tp = TextPainter(
-          text: TextSpan(text: text, style: cellStyle),
+          text: TextSpan(
+              text: text,
+              style: isHeader
+                  ? cellStyle.copyWith(
+                      color: headerText, fontWeight: FontWeight.w700)
+                  : cellStyle),
           textDirection: TextDirection.ltr,
           maxLines: 1,
           ellipsis: '…',
-        )..layout(maxWidth: cw - pad * 2);
-        tp.paint(canvas, Offset(c * cw + pad, r * ch + (ch - tp.height) / 2));
+        )..layout(maxWidth: rect.width - pad * 2);
+        tp.paint(canvas, Offset(rect.left + pad, rect.top + (rect.height - tp.height) / 2));
       }
     }
   }
@@ -894,5 +978,9 @@ class _TablePainter extends CustomPainter {
       old.gridColor != gridColor ||
       old.cellStyle != cellStyle ||
       old.rows != rows ||
-      old.cols != cols;
+      old.cols != cols ||
+      old.merges != merges ||
+      old.headerFill != headerFill ||
+      old.headerText != headerText ||
+      old.bandFill != bandFill;
 }
