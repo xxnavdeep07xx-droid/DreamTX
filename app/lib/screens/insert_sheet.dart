@@ -47,6 +47,7 @@ class InsertSheet extends StatefulWidget {
     required this.textActions,
     required this.deckPalette,
     required this.onInsertTextBox,
+    required this.onInsertWordArt,
     required this.onPickImage,
     required this.onPickShape,
     required this.onInsertTable,
@@ -78,6 +79,9 @@ class InsertSheet extends StatefulWidget {
   final List<Color> deckPalette;
 
   final VoidCallback onInsertTextBox;
+
+  /// The WordArt gallery (styled-text presets) — opens the picker sheet.
+  final VoidCallback onInsertWordArt;
 
   /// 'gallery' | 'camera' | 'deck' | 'brand'.
   final void Function(String source) onPickImage;

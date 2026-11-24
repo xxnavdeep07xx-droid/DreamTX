@@ -1339,6 +1339,8 @@ class _EditorScreenState extends State<EditorScreen>
     Map<String, dynamic>? content,
     Map<String, dynamic>? fill,
     Map<String, dynamic>? stroke,
+    Map<String, dynamic>? effects,
+    double opacity = 1.0,
   }) {
     final (dw, dh) = deckDimsOf(_deck['aspect']?.toString());
     return {
@@ -1349,11 +1351,11 @@ class _EditorScreenState extends State<EditorScreen>
       'w': w,
       'h': h,
       'rotation': 0.0,
-      'opacity': 1.0,
+      'opacity': opacity,
       'locked': false,
       'fill': fill ?? {'type': 'none'},
       'stroke': stroke ?? {'color': '17181A', 'width': 0.0, 'dash': 'solid', 'start_arrow': 'none', 'end_arrow': 'none'},
-      'effects': {},
+      'effects': effects ?? {},
       'closed': true,
       if (content != null) 'content': content,
     };
@@ -1387,6 +1389,88 @@ class _EditorScreenState extends State<EditorScreen>
   void _insertTextBox() {
     _insertObject(
       _newContentObject(w: 560, h: 170, content: ObjectContent.text(RichDoc())),
+      startTyping: true,
+    );
+  }
+
+  // ---- WordArt (styled-text presets over the model's own powers) --------
+  //
+  // The seventh Insert card. Six looks assembled ENTIRELY from what every
+  // text object already carries — per-run character formatting (size,
+  // weight, italic, color, highlight) plus the object chrome both
+  // exporters already render (the box's solid fill, the soft shadow, the
+  // accent glow). A WordArt insert IS a text box with a preset: it lands
+  // selected with the keyboard open on placeholder text, and everything
+  // stays editable afterwards — the inspector, the format painter, the
+  // exporters, all of it. 'accent' entries resolve to the deck's DNA
+  // accent at insert time, so one gallery matches every design family.
+  // The presets themselves live at library level (next to the gallery
+  // sheet that renders them).
+
+  /// The WordArt tile: the gallery sheet, then the insert.
+  Future<void> _wordArtGallery() async {
+    final id = await dreamSheet<String>(
+      context,
+      builder: (context) => _WordArtSheet(accentHex: _dnaAccentHex),
+    );
+    if (id != null) _addWordArt(id);
+  }
+
+  /// Insert the preset: a text box in the preset's style, mid-slide,
+  /// keyboard open on the placeholder — the first keystrokes make it
+  /// yours.
+  void _addWordArt(String presetId) {
+    final preset = _wordArtPresets.firstWhere(
+        (p) => p['id'] == presetId,
+        orElse: () => _wordArtPresets.first);
+    final accent = _dnaAccentHex;
+    final color = switch (preset['color']) {
+      'accent' => accent,
+      'white' => 'FFFFFF',
+      'muted' => '6B6E76',
+      _ => '17181A',
+    };
+    const placeholder = 'Your text here';
+    final doc = RichDoc(
+      text: placeholder,
+      runs: [
+        RichRun(
+          start: 0,
+          end: placeholder.length,
+          bold: true,
+          italic: preset['italic'] == true ? true : null,
+          fontSize: (preset['font_size'] as num).toDouble(),
+          color: color,
+          highlight: preset['highlight']?.toString(),
+        ),
+      ],
+    );
+    final effects = <String, dynamic>{};
+    if (preset['shadow'] == true) {
+      effects['shadow'] = {
+        'dx': 4.0,
+        'dy': 6.0,
+        'blur': 10.0,
+        'color': '000000',
+        'opacity': 0.35,
+      };
+    }
+    if (preset['glow'] == true) {
+      effects['glow'] = {'color': accent, 'blur': 18.0};
+    }
+    _insertObject(
+      _newContentObject(
+        w: (preset['w'] as num).toDouble(),
+        h: (preset['h'] as num).toDouble(),
+        content: ObjectContent.text(doc),
+        fill: preset['fill_accent'] == true
+            ? {'type': 'solid', 'color': accent}
+            : null,
+        effects: effects.isEmpty ? null : effects,
+        opacity: preset['opacity'] == null
+            ? 1.0
+            : (preset['opacity'] as num).toDouble(),
+      ),
       startTyping: true,
     );
   }
@@ -3409,6 +3493,7 @@ class _EditorScreenState extends State<EditorScreen>
                                   textActions: _textActions,
                                   deckPalette: _deckPalette,
                                   onInsertTextBox: _insertTextBox,
+                                  onInsertWordArt: _wordArtGallery,
                                   onPickImage: _pickImage,
                                   onPickShape: _addObject,
                                   onInsertTable: _insertTable,
