@@ -380,6 +380,218 @@ class _SectionActionsSheet extends StatelessWidget {
   }
 }
 
+/// The WordArt gallery's presets — library-level like `_designFamilies`
+/// (the sheet that renders them and the editor that inserts them both
+/// read this one list). Colors are semantic — 'ink' | 'white' | 'muted' |
+/// 'accent' — resolved on insert; the accent reaches the run, the glow,
+/// or the badge's fill.
+const List<Map<String, dynamic>> _wordArtPresets = [
+  {
+    'id': 'headline',
+    'label': 'Headline',
+    'w': 560.0,
+    'h': 150.0,
+    'font_size': 58.0,
+    'color': 'ink',
+    'shadow': true,
+  },
+  {
+    'id': 'accent',
+    'label': 'Accent',
+    'w': 560.0,
+    'h': 150.0,
+    'font_size': 58.0,
+    'color': 'accent',
+  },
+  {
+    'id': 'glow',
+    'label': 'Glow',
+    'w': 560.0,
+    'h': 160.0,
+    'font_size': 58.0,
+    'color': 'accent',
+    'glow': true,
+  },
+  {
+    'id': 'marker',
+    'label': 'Highlight',
+    'w': 560.0,
+    'h': 110.0,
+    'font_size': 38.0,
+    'color': 'ink',
+    'highlight': 'FFD400',
+  },
+  {
+    'id': 'badge',
+    'label': 'Badge',
+    'w': 380.0,
+    'h': 110.0,
+    'font_size': 34.0,
+    'color': 'white',
+    'fill_accent': true,
+  },
+  {
+    'id': 'watermark',
+    'label': 'Watermark',
+    'w': 720.0,
+    'h': 190.0,
+    'font_size': 84.0,
+    'color': 'muted',
+    'italic': true,
+    'opacity': 0.35,
+  },
+];
+
+/// **WordArt** — the styled-text gallery (the seventh Insert card). Each
+/// tile previews its look at card scale; picking pops the preset id and
+/// the editor resolves the semantic colors ('accent' → the deck's DNA
+/// accent) and inserts a live text box in that style, keyboard open.
+class _WordArtSheet extends StatelessWidget {
+  const _WordArtSheet({required this.accentHex});
+
+  /// The deck's resolved DNA accent (RRGGBB) — the accent previews.
+  final String accentHex;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+          child: Text('WordArt',
+              style: Theme.of(context).textTheme.titleMedium),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          child: Column(
+            children: [
+              for (var r = 0; r * 2 < _wordArtPresets.length; r++)
+                Padding(
+                  padding: EdgeInsets.only(
+                      bottom: r * 2 + 2 < _wordArtPresets.length ? 8 : 0),
+                  child: Row(
+                    children: [
+                      for (var c = 0; c < 2; c++)
+                        if (r * 2 + c < _wordArtPresets.length)
+                          Expanded(
+                            child: Padding(
+                              padding: EdgeInsets.only(
+                                  left: c == 0 ? 0 : 4,
+                                  right: c == 1 ? 0 : 4),
+                              child: _WordArtPreview(
+                                preset: _wordArtPresets[r * 2 + c],
+                                accentHex: accentHex,
+                              ),
+                            ),
+                          ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// One gallery tile: the preset's look rendered at preview scale plus its
+/// name. The preview approximates (boxShadow for shadow/glow, a filled
+/// chip for the badge) — it communicates the look, the insert carries the
+/// exact model payload.
+class _WordArtPreview extends StatelessWidget {
+  const _WordArtPreview({required this.preset, required this.accentHex});
+
+  final Map<String, dynamic> preset;
+  final String accentHex;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = hexToColor(accentHex);
+    final color = switch (preset['color']) {
+      'accent' => accent,
+      'white' => Colors.white,
+      'muted' => kText2,
+      _ => kText,
+    };
+    final Widget sample;
+    if (preset['highlight'] != null) {
+      // The marker pen: ink on a highlighter chip.
+      sample = Container(
+        color: hexToColor(preset['highlight'].toString()),
+        padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+        child: Text('Your text',
+            style: TextStyle(
+                fontSize: 13, fontWeight: FontWeight.w700, color: color)),
+      );
+    } else if (preset['fill_accent'] == true) {
+      // The badge: white on the accent chip.
+      sample = Container(
+        decoration: BoxDecoration(
+            color: accent, borderRadius: BorderRadius.circular(6)),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: const Text('Your text',
+            style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: Colors.white)),
+      );
+    } else {
+      // The type-only looks; translucent presets stay visible enough
+      // to read (the floor is for the watermark's 0.35).
+      final o = preset['opacity'] == null
+          ? 1.0
+          : ((preset['opacity'] as num).toDouble())
+              .clamp(0.55, 1.0)
+              .toDouble();
+      sample = Opacity(
+        opacity: o,
+        child: Text('Your text',
+            style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                fontStyle:
+                    preset['italic'] == true ? FontStyle.italic : null,
+                color: color)),
+      );
+    }
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => Navigator.pop(context, preset['id'].toString()),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+        decoration: BoxDecoration(
+          color: kElevated,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: kHairline),
+          boxShadow: preset['shadow'] == true
+              ? [
+                  BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.35),
+                      blurRadius: 8,
+                      offset: const Offset(2, 3)),
+                ]
+              : preset['glow'] == true
+                  ? [
+                      BoxShadow(
+                          color: accent.withValues(alpha: 0.6), blurRadius: 12),
+                    ]
+                  : null,
+        ),
+        child: Column(
+          children: [
+            sample,
+            const SizedBox(height: 6),
+            Text(preset['label'].toString(),
+                style: const TextStyle(fontSize: 11, color: kText2)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// **Resource images** — the importable images of the deck's or the brand's
 /// SAF resource store. Pops the chosen entry; thumbnails resolve through
 /// [pathOf] (the editor's cached `_resourcePathOf`) so they render on the

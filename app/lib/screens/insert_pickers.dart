@@ -194,6 +194,17 @@ class _InsertSheetState extends State<InsertSheet> {
               onTap: () => setState(() => _view = _InsertView.media),
             ),
           ]),
+          const SizedBox(height: 10),
+          // The seventh card — WordArt: styled-text presets over a plain
+          // text box. Full-width for now; Chart and Link join this row in
+          // Tier 2 to complete the 3×3 grid.
+          DreamTileRow(tiles: [
+            DreamToolTile(
+              icon: Icons.auto_awesome,
+              label: 'WordArt',
+              onTap: widget.onInsertWordArt,
+            ),
+          ]),
         ],
       ),
     );
