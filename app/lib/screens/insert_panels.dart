@@ -11,6 +11,9 @@ class _ObjectPanel extends StatelessWidget {
     required this.onGroup,
     required this.onObjectStyle,
     required this.onTableCell,
+    required this.tableEntry,
+    required this.onTableUpdate,
+    required this.onTableStyle,
     required this.onEditStyleSheet,
     required this.onStartTyping,
     this.onPlayMedia,
@@ -25,6 +28,19 @@ class _ObjectPanel extends StatelessWidget {
   final void Function(int) onGroup;
   final void Function(Map<String, dynamic>) onObjectStyle;
   final void Function(int index) onTableCell;
+
+  /// The selected table's deck-level metadata entry (merges + style),
+  /// null for non-table selections (and plain, unmerged tables).
+  final Map<String, dynamic>? tableEntry;
+
+  /// Commits a table structure change (updated object + updated entry,
+  /// one undo step).
+  final void Function(Map<String, dynamic> obj, Map<String, dynamic>? entry)
+      onTableUpdate;
+
+  /// Applies a named table style — the editor resolves DNA colors.
+  final void Function(String style) onTableStyle;
+
   final VoidCallback onEditStyleSheet;
   final VoidCallback onStartTyping;
 
@@ -140,14 +156,22 @@ class _ObjectPanel extends StatelessWidget {
             id: 'cells',
             icon: Icons.grid_on,
             label: 'Cells',
-            body: (p, ctx) => _TableCells(obj: obj, onTableCell: onTableCell),
+            body: (p, ctx) => _TableCells(
+                obj: obj,
+                onTableCell: onTableCell,
+                entry: p.tableEntry,
+                onTableUpdate: p.onTableUpdate),
           ),
           _PanelGroup(
             id: 'style',
             icon: Icons.palette_outlined,
-            label: 'Grid style',
+            label: 'Table style',
             body: (p, ctx) => _GridStyleTools(
-                obj: obj, onObjectStyle: onObjectStyle, palette: palette),
+                obj: obj,
+                onObjectStyle: onObjectStyle,
+                palette: palette,
+                entry: p.tableEntry,
+                onTableStyle: p.onTableStyle),
           ),
         ];
       case kContentImage:
@@ -250,61 +274,484 @@ class _RailButton extends StatelessWidget {
   }
 }
 
-class _TableCells extends StatelessWidget {
-  const _TableCells({required this.obj, required this.onTableCell});
+/// The table's Cells group: the cell grid plus the structure actions.
+///
+/// **Tap a cell to edit its text** (the route dialog, unchanged); **long-press
+/// a cell to toggle it into a selection** (the long-press is the context
+/// menu — the same governing principle the object actions live by). The
+/// selection drives the structure chips below the grid: add/remove row &
+/// column relative to the selection, and merge/split. A merged region
+/// renders as ONE wide cell (covered cells have no button of their own).
+class _TableCells extends StatefulWidget {
+  const _TableCells({
+    required this.obj,
+    required this.onTableCell,
+    required this.entry,
+    required this.onTableUpdate,
+  });
 
   final Map<String, dynamic> obj;
   final void Function(int index) onTableCell;
 
+  /// The table's deck-level metadata entry (merges + style), or null.
+  final Map<String, dynamic>? entry;
+
+  /// Commits a structure change: updated object + updated entry, one
+  /// undo step (the editor's cell-edit contract).
+  final void Function(Map<String, dynamic> obj, Map<String, dynamic>? entry)
+      onTableUpdate;
+
+  @override
+  State<_TableCells> createState() => _TableCellsState();
+}
+
+class _TableCellsState extends State<_TableCells> {
+  /// Selected ANCHOR cell indices (a merged region selects as one unit —
+  /// its anchor). Long-press toggles membership.
+  final Set<int> _selected = {};
+
+  static const _actionSpacing = EdgeInsets.only(left: 4, right: 4);
+
+  (int, int, List<String>) get _table => ObjectContent.tableOf(widget.obj);
+
+  List<Map<String, dynamic>> get _regions =>
+      ObjectContent.tableMergesOf(widget.entry,
+          rows: _table.$1, cols: _table.$2);
+
+  /// The region whose anchor is at flat [index], or null.
+  Map<String, dynamic>? _regionOfAnchor(int index) {
+    final (rows, cols, _) = _table;
+    if (rows == 0 || cols == 0) return null;
+    final r = index ~/ cols, c = index % cols;
+    for (final m in _regions) {
+      if ((m['r'] as num).toInt() == r && (m['c'] as num).toInt() == c) {
+        return m;
+      }
+    }
+    return null;
+  }
+
+  /// Every (row, col) covered by the selection — anchor regions included.
+  Set<(int, int)> get _selectedCells {
+    final (rows, cols, _) = _table;
+    final out = <(int, int)>{};
+    for (final idx in _selected) {
+      if (idx >= rows * cols) continue;
+      final r = idx ~/ cols, c = idx % cols;
+      final m = _regionOfAnchor(idx);
+      if (m == null) {
+        out.add((r, c));
+      } else {
+        final rs = (m['rs'] as num).toInt(), cs = (m['cs'] as num).toInt();
+        for (var dr = 0; dr < rs; dr++) {
+          for (var dc = 0; dc < cs; dc++) {
+            out.add((r + dr, c + dc));
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  /// The selection's bounding box, or null when nothing is selected.
+  ((int, int), (int, int))? get _selectionBox {
+    final cells = _selectedCells;
+    if (cells.isEmpty) return null;
+    var r0 = 1 << 30, r1 = -1, c0 = 1 << 30, c1 = -1;
+    for (final (r, c) in cells) {
+      if (r < r0) r0 = r;
+      if (r > r1) r1 = r;
+      if (c < c0) c0 = c;
+      if (c > c1) c1 = c;
+    }
+    return ((r0, c0), (r1, c1));
+  }
+
+  bool get _isExactRectangle {
+    final box = _selectionBox;
+    if (box == null) return false;
+    final ((r0, c0), (r1, c1)) = box;
+    return _selectedCells.length == (r1 - r0 + 1) * (c1 - c0 + 1);
+  }
+
+  /// Can the selection merge? It must be an exact rectangle of 2+ cells,
+  /// and every existing merge region must sit either fully INSIDE it (then
+  /// fully selected — absorbed) or fully OUTSIDE — nothing may stick into
+  /// the rectangle or fill only part of it.
+  bool get _canMerge {
+    final box = _selectionBox;
+    if (box == null) return false;
+    final ((r0, c0), (r1, c1)) = box;
+    if (!_isExactRectangle || _selectedCells.length < 2) return false;
+    for (final m in _regions) {
+      final mr = (m['r'] as num).toInt(), mc = (m['c'] as num).toInt();
+      final rs = (m['rs'] as num).toInt(), cs = (m['cs'] as num).toInt();
+      var inside = 0;
+      for (var dr = 0; dr < rs; dr++) {
+        for (var dc = 0; dc < cs; dc++) {
+          final cell = (mr + dr, mc + dc);
+          final inBox = cell.$1 >= r0 &&
+              cell.$1 <= r1 &&
+              cell.$2 >= c0 &&
+              cell.$2 <= c1;
+          // Every region cell must match the box on both sides — a
+          // half-in region sticks into the rectangle, an unselected
+          // in-box cell leaves a hole.
+          if (inBox != _selectedCells.contains(cell)) return false;
+          if (inBox) inside++;
+        }
+      }
+      if (inside > 0 && inside < rs * cs) return false;
+    }
+    return true;
+  }
+
+  /// Can the selection split? Some existing merge region's anchor must be
+  /// selected (splitting returns its covered cells to independence).
+  bool get _canSplit => _selected.any((i) => _regionOfAnchor(i) != null);
+
+  // ---- structure transforms ----------------------------------------------
+
+  /// Insert a row at [at]: cells shift down; regions above stay, regions
+  /// spanning the seam grow by a row, regions below shift down.
+  void _insertRow(int at) {
+    final (rows, cols, cells) = _table;
+    final out = List<String>.from(cells);
+    out.insertAll(at * cols, List.filled(cols, ''));
+    final merges = [
+      for (final m in _regions)
+        () {
+          final r = (m['r'] as num).toInt();
+          final rs = (m['rs'] as num).toInt();
+          if (r >= at) {
+            return {...m, 'r': r + 1};
+          } else if (r + rs > at) {
+            return {...m, 'rs': rs + 1};
+          }
+          return m;
+        }(),
+    ];
+    _commit(rows + 1, cols, out, merges);
+  }
+
+  void _insertCol(int at) {
+    final (rows, cols, cells) = _table;
+    final out = List<String>.from(cells);
+    for (var r = rows - 1; r >= 0; r--) {
+      out.insert(r * cols + at, '');
+    }
+    final merges = [
+      for (final m in _regions)
+        () {
+          final c = (m['c'] as num).toInt();
+          final cs = (m['cs'] as num).toInt();
+          if (c >= at) {
+            return {...m, 'c': c + 1};
+          } else if (c + cs > at) {
+            return {...m, 'cs': cs + 1};
+          }
+          return m;
+        }(),
+    ];
+    _commit(rows, cols + 1, out, merges);
+  }
+
+  /// Delete the rows covered by the selection. Regions on a deleted row
+  /// go with it (their anchor text dies with the row, like any cell's);
+  /// regions below shift up.
+  void _deleteRows() {
+    final (rows, cols, cells) = _table;
+    final gone = _selectedCells.map(((int, int) c) => c.$1).toSet();
+    if (gone.isEmpty || gone.length >= rows) return;
+    final out = <String>[
+      for (var r = 0; r < rows; r++)
+        if (!gone.contains(r)) ...cells.sublist(r * cols, r * cols + cols),
+    ];
+    final merges = <Map<String, dynamic>>[];
+    for (final m in _regions) {
+      final r = (m['r'] as num).toInt();
+      final rs = (m['rs'] as num).toInt();
+      final hit = [for (var dr = 0; dr < rs; dr++) r + dr]
+          .any(gone.contains);
+      if (hit) continue; // a region crossing a deleted row folds away
+      final shift = gone.where((g) => g < r).length;
+      merges.add({...m, 'r': r - shift});
+    }
+    _commit(rows - gone.length, cols, out, merges);
+  }
+
+  void _deleteCols() {
+    final (rows, cols, cells) = _table;
+    final gone = _selectedCells.map(((int, int) c) => c.$2).toSet();
+    if (gone.isEmpty || gone.length >= cols) return;
+    final out = <String>[
+      for (var r = 0; r < rows; r++)
+        for (var c = 0; c < cols; c++)
+          if (!gone.contains(c)) cells[r * cols + c],
+    ];
+    final merges = <Map<String, dynamic>>[];
+    for (final m in _regions) {
+      final c = (m['c'] as num).toInt();
+      final cs = (m['cs'] as num).toInt();
+      final hit = [for (var dc = 0; dc < cs; dc++) c + dc]
+          .any(gone.contains);
+      if (hit) continue;
+      final shift = gone.where((g) => g < c).length;
+      merges.add({...m, 'c': c - shift});
+    }
+    _commit(rows, cols - gone.length, out, merges);
+  }
+
+  /// Merge the selection's rectangle: non-empty cell texts in the region
+  /// join into the anchor (space-separated — text is never lost), covered
+  /// cells empty out, regions fully inside the rectangle are absorbed.
+  void _mergeSelection() {
+    if (!_canMerge) return;
+    final (rows, cols, cells) = _table;
+    // Capture the region list ONCE — [_regions] rebuilds fresh maps per
+    // call, so identity-based filtering must see the same instances.
+    final regions = _regions;
+    final box = _selectionBox!;
+    final ((r0, c0), (r1, c1)) = box;
+    final texts = <String>[];
+    for (var r = r0; r <= r1; r++) {
+      for (var c = c0; c <= c1; c++) {
+        final t = cells[r * cols + c];
+        if (t.isNotEmpty) texts.add(t);
+      }
+    }
+    final out = List<String>.from(cells);
+    for (var r = r0; r <= r1; r++) {
+      for (var c = c0; c <= c1; c++) {
+        out[r * cols + c] = '';
+      }
+    }
+    out[r0 * cols + c0] = texts.join(' ');
+    final region = {'r': r0, 'c': c0, 'rs': r1 - r0 + 1, 'cs': c1 - c0 + 1};
+    final absorbed = regions
+        .where((m) =>
+            (m['r'] as num).toInt() >= r0 &&
+            (m['c'] as num).toInt() >= c0 &&
+            (m['r'] as num).toInt() + (m['rs'] as num).toInt() <= r1 + 1 &&
+            (m['c'] as num).toInt() + (m['cs'] as num).toInt() <= c1 + 1)
+        .toList();
+    final merges = [...regions.where((m) => !absorbed.contains(m)), region];
+    _commit(rows, cols, out, merges);
+  }
+
+  /// Split every merged region whose anchor is selected — the anchor
+  /// keeps its text; the covered cells return to independence (empty).
+  void _splitSelection() {
+    if (!_canSplit) return;
+    final (rows, cols, cells) = _table;
+    final merges = _regions
+        .where((m) => !_selected
+            .contains((m['r'] as num).toInt() * cols +
+                (m['c'] as num).toInt()))
+        .toList();
+    _commit(rows, cols, cells, merges);
+  }
+
+  // ---- commit -------------------------------------------------------------
+
+  /// One structure change = one commit: the updated object payload plus
+  /// the updated metadata entry, through [widget.onTableUpdate] — one
+  /// update_object = one undo step.
+  void _commit(int rows, int cols, List<String> cells,
+      List<Map<String, dynamic>> merges) {
+    final copy = Map<String, dynamic>.from(widget.obj);
+    final content =
+        Map<String, dynamic>.from((copy['content'] as Map) ?? const {});
+    content['rows'] = rows;
+    content['cols'] = cols;
+    content['cells'] = cells;
+    copy['content'] = content;
+    Map<String, dynamic>? entry;
+    if (merges.isNotEmpty) {
+      entry = Map<String, dynamic>.from(widget.entry ?? const {});
+      entry['merges'] = merges;
+    } else if (widget.entry != null &&
+        ObjectContent.tableStyleOf(widget.entry) != 'plain') {
+      entry = Map<String, dynamic>.from(widget.entry!)..remove('merges');
+    }
+    setState(() => _selected.clear());
+    widget.onTableUpdate(copy, entry);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final (rows, cols, cells) = ObjectContent.tableOf(obj);
+    final (rows, cols, cells) = _table;
+    if (rows == 0 || cols == 0) return const _PanelBody(children: []);
+    // Undo/redo can shrink the table under a live selection: stale
+    // indices (and indices now covered by a merge) fold away.
+    final covered = <int>{
+      for (final m in _regions)
+        for (var dr = 0; dr < (m['rs'] as num).toInt(); dr++)
+          for (var dc = 0; dc < (m['cs'] as num).toInt(); dc++)
+            if (dr != 0 || dc != 0)
+              ((m['r'] as num).toInt() + dr) * cols +
+                  (m['c'] as num).toInt() +
+                  dc,
+    };
+    _selected.removeWhere((i) => i >= rows * cols || covered.contains(i));
+    final coveredAt = <int, Map<String, dynamic>>{};
+    for (final m in _regions) {
+      for (var dr = 0; dr < (m['rs'] as num).toInt(); dr++) {
+        for (var dc = 0; dc < (m['cs'] as num).toInt(); dc++) {
+          coveredAt[((m['r'] as num).toInt() + dr) * cols +
+              (m['c'] as num).toInt() +
+              dc] = m;
+        }
+      }
+    }
+    final canStruct = _selected.isNotEmpty;
+    final goneRows = _selectedCells.map(((int, int) c) => c.$1).toSet();
+    final goneCols = _selectedCells.map(((int, int) c) => c.$2).toSet();
     return _PanelBody(
       children: [
-        const _PanelLabel('TAP A CELL TO EDIT ITS TEXT'),
+        _PanelLabel(_selected.isEmpty
+            ? 'TAP TO EDIT · LONG-PRESS TO SELECT'
+            : '${_selectedCells.length} '
+                'CELL${_selectedCells.length == 1 ? '' : 'S'} SELECTED'),
         for (var r = 0; r < rows; r++)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Row(
               children: [
                 for (var c = 0; c < cols; c++)
-                  Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.only(left: c == 0 ? 0 : 4, right: c == cols - 1 ? 0 : 4),
-                      child: _CellButton(
-                        index: r * cols + c,
-                        text: cells[r * cols + c],
-                        onTap: () => onTableCell(r * cols + c),
+                  () {
+                    final idx = r * cols + c;
+                    final m = coveredAt[idx];
+                    if (m != null) {
+                      final anchorIdx = (m['r'] as num).toInt() * cols +
+                          (m['c'] as num).toInt();
+                      // Covered cells have no button — the anchor's wide
+                      // button spans their columns (flex = colSpan).
+                      if (idx != anchorIdx) return const SizedBox.shrink();
+                      return Expanded(
+                        flex: (m['cs'] as num).toInt(),
+                        child: Padding(
+                          padding: _actionSpacing,
+                          child: _CellButton(
+                            index: idx,
+                            text: cells[idx],
+                            selected: _selected.contains(idx),
+                            onTap: () => widget.onTableCell(idx),
+                            onLongPress: () => _toggle(idx),
+                          ),
+                        ),
+                      );
+                    }
+                    return Expanded(
+                      child: Padding(
+                        padding: _actionSpacing,
+                        child: _CellButton(
+                          index: idx,
+                          text: cells[idx],
+                          selected: _selected.contains(idx),
+                          onTap: () => widget.onTableCell(idx),
+                          onLongPress: () => _toggle(idx),
+                        ),
                       ),
-                    ),
-                  ),
+                    );
+                  }(),
               ],
             ),
           ),
+        const _PanelLabel('STRUCTURE'),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _TableActionChip(
+              key: const ValueKey('table_chip_add_row'),
+              label: '+ Row',
+              enabled: canStruct,
+              onTap: _insertRowAboveSelection,
+            ),
+            _TableActionChip(
+              key: const ValueKey('table_chip_del_row'),
+              label: '− Row',
+              enabled: canStruct && goneRows.length < rows && rows > 1,
+              onTap: _deleteRows,
+            ),
+            _TableActionChip(
+              key: const ValueKey('table_chip_add_col'),
+              label: '+ Col',
+              enabled: canStruct,
+              onTap: _insertColLeftOfSelection,
+            ),
+            _TableActionChip(
+              key: const ValueKey('table_chip_del_col'),
+              label: '− Col',
+              enabled: canStruct && goneCols.length < cols && cols > 1,
+              onTap: _deleteCols,
+            ),
+            _TableActionChip(
+              key: const ValueKey('table_chip_merge'),
+              label: 'Merge',
+              enabled: _canMerge,
+              onTap: _mergeSelection,
+            ),
+            _TableActionChip(
+              key: const ValueKey('table_chip_split'),
+              label: 'Split',
+              enabled: _canSplit,
+              onTap: _splitSelection,
+            ),
+          ],
+        ),
       ],
     );
+  }
+
+  void _insertRowAboveSelection() {
+    final box = _selectionBox;
+    _insertRow(box?.$1.$1 ?? _table.$1);
+  }
+
+  void _insertColLeftOfSelection() {
+    final box = _selectionBox;
+    _insertCol(box?.$1.$2 ?? _table.$2);
+  }
+
+  void _toggle(int index) {
+    setState(() {
+      if (!_selected.remove(index)) _selected.add(index);
+    });
   }
 }
 
 class _CellButton extends StatelessWidget {
-  const _CellButton({required this.index, required this.text, required this.onTap});
+  const _CellButton({
+    required this.index,
+    required this.text,
+    required this.selected,
+    required this.onTap,
+    required this.onLongPress,
+  });
 
   final int index;
   final String text;
+  final bool selected;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
   @override
   Widget build(BuildContext context) {
     return Material(
       key: ValueKey('table_cell_$index'),
-      color: kElevated,
+      color: selected ? kPurpleWash : kElevated,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: kHairline),
+        side: BorderSide(
+            color: selected ? kPurple : kHairline,
+            width: selected ? 1.4 : 1),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         child: SizedBox(
           height: 44,
           child: Center(
@@ -334,17 +781,58 @@ class _GridStyleTools extends StatelessWidget {
     required this.obj,
     required this.onObjectStyle,
     required this.palette,
+    required this.entry,
+    required this.onTableStyle,
   });
 
   final Map<String, dynamic> obj;
   final void Function(Map<String, dynamic>) onObjectStyle;
   final List<Color> palette;
 
+  /// The table's deck-level metadata entry — the style chips read the
+  /// current named style from it (and merge-aware data rides along).
+  final Map<String, dynamic>? entry;
+
+  /// Applies a named style; the editor resolves the DNA colors.
+  final void Function(String style) onTableStyle;
+
   @override
   Widget build(BuildContext context) {
     final stroke = (obj['stroke'] as Map?) ?? const {};
+    final style = ObjectContent.tableStyleOf(entry);
     return _PanelBody(
       children: [
+        const _PanelLabel('TABLE STYLE'),
+        // The DNA-driven presets: Plain / Header (accent fill + white
+        // bold) / Banded (surface tint on alternate rows) / both. Colors
+        // resolve from the deck's design DNA at apply time — one style
+        // set matches every design family.
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            DreamChoiceChip(
+              label: 'Plain',
+              selected: style == 'plain',
+              onTap: () => onTableStyle('plain'),
+            ),
+            DreamChoiceChip(
+              label: 'Header',
+              selected: style == 'header',
+              onTap: () => onTableStyle('header'),
+            ),
+            DreamChoiceChip(
+              label: 'Banded',
+              selected: style == 'banded',
+              onTap: () => onTableStyle('banded'),
+            ),
+            DreamChoiceChip(
+              label: 'Header + band',
+              selected: style == 'header_banded',
+              onTap: () => onTableStyle('header_banded'),
+            ),
+          ],
+        ),
         DreamColorChips(
           label: 'GRID LINE COLOR',
           palette: palette,
@@ -353,6 +841,37 @@ class _GridStyleTools extends StatelessWidget {
               stroke: {...stroke, 'color': hex ?? '17181A', 'width': (stroke['width'] ?? 1.5)})),
         ),
       ],
+    );
+  }
+}
+
+/// A structure action chip — a [DreamChoiceChip] that can be OFF: a
+/// disabled action dims and ignores taps instead of faking a press.
+class _TableActionChip extends StatelessWidget {
+  const _TableActionChip({
+    super.key,
+    required this.label,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      ignoring: !enabled,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 150),
+        opacity: enabled ? 1.0 : 0.38,
+        child: DreamChoiceChip(
+          label: label,
+          selected: false,
+          onTap: onTap,
+        ),
+      ),
     );
   }
 }
