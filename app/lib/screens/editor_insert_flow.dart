@@ -28,7 +28,7 @@ extension _EditorInsertFlow on _EditorScreenState {
         _setDeck(r['deck'] as Map);
       }
     });
-    if (mounted) setState(() {});
+    if (mounted) _setState(() {});
   }
 
   // ---- the Insert drawer's flows -------------------------------------------------
@@ -430,7 +430,13 @@ extension _EditorInsertFlow on _EditorScreenState {
       tables[id] = entry;
     }
     if (tables.isEmpty) {
-      deck.remove('tables');
+      // An EMPTY tombstone, never a removal: the _setDeck carry cannot
+      // tell a legitimate removal from an engine round-trip drop, so a
+      // removed entry would resurrect on this very same settle (the
+      // filmstrip sections hit exactly that in their first CI cycle).
+      // The empty map never carries (the carry only forwards non-empty
+      // maps) and quietly disappears on the next real round-trip.
+      deck['tables'] = const <String, dynamic>{};
     } else {
       deck['tables'] = tables;
     }

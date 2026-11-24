@@ -452,6 +452,12 @@ class _EditorScreenState extends State<EditorScreen>
   bool _lastViewportShrunk = false;
 
 
+  /// The part-file extensions' setState gateway: an extension's members
+  /// are not instance members of a State subclass to the analyzer, so a
+  /// direct setState there reads as a protected-member violation. One
+  /// indirection on the class restores the legal path for every part.
+  void _setState(VoidCallback fn) => setState(fn);
+
   // ---- build ----------------------------------------------------------------------
 
   @override
