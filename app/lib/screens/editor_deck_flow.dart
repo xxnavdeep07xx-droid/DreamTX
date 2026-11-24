@@ -148,7 +148,7 @@ extension _EditorDeckFlow on _EditorScreenState {
         for (final s in ((deck['slides'] as List?) ?? const [])
             .whereType<Map>())
           for (final o in ((s['objects'] as List?) ?? const [])
-              .whereType<Map>())
+              .whereType<Map<String, dynamic>>())
             if (ObjectContent.isTable(o) && o['id'] != null)
               o['id'].toString(),
       };
@@ -173,7 +173,7 @@ extension _EditorDeckFlow on _EditorScreenState {
 
   void _undoStep() {
     if (_undo.isEmpty) return;
-    setState(() {
+    _setState(() {
       _redo.add(_copy());
       _deck = _undo.removeLast();
     });
@@ -186,7 +186,7 @@ extension _EditorDeckFlow on _EditorScreenState {
 
   void _redoStep() {
     if (_redo.isEmpty) return;
-    setState(() {
+    _setState(() {
       _undo.add(_copy());
       _deck = _redo.removeLast();
     });
@@ -200,7 +200,7 @@ extension _EditorDeckFlow on _EditorScreenState {
   void _refreshLayout() {
     if (!mounted) return;
     if (_slides.isEmpty) {
-      setState(() {
+      _setState(() {
         _layout = null;
         _warnings = [];
       });
@@ -209,7 +209,7 @@ extension _EditorDeckFlow on _EditorScreenState {
     _index = _index.clamp(0, _slides.length - 1);
     final r = Bridge.command(
         {'op': 'get_layout', 'deck': _deck, 'slide_index': _index});
-    setState(() {
+    _setState(() {
       if (r['ok'] == true && r['layout'] is Map) {
         _layout = (r['layout'] as Map).cast<String, dynamic>();
         _warnings = ((r['layout']['warnings'] as List?) ?? [])
@@ -261,7 +261,7 @@ extension _EditorDeckFlow on _EditorScreenState {
     _flushTextSession();
     _disposeTextSession();
     _removeTypingToolbar();
-    setState(() {
+    _setState(() {
       _index = i;
       _selectedObjectId = null;
       _typing = false;
@@ -290,7 +290,7 @@ extension _EditorDeckFlow on _EditorScreenState {
     // setState rebuild, so a fold caught mid-flight freezes at its real
     // on-screen height, not its target.
     final arrivingFootprint = _liveStripFlowHeight();
-    setState(() {
+    _setState(() {
       _navTab = tab;
       if (willBeSheet) _lastSheetTab = tab!;
       _designMode = tab == _NavTab.insert || tab == _NavTab.draw;
@@ -364,7 +364,7 @@ extension _EditorDeckFlow on _EditorScreenState {
         // Flip the entrance: the sheet's bottom retargets from
         // (anchor - height) to the anchor, and AnimatedPositioned slides
         // it up over the 200ms family.
-        setState(() => _sheetEntering = false);
+        _setState(() => _sheetEntering = false);
       });
     }
     if (tab != null) {

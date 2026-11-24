@@ -5,7 +5,7 @@ part of 'editor_screen.dart';
 /// class, its fields and the part map).
 
 extension _EditorSlideFlow on _EditorScreenState {
-  // ---- slide ops --------------------------------------------------------------
+  // ---- slide ops ------------------------------------------------------------
 
   void _updateSlide(Map slide, String archetype, Map content) {
     final r = Bridge.command({
@@ -262,7 +262,7 @@ extension _EditorSlideFlow on _EditorScreenState {
   void _toggleSection(Map<String, dynamic> section) {
     final id = section['id']?.toString();
     if (id == null || id.isEmpty) return;
-    setState(() {
+    _setState(() {
       if (!_collapsedSections.remove(id)) _collapsedSections.add(id);
     });
   }
