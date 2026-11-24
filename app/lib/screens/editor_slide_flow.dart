@@ -5,7 +5,7 @@ part of 'editor_screen.dart';
 /// class, its fields and the part map).
 
 extension _EditorSlideFlow on _EditorScreenState {
-  // ---- slide ops ------------------------------------------------------------
+  // ---- slide ops --------------------------------------------------------------
 
   void _updateSlide(Map slide, String archetype, Map content) {
     final r = Bridge.command({
