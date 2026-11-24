@@ -226,6 +226,11 @@ class _EditorScreenState extends State<EditorScreen>
   final List<Map<String, String>> _comments = [];
   final TextEditingController _commentField = TextEditingController();
 
+  /// Collapsed filmstrip sections, by section id — pure UI state, per
+  /// session (the deck file records the sections themselves, never the
+  /// fold; PowerPoint's filmstrip behaves the same).
+  final Set<String> _collapsedSections = {};
+
   /// The last settled keyboard inset (logical px, straight off the view —
   /// the editor's own subtree is keyboard-stable and sees zeroed insets,
   /// so MediaQuery here would always read 0). Only the TRANSITION from
@@ -462,7 +467,35 @@ class _EditorScreenState extends State<EditorScreen>
   }
 
   void _setDeck(Map newDeck) {
-    _deck = Map<String, dynamic>.from(newDeck);
+    final deck = Map<String, dynamic>.from(newDeck);
+    // Sections are app-owned deck metadata (see the filmstrip sections
+    // block below): the Rust core's Deck struct has no `sections` field,
+    // so every engine round-trip drops it. Carry the editor's own forward
+    // — then sanitize against the NEW deck's slides, so a marker whose
+    // start slide is gone folds away instead of haunting the rail.
+    if (!deck.containsKey('sections')) {
+      final carried = _deck['sections'];
+      if (carried is List && carried.isNotEmpty) deck['sections'] = carried;
+    }
+    if (deck['sections'] is List && (deck['sections'] as List).isNotEmpty) {
+      final ids = <String>{
+        for (final s in ((deck['slides'] as List?) ?? const [])
+            .whereType<Map>())
+          if (s['id'] != null) s['id'].toString(),
+      };
+      final live = <Map<String, dynamic>>[
+        for (final s in ((deck['sections'] as List?) ?? const [])
+            .whereType<Map>())
+          if (ids.contains(s['slide_id']?.toString()))
+            Map<String, dynamic>.from(s),
+      ];
+      if (live.isEmpty) {
+        deck.remove('sections');
+      } else {
+        deck['sections'] = live;
+      }
+    }
+    _deck = deck;
     unawaited(_persist());
     _refreshLayout();
     _refreshPalette();
@@ -2226,13 +2259,17 @@ class _EditorScreenState extends State<EditorScreen>
     if (i < 0 || i >= _slides.length) return;
     final action = await dreamSheet<String>(
       context,
-      builder: (context) =>
-          _SlideActionsSheet(index: i, count: _slides.length),
+      builder: (context) => _SlideActionsSheet(
+          index: i,
+          count: _slides.length,
+          startsSection: _sectionStartingAt(i) != null),
     );
     switch (action) {
       case 'edit':
         _gotoSlide(i);
         _editContent();
+      case 'section':
+        _startSectionAt(i);
       case 'dup':
         _duplicateAt(i);
       case 'left':
@@ -2242,6 +2279,175 @@ class _EditorScreenState extends State<EditorScreen>
       case 'del':
         _deleteAt(i);
     }
+  }
+
+  // ---- filmstrip sections (app-owned deck metadata) --------------------------
+  //
+  // A section is a named divider in the filmstrip rail: a marker anchored
+  // to the slide it STARTS (`deck['sections']` = [{id, name, slide_id}]);
+  // display order derives from the slides themselves, so moving, adding
+  // or duplicating slides can never corrupt a marker. The markers are
+  // APP-owned metadata: the Rust core's Deck struct has no `sections`
+  // field and drops it on every op response (serde ignores unknown fields
+  // coming in — exports, the AI and the worker never see them either),
+  // so [_setDeck] re-attaches the editor's own after every engine
+  // round-trip, [_copy]'s JSON snapshot carries them through undo/redo,
+  // and DeckStore writes them into the deck file verbatim. PowerPoint
+  // keeps sections the same way: presentation.xml metadata, apart from
+  // the slides themselves.
+
+  /// The deck's section markers, as fresh maps (never aliases of the
+  /// deck's own lists — every caller mutates freely).
+  List<Map<String, dynamic>> _sectionsList(Map deck) => [
+        for (final s in ((deck['sections'] as List?) ?? const [])
+            .whereType<Map>())
+          Map<String, dynamic>.from(s),
+      ];
+
+  /// The marker that STARTS at slide [index], if any — the slide actions
+  /// sheet's "Start section here" state.
+  Map<String, dynamic>? _sectionStartingAt(int index) {
+    if (index < 0 || index >= _slides.length) return null;
+    final id = _slides[index]['id']?.toString();
+    if (id == null) return null;
+    for (final s in _sectionsList(_deck)) {
+      if (s['slide_id']?.toString() == id) return s;
+    }
+    return null;
+  }
+
+  /// The rail's flattened items in one pass: a section divider before its
+  /// opening slide, that section's slides omitted while it is collapsed.
+  /// A slide belongs to the latest section started at-or-before it, so a
+  /// fold always swallows a contiguous run of cards.
+  List<_RailItem> _railItems() {
+    final startsAt = <String, Map<String, dynamic>>{};
+    for (final s in _sectionsList(_deck)) {
+      final sid = s['slide_id']?.toString();
+      if (sid != null && sid.isNotEmpty) startsAt[sid] = s;
+    }
+    final out = <_RailItem>[];
+    Map<String, dynamic>? current;
+    for (var i = 0; i < _slides.length; i++) {
+      final id = _slides[i]['id']?.toString();
+      final starts = id == null ? null : startsAt[id];
+      if (starts != null) {
+        current = starts;
+        out.add(_RailItem.section(starts));
+      }
+      final folded = current != null &&
+          _collapsedSections.contains(current['id']?.toString());
+      if (!folded) out.add(_RailItem.slide(i));
+    }
+    return out;
+  }
+
+  /// How many slides the section owns: from its start to the next
+  /// section's start (or the deck's end).
+  int _sectionSlideCount(Map<String, dynamic> section) {
+    final start = _slides.indexWhere(
+        (s) => s['id']?.toString() == section['slide_id']?.toString());
+    if (start < 0) return 0;
+    var end = _slides.length;
+    for (final s in _sectionsList(_deck)) {
+      if (s['id'] == section['id']) continue;
+      final j = _slides.indexWhere(
+          (sl) => sl['id']?.toString() == s['slide_id']?.toString());
+      if (j > start && j < end) end = j;
+    }
+    return end - start;
+  }
+
+  /// Fold/unfold a section in the rail.
+  void _toggleSection(Map<String, dynamic> section) {
+    final id = section['id']?.toString();
+    if (id == null || id.isEmpty) return;
+    setState(() {
+      if (!_collapsedSections.remove(id)) _collapsedSections.add(id);
+    });
+  }
+
+  /// "Start section here" (slide actions): name it, anchor it to this
+  /// slide. One mutate = one undo step, like every deck edit.
+  Future<void> _startSectionAt(int i) async {
+    if (i < 0 || i >= _slides.length) return;
+    final name = await dreamInputDialog(
+      context,
+      title: 'Start section here',
+      hint: 'Section name',
+      initial: _slideTitle(_slides[i]),
+      confirmLabel: 'Start',
+    );
+    if (name == null || name.trim().isEmpty) return;
+    final sid = _slides[i]['id']?.toString();
+    if (sid == null) return;
+    _mutateSections((sections) => [
+          ...sections,
+          {
+            'id': 'sec_${DateTime.now().millisecondsSinceEpoch}',
+            'name': name.trim(),
+            'slide_id': sid,
+          },
+        ]);
+  }
+
+  /// Long-press menu for a section chip.
+  Future<void> _sectionActions(Map<String, dynamic> section) async {
+    final action = await dreamSheet<String>(
+      context,
+      builder: (context) => _SectionActionsSheet(
+          name: section['name']?.toString() ?? ''),
+    );
+    switch (action) {
+      case 'rename':
+        _renameSection(section);
+      case 'remove':
+        _removeSection(section);
+    }
+  }
+
+  Future<void> _renameSection(Map<String, dynamic> section) async {
+    final name = await dreamInputDialog(
+      context,
+      title: 'Rename section',
+      initial: section['name']?.toString() ?? '',
+      confirmLabel: 'Rename',
+    );
+    if (name == null || name.trim().isEmpty) return;
+    _mutateSections((sections) => [
+          for (final s in sections)
+            if (s['id'] == section['id'])
+              {...s, 'name': name.trim()}
+            else
+              s,
+        ]);
+  }
+
+  /// Remove the divider only — the slides were never part of it. The
+  /// fold state dies with the section.
+  void _removeSection(Map<String, dynamic> section) {
+    _collapsedSections.remove(section['id']?.toString());
+    _mutateSections((sections) => [
+          for (final s in sections)
+            if (s['id'] != section['id']) s,
+        ]);
+  }
+
+  /// Every section edit is a deck edit: apply [change] to a deep copy's
+  /// markers and mutate — one undo step, persisted, sanitized.
+  void _mutateSections(
+      List<Map<String, dynamic>> Function(List<Map<String, dynamic>>)
+          change) {
+    final updated = _copy();
+    final next = change(_sectionsList(updated));
+    // The empty list is deliberate — a TOMBSTONE. `_setDeck` carries the
+    // previous deck's markers forward whenever a deck arrives WITHOUT the
+    // field (every engine round-trip drops it); a removal must not look
+    // like a round-trip, or the removed markers resurrect. An empty
+    // tombstone never carries, so the field quietly disappears again on
+    // the next engine op — there is nothing left to preserve.
+    updated['sections'] = next;
+    _mutate(updated);
   }
 
   // ---- deck-level ops ----------------------------------------------------------
@@ -3378,7 +3584,11 @@ class _EditorScreenState extends State<EditorScreen>
   /// across every fold/unfold — and, in the overlay slot, across every
   /// Files open/close — and one 200ms eased height transition, instant
   /// under reduced-motion, is the single coordinated move.
-  Widget _filmstripUnit(BuildContext context) => Column(
+  Widget _filmstripUnit(BuildContext context) {
+    // The rail's flattened view — section dividers interleaved with the
+    // slides of unfolded sections — computed once per build.
+    final rail = _railItems();
+    return Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           _FilmstripDivider(
@@ -3447,8 +3657,27 @@ class _EditorScreenState extends State<EditorScreen>
                         ListView.builder(
                           scrollDirection: Axis.horizontal,
                           padding: const EdgeInsets.fromLTRB(68, 6, 4, 6),
-                          itemCount: _slides.length,
-                          itemBuilder: (context, i) {
+                          // The rail is a FLATTENED view: section dividers
+                          // interleave with slide cards, and a folded
+                          // section's slides leave the list entirely — a
+                          // list position is never assumed to be a slide
+                          // index.
+                          itemCount: rail.length,
+                          itemBuilder: (context, n) {
+                            final item = rail[n];
+                            if (item.isSection) {
+                              final sec = item.section!;
+                              return _SectionChip(
+                                id: sec['id']?.toString() ?? '',
+                                name: sec['name']?.toString() ?? 'Section',
+                                collapsed: _collapsedSections
+                                    .contains(sec['id']?.toString()),
+                                count: _sectionSlideCount(sec),
+                                onToggle: () => _toggleSection(sec),
+                                onLongPress: () => _sectionActions(sec),
+                              );
+                            }
+                            final i = item.slideIndex;
                             final selected = i == _index;
                             final label = _slideTitle(_slides[i]);
                             return Padding(
@@ -3541,6 +3770,7 @@ class _EditorScreenState extends State<EditorScreen>
           ),
         ],
       );
+  }
 
   // ---- ribbon wiring ---------------------------------------------------------
 

@@ -135,6 +135,15 @@ Map<String, dynamic> testFakeEngine(Map<String, dynamic> req) {
       });
       deck['slides'] = slides;
       return {'ok': true, 'deck': deck};
+    case 'delete_slide':
+      // One slide out, by id — the filmstrip's Delete action.
+      final deck = Map<String, dynamic>.from(req['deck'] as Map);
+      deck['slides'] = [
+        for (final m in (deck['slides'] as List? ?? []))
+          if ((m as Map)['id'] != req['slide_id'])
+            Map<String, dynamic>.from(m),
+      ];
+      return {'ok': true, 'deck': _fakeBump(deck)};
     case 'set_aspect':
       final deck = Map<String, dynamic>.from(req['deck'] as Map);
       deck['aspect'] = req['aspect'];

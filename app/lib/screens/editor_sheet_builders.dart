@@ -212,13 +212,21 @@ class _ArchetypeSheet extends StatelessWidget {
 }
 
 /// **Slide actions** — the filmstrip's per-slide menu. Pops the action code
-/// (`'edit'` / `'dup'` / `'left'` / `'right'` / `'del'`); the orchestrating
-/// method maps it onto the deck.
+/// (`'edit'` / `'section'` / `'dup'` / `'left'` / `'right'` / `'del'`); the
+/// orchestrating method maps it onto the deck. "Start section here" is
+/// disabled when the slide already opens a section.
 class _SlideActionsSheet extends StatelessWidget {
-  const _SlideActionsSheet({required this.index, required this.count});
+  const _SlideActionsSheet({
+    required this.index,
+    required this.count,
+    required this.startsSection,
+  });
 
   final int index;
   final int count;
+
+  /// Whether slide [index] is already the start of a section.
+  final bool startsSection;
 
   @override
   Widget build(BuildContext context) {
@@ -234,6 +242,17 @@ class _SlideActionsSheet extends StatelessWidget {
           leading: const Icon(Icons.edit_outlined),
           title: const Text('Edit content'),
           onTap: () => Navigator.pop(context, 'edit'),
+        ),
+        ListTile(
+          leading: const Icon(Icons.label_outline),
+          title: const Text('Start section here'),
+          enabled: !startsSection,
+          subtitle: Text(
+              startsSection
+                  ? 'This slide already starts a section'
+                  : 'A named divider in the filmstrip',
+              style: const TextStyle(fontSize: 11.5)),
+          onTap: () => Navigator.pop(context, 'section'),
         ),
         ListTile(
           leading: const Icon(Icons.content_copy),
@@ -319,6 +338,42 @@ class _ObjectActionsSheet extends StatelessWidget {
               color: Theme.of(context).colorScheme.error),
           title: const Text('Delete'),
           onTap: () => Navigator.pop(context, 'del'),
+        ),
+      ],
+    );
+  }
+}
+
+/// **Section actions** — the filmstrip's per-section menu (long-press a
+/// section chip). Pops `'rename'` / `'remove'`; removal deletes the
+/// divider only — the slides were never part of it.
+class _SectionActionsSheet extends StatelessWidget {
+  const _SectionActionsSheet({required this.name});
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      shrinkWrap: true,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+          child: Text(name.isEmpty ? 'Section' : name,
+              style: Theme.of(context).textTheme.titleMedium),
+        ),
+        ListTile(
+          leading: const Icon(Icons.edit_outlined),
+          title: const Text('Rename section'),
+          onTap: () => Navigator.pop(context, 'rename'),
+        ),
+        ListTile(
+          leading: Icon(Icons.delete_outline,
+              color: Theme.of(context).colorScheme.error),
+          title: const Text('Remove section'),
+          subtitle: const Text('The slides stay — only the divider goes',
+              style: TextStyle(fontSize: 11.5)),
+          onTap: () => Navigator.pop(context, 'remove'),
         ),
       ],
     );
