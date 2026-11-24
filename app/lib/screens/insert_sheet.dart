@@ -89,7 +89,6 @@ class InsertSheet extends StatefulWidget {
   /// 'gallery' | 'camera' | 'deck' | 'brand'.
   final void Function(String source) onPickImage;
 
-  /// The [ObjectContent] kinds an object can carry.
   final void Function(String preset) onPickShape;
   final VoidCallback onInsertTable;
 
