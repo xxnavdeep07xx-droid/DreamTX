@@ -39,6 +39,7 @@ class SlideStage extends StatelessWidget {
     required this.baseFamily,
     required this.baseFontSize,
     required this.resolveResourcePath,
+    this.tableMeta,
     this.selectedId,
     this.interactive = false,
     this.inkTool,
@@ -74,6 +75,12 @@ class SlideStage extends StatelessWidget {
 
   /// Resolves an image/media content payload to a readable file path.
   final String? Function(Map<String, dynamic> content) resolveResourcePath;
+
+  /// The deck-level table metadata (`deck['tables']`): objectId → the
+  /// table's entry (merges + style). App-owned deck data the core drops
+  /// on round-trips; the editor carries it, read-only stages just forward
+  /// the deck's map. Absent → plain tables.
+  final Map<String, dynamic>? tableMeta;
 
   /// Selection / gesture wiring (the editor passes its own; the presenter
   /// passes nothing — the stage is read-only there).
@@ -150,6 +157,7 @@ class SlideStage extends StatelessWidget {
                       baseFamily: baseFamily,
                       baseFontSize: baseFontSize,
                       resolveResourcePath: resolveResourcePath,
+                      tableMeta: tableMeta,
                       singleObject: true,
                     )
                   : ShapeObjectPaint(obj: obj, scale: scale);

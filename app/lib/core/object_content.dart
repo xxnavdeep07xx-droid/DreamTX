@@ -4,6 +4,9 @@ library;
 /// engine's `ObjectContent` enum. The payload is plain JSON in the deck
 /// (so it persists through the engine verbatim); these helpers read it.
 
+import 'dart:math' as math;
+
+import 'color_utils.dart';
 import '../widgets/rich_doc.dart';
 
 /// The content kinds an object can carry.
@@ -104,6 +107,88 @@ class ObjectContent {
         rows * cols, (i) => i < raw.length ? raw[i] : '',
         growable: false);
     return (rows, cols, cells);
+  }
+
+  // ---- table metadata (deck-level, app-owned) -------------------------------
+  //
+  // The Rust core's `ObjectContent::Table` carries only rows/cols/cells,
+  // so cell MERGES and STYLE live outside the object as app-owned deck
+  // metadata (`deck['tables'][objectId]`), exactly where filmstrip sections
+  // live (`deck['sections']`) — carried through engine round-trips by the
+  // editor, invisible to the core's exporters, and persisted by the store.
+
+  /// The table's merge regions, validated against [rows] x [cols]:
+  /// `{'r': anchorRow, 'c': anchorCol, 'rs': rowSpan, 'cs': colSpan}`.
+  /// Out-of-bounds or degenerate regions fold away (a stale marker can
+  /// never crash the painter or the panel).
+  static List<Map<String, dynamic>> tableMergesOf(
+      Map<String, dynamic>? entry,
+      {required int rows,
+      required int cols}) {
+    if (rows < 1 || cols < 1) return const [];
+    final out = <Map<String, dynamic>>[];
+    for (final m in ((entry?['merges'] as List?) ?? const []).whereType<Map>()) {
+      final r = (m['r'] as num?)?.toInt();
+      final c = (m['c'] as num?)?.toInt();
+      final rs = (m['rs'] as num?)?.toInt();
+      final cs = (m['cs'] as num?)?.toInt();
+      if (r == null || c == null || rs == null || cs == null) continue;
+      if (r < 0 || c < 0 || rs < 1 || cs < 1 || rs * cs < 2) continue;
+      if (r + rs > rows || c + cs > cols) continue;
+      out.add({'r': r, 'c': c, 'rs': rs, 'cs': cs});
+    }
+    return out;
+  }
+
+  /// The table's named style: 'plain' (default) | 'header' | 'banded' |
+  /// 'header_banded'.
+  static String tableStyleOf(Map<String, dynamic>? entry) =>
+      (entry?['style'] ?? 'plain').toString();
+
+  /// The style fields for a table metadata entry — DNA colors resolve HERE,
+  /// at apply time (the WordArt rule: one style set matches every design
+  /// family, without the renderer needing to know the DNA). [dna] is the
+  /// resolved DNA palette in RRGGBB hex ('accent', 'surface', …). Returns
+  /// null for 'plain' — a plain table keeps no style fields.
+  static Map<String, dynamic>? tableStyleFields(
+      String style, Map<String, String> dna) {
+    final accent = (dna['accent'] ?? '17181A').toUpperCase();
+    final band = (dna['surface'] ?? 'F7F6F3').toUpperCase();
+    final onAccent = _textOn(accent);
+    switch (style) {
+      case 'header':
+        return {
+          'style': 'header',
+          'accent': accent,
+          'on_accent': onAccent,
+        };
+      case 'banded':
+        return {'style': 'banded', 'band': band};
+      case 'header_banded':
+        return {
+          'style': 'header_banded',
+          'accent': accent,
+          'on_accent': onAccent,
+          'band': band,
+        };
+      default:
+        return null; // 'plain'
+    }
+  }
+
+  /// Ink or white text on a filled accent: the WCAG relative luminance
+  /// with the 0.55 threshold — dark accents carry white text, light ones
+  /// carry the deck ink.
+  static String _textOn(String accentHex) {
+    final c = hexToColor(accentHex);
+    double channel(int v) {
+      final s = v / 255.0;
+      return s <= 0.03928 ? s / 12.92 : math.pow((s + 0.055) / 1.055, 2.4).toDouble();
+    }
+    final lum = 0.2126 * channel(c.red) +
+        0.7152 * channel(c.green) +
+        0.0722 * channel(c.blue);
+    return lum > 0.55 ? '17181A' : 'FFFFFF';
   }
 
   /// The object's display label for panels and layers.
