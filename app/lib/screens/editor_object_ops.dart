@@ -12,7 +12,7 @@ extension _EditorObjectOps on _EditorScreenState {
   }
 
   void _liveObject(Map obj) {
-    setState(() => _replaceObjectLocal(obj));
+    _setState(() => _replaceObjectLocal(obj));
   }
 
   void _replaceObjectLocal(Map obj) {
@@ -266,7 +266,7 @@ extension _EditorObjectOps on _EditorScreenState {
     } else {
       _mutate(r['deck'] as Map);
     }
-    setState(() => _selectedObjectId = newId);
+    _setState(() => _selectedObjectId = newId);
   }
 
   // ---- long-press object actions + the clipboards (Home, redistributed) ---
@@ -336,7 +336,7 @@ extension _EditorObjectOps on _EditorScreenState {
       return;
     }
     _mutate(r['deck'] as Map);
-    setState(() => _selectedObjectId = newId);
+    _setState(() => _selectedObjectId = newId);
   }
 
   /// Copy for the object clipboard. The JSON round-trip is the point, not

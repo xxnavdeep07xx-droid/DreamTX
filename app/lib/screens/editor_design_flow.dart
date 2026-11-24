@@ -367,7 +367,7 @@ extension _EditorDesignFlow on _EditorScreenState {
   }
 
   Future<void> _export(String op, {String verb = 'Export'}) async {
-    setState(() => _busy = true);
+    _setState(() => _busy = true);
     try {
       // The exporters need the resolved image assets; the PDF request also
       // carries decoded pixels. Collecting them touches disk and decodes
@@ -398,7 +398,7 @@ extension _EditorDesignFlow on _EditorScreenState {
     } catch (e) {
       if (mounted) _toast('$verb error: $e');
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) _setState(() => _busy = false);
     }
   }
 
