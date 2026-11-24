@@ -181,13 +181,10 @@ class ObjectContent {
   /// carry the deck ink.
   static String _textOn(String accentHex) {
     final c = hexToColor(accentHex);
-    double channel(int v) {
-      final s = v / 255.0;
-      return s <= 0.03928 ? s / 12.92 : math.pow((s + 0.055) / 1.055, 2.4).toDouble();
-    }
-    final lum = 0.2126 * channel(c.red) +
-        0.7152 * channel(c.green) +
-        0.0722 * channel(c.blue);
+    double lin(double s) => s <= 0.03928
+        ? s / 12.92
+        : math.pow((s + 0.055) / 1.055, 2.4).toDouble();
+    final lum = 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b);
     return lum > 0.55 ? '17181A' : 'FFFFFF';
   }
 

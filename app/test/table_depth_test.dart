@@ -36,7 +36,7 @@ void main() {
   }
 
   setUp(() {
-    TestWidgetsFlutterBinding.ensure_initialized();
+    TestWidgetsFlutterBinding.ensureInitialized();
     tmp = Directory.systemTemp.createTempSync('dreamtx_tabledepth');
     DeckStore.debugResetForTest();
     ResourceStore.debugResetForTest();
@@ -106,7 +106,7 @@ void main() {
         of: find.byKey(ValueKey(key)),
         matching: find.byType(AnimatedOpacity));
     await tester.ensureVisible(find.byKey(ValueKey(key)));
-    return (tester.widget<AnimatedOpacity>(finder).opacity ?? 0) > 0.9;
+    return tester.widget<AnimatedOpacity>(finder).opacity > 0.9;
   }
 
   Future<void> tapChip(WidgetTester tester, String key) async {
@@ -116,7 +116,7 @@ void main() {
   }
 
   Map<String, dynamic>? lastShape() =>
-      (recordedObjectOps.lastOrNull?['shape'] as Map?);
+      (recordedObjectOps.lastOrNull?['shape'] as Map<String, dynamic>?);
 
   test('table style entries resolve DNA colors at apply time', () {
     const dna = {'accent': 'C25E00', 'surface': 'F7F6F3'};
