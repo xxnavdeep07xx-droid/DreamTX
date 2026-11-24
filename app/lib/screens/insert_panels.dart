@@ -561,7 +561,7 @@ class _TableCellsState extends State<_TableCells> {
       List<Map<String, dynamic>> merges) {
     final copy = Map<String, dynamic>.from(widget.obj);
     final content =
-        Map<String, dynamic>.from((copy['content'] as Map) ?? const {});
+        Map<String, dynamic>.from(copy['content'] as Map);
     content['rows'] = rows;
     content['cols'] = cols;
     content['cells'] = cells;
