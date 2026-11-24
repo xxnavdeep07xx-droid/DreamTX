@@ -160,6 +160,10 @@ class _PresenterScreenState extends State<_PresenterScreen> {
                           baseFamily: _baseTextFamily,
                           baseFontSize: kTextBoxBaseSize,
                           resolveResourcePath: _resolveResourcePath,
+                          // Table metadata rides the deck verbatim — merged
+                          // regions and styles present exactly as edited.
+                          tableMeta: (widget.deck['tables'] as Map?)
+                              ?.cast<String, dynamic>(),
                           // Read-only: no selection, no gestures.
                         ),
                 ),
