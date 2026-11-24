@@ -420,7 +420,7 @@ extension _EditorInsertFlow on _EditorScreenState {
     // other tables' entries ride along from the editor's own carry.
     final raw = (deck['tables'] as Map?) ?? (_deck['tables'] as Map?);
     final tables = <String, dynamic>{
-      for (final e in ((raw ?? const {}) as Map).entries)
+      for (final e in (raw ?? const {}).entries)
         e.key.toString(): Map<String, dynamic>.from(
             (e.value as Map?) ?? const {}),
     };
