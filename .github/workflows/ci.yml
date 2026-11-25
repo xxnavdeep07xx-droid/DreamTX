@@ -105,7 +105,12 @@ jobs:
               tail -c 60000 test.txt
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
-            grep -E '\[E\]|Some tests failed|Failed to load|Exception' test.txt \
-              | head -50 | sed 's/^/::error::/'
+            # Failing-test lines first — deck-store Exception noise would
+            # otherwise eat the head budget and hide the [E] names.
+            {
+              grep -E '\[E\]' test.txt | head -30
+              grep -E 'Some tests failed|Failed to load|tests passed, [0-9]+ failed' test.txt | head -10
+              grep -E 'Exception' test.txt | head -10
+            } | sed 's/^/::error::/' | head -50
           fi
           exit $code
