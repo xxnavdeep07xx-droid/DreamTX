@@ -164,6 +164,11 @@ class _PresenterScreenState extends State<_PresenterScreen> {
                           // regions and styles present exactly as edited.
                           tableMeta: (widget.deck['tables'] as Map?)
                               ?.cast<String, dynamic>(),
+                          // Image metadata (shape/brightness/contrast)
+                          // rides the deck the same way — present exactly
+                          // as edited.
+                          imageMeta: (widget.deck['imageMeta'] as Map?)
+                              ?.cast<String, dynamic>(),
                           // Read-only: no selection, no gestures.
                         ),
                 ),

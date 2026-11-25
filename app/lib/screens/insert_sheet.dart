@@ -59,6 +59,9 @@ class InsertSheet extends StatefulWidget {
     required this.tableEntry,
     required this.onTableUpdate,
     required this.onTableStyle,
+    this.imageEntry,
+    this.onImageUpdate,
+    this.onReplaceImage,
     required this.onShowLayers,
     required this.onEditStyleSheet,
     required this.onStartTyping,
@@ -123,6 +126,21 @@ class InsertSheet extends StatefulWidget {
   /// Applies a named table style ('plain' | 'header' | 'banded' |
   /// 'header_banded') — the editor resolves the DNA colors at apply time.
   final void Function(String style) onTableStyle;
+
+  /// The selected image's deck-level metadata entry (shape / brightness /
+  /// contrast / alt), null for non-image selections. App-owned deck data
+  /// the engine drops on round-trips — the editor carries it, exactly
+  /// like [tableEntry]. Crop ratios ride onObjectStyle (frame geometry).
+  final Map<String, dynamic>? imageEntry;
+
+  /// Commits an image metadata change: the updated entry (null/empty =
+  /// the entry folds away). One call = one undo step.
+  final void Function(Map<String, dynamic> obj, Map<String, dynamic>? entry)?
+      onImageUpdate;
+
+  /// Opens the deck's image library to swap the selected image's asset —
+  /// frame, style and metadata survive; only the bytes change.
+  final VoidCallback? onReplaceImage;
 
   /// The existing layers sheet (groups, components, z-order).
   final VoidCallback onShowLayers;
