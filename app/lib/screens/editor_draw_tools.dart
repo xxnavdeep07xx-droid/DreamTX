@@ -33,9 +33,9 @@ const List<(String, double)> _kEraserSizes = [
 ];
 
 /// The Draw toolbox's immutable state — the ONE editor field for the Draw
-/// tab (replacing the old `_scribbleMode` bool). Everything the tab needs:
-/// the armed bit, the last tool, the per-tool color memory, the pen width,
-/// and the palette band's expansion.
+/// tab. Everything the tab needs: the armed bit, the last tool, the pen
+/// tip (ballpoint or pencil), the per-tool color memory, the pen width,
+/// the eraser reach, the palette band's expansion, and the saved presets.
 ///
 /// [penColorHex] stays null until the user picks one — null means "follow
 /// the deck's DNA accent" (`resolve_dna`, resolved for display and capture
@@ -44,15 +44,21 @@ class _DrawToolboxState {
   const _DrawToolboxState({
     this.armed = false,
     this.tool = InkTool.pen,
+    this.pencil = false,
     this.penColorHex,
     this.hlColorHex = 'FFD400',
     this.penWidth = 8.0,
     this.eraserRadius = kInkEraserRadius,
     this.expanded = false,
+    this.presets = const [],
   });
 
   final bool armed;
   final InkTool tool;
+
+  /// The pen family's tip: false = the ballpoint pen, true = the pencil.
+  /// Only meaningful while [tool] is the pen.
+  final bool pencil;
 
   /// The pen's color (RRGGBB) — null = follow the deck's DNA accent.
   final String? penColorHex;
@@ -69,6 +75,13 @@ class _DrawToolboxState {
   /// Whether the palette band under the tool row is open.
   final bool expanded;
 
+  /// Saved tool styles, session-scoped, capped at [kInkPresetCap].
+  final List<InkPreset> presets;
+
+  /// The S/M/L pen width chip and presets belong to the ballpoint only:
+  /// the pencil's width is fixed by design, the highlighter's too.
+  bool get penWidthsVisible => tool == InkTool.pen && !pencil;
+
   /// The active tool's display color, with an unpicked pen color resolved
   /// against the deck's DNA accent.
   String colorHexFor({required String defaultPenHex}) =>
@@ -77,29 +90,66 @@ class _DrawToolboxState {
   /// The committed style for the armed tool — exactly what the live
   /// preview paints with and what `_onStrokeDone` commits.
   InkStyle inkStyleFor({required String defaultPenHex}) => switch (tool) {
+        InkTool.pen when pencil => InkStyle(
+            colorHex: penColorHex ?? defaultPenHex,
+            width: kInkPencilWidth,
+            opacity: kInkPencilOpacity,
+          ),
         InkTool.pen => InkStyle(
-            colorHex: penColorHex ?? defaultPenHex, width: penWidth),
+            colorHex: penColorHex ?? defaultPenHex,
+            width: penWidth,
+          ),
         InkTool.highlighter => InkStyle(
             colorHex: hlColorHex,
             width: _kHighlighterWidth,
             opacity: _kHighlighterOpacity,
           ),
         // The eraser never commits a stroke — its sweep deletes path
-        // objects (step C); this entry exists so the switch stays total.
+        // objects; this entry exists so the switch stays total.
         InkTool.eraser => const InkStyle(colorHex: 'D03028', width: 24.0),
+      };
+
+  /// The preset the current tool would save, or null for the eraser
+  /// (the eraser is never a preset).
+  InkPreset? presetFor({required String defaultPenHex}) => switch (tool) {
+        InkTool.pen when pencil => InkPreset(
+            kind: InkPresetKind.pencil,
+            colorHex: penColorHex ?? defaultPenHex,
+          ),
+        InkTool.pen => InkPreset(
+            kind: InkPresetKind.pen,
+            colorHex: penColorHex ?? defaultPenHex,
+            width: penWidth,
+          ),
+        InkTool.highlighter => InkPreset(
+            kind: InkPresetKind.highlighter,
+            colorHex: hlColorHex,
+          ),
+        InkTool.eraser => null,
       };
 
   // ---- pure transitions: the row calls these, the editor applies -------
 
-  /// A tool tap: switch tools. Tapping the ARMED tool disarms it — select
-  /// mode inside Draw (the canvas regains taps; the knobs return). Arming
-  /// through a tap is the moment the editor clears the selection: the
-  /// armed tool consumes canvas taps, so the chrome would be untouchable.
-  /// Any tool tap also collapses the palette band (the design: a tool tap
-  /// or a chip pick collapses it).
+  /// A tool tap (highlighter or eraser): switch tools. Tapping the ARMED
+  /// tool disarms it — select mode inside Draw (the canvas regains taps;
+  /// the knobs return). Arming through a tap is the moment the editor
+  /// clears the selection: the armed tool consumes canvas taps.
   _DrawToolboxState toolTapped(InkTool t) => armed && tool == t
       ? _copy(armed: false, expanded: false)
       : _copy(armed: true, tool: t, expanded: false);
+
+  /// The pen family's two buttons: the ballpoint (pencil: false) and the
+  /// pencil (pencil: true). Tapping the ARMED one disarms; tapping the
+  /// other switches the tip without disarming.
+  _DrawToolboxState penTapped({required bool pencilTip}) =>
+      armed && tool == InkTool.pen && pencil == pencilTip
+          ? _copy(armed: false, expanded: false)
+          : _copy(
+              armed: true,
+              tool: InkTool.pen,
+              pencil: pencilTip,
+              expanded: false,
+            );
 
   /// A palette pick in the expanded band: the ACTIVE tool's color memory,
   /// and the band collapses (the design: chip pick collapses).
@@ -107,8 +157,8 @@ class _DrawToolboxState {
       ? _copy(penColorHex: hex, expanded: false)
       : _copy(hlColorHex: hex, expanded: false);
 
-  /// A pen-width pick (only offered while the pen is active): sets the
-  /// width, collapses the band.
+  /// A pen-width pick (only offered while the ballpoint is active): sets
+  /// the width, collapses the band.
   _DrawToolboxState widthPicked(double w) =>
       _copy(penWidth: w, expanded: false);
 
@@ -116,6 +166,37 @@ class _DrawToolboxState {
   /// the reach, collapses the band.
   _DrawToolboxState eraserSizePicked(double r) =>
       _copy(eraserRadius: r, expanded: false);
+
+  /// A saved preset tapped: arm its tool with its style. Applying a preset
+  /// is a tool pick, so the band collapses.
+  _DrawToolboxState presetApplied(InkPreset p) => switch (p.kind) {
+        InkPresetKind.pen => _copy(
+            armed: true,
+            tool: InkTool.pen,
+            pencil: false,
+            penColorHex: p.colorHex,
+            penWidth: p.width ?? penWidth,
+            expanded: false,
+          ),
+        InkPresetKind.pencil => _copy(
+            armed: true,
+            tool: InkTool.pen,
+            pencil: true,
+            penColorHex: p.colorHex,
+            expanded: false,
+          ),
+        InkPresetKind.highlighter => _copy(
+            armed: true,
+            tool: InkTool.highlighter,
+            hlColorHex: p.colorHex,
+            expanded: false,
+          ),
+      };
+
+  /// The preset list after a save or remove (the list rules live in
+  /// ink_math: [inkSavePreset], [inkRemovePresetAt]).
+  _DrawToolboxState withPresets(List<InkPreset> next) =>
+      _copy(presets: next);
 
   /// The compact row's color/width chip tap: toggle the band.
   _DrawToolboxState bandToggled() => _copy(expanded: !expanded);
@@ -130,28 +211,33 @@ class _DrawToolboxState {
   _DrawToolboxState _copy({
     bool? armed,
     InkTool? tool,
+    bool? pencil,
     String? penColorHex,
     String? hlColorHex,
     double? penWidth,
     double? eraserRadius,
     bool? expanded,
+    List<InkPreset>? presets,
   }) =>
       _DrawToolboxState(
         armed: armed ?? this.armed,
         tool: tool ?? this.tool,
+        pencil: pencil ?? this.pencil,
         penColorHex: penColorHex ?? this.penColorHex,
         hlColorHex: hlColorHex ?? this.hlColorHex,
         penWidth: penWidth ?? this.penWidth,
         eraserRadius: eraserRadius ?? this.eraserRadius,
         expanded: expanded ?? this.expanded,
+        presets: presets ?? this.presets,
       );
 }
 
 /// The Draw tab's contextual row: the compact 48dp tool line (pen /
-/// highlighter | color chip | width chip) plus the expandable palette band
-/// that grows the band 48 -> 94dp — cross-faded the same way the typing
-/// toolbar's palette row opens above the keyboard. A pure widget: the
-/// state comes in, the transitions go out through [onChanged].
+/// pencil / highlighter / eraser, then the settings chips) plus the
+/// expandable band under it. The band grows 0 -> 86dp for the pen family
+/// and the highlighter (a color/width row over a preset strip) and 0 -> 46dp
+/// for the eraser (its sizes). A pure widget: the state comes in, the
+/// transitions go out through [onChanged].
 class _DrawToolboxRow extends StatelessWidget {
   const _DrawToolboxRow({
     required this.state,
@@ -159,12 +245,10 @@ class _DrawToolboxRow extends StatelessWidget {
     required this.palette,
     required this.onChanged,
     this.onClearAll,
+    this.onNotice,
   });
 
   final _DrawToolboxState state;
-
-  /// "Erase all ink on slide" — the eraser's clear button. Null hides it.
-  final VoidCallback? onClearAll;
 
   /// The deck's DNA accent (RRGGBB) — what an unpicked pen color follows.
   final String defaultPenHex;
@@ -175,6 +259,13 @@ class _DrawToolboxRow extends StatelessWidget {
 
   final ValueChanged<_DrawToolboxState> onChanged;
 
+  /// "Erase all ink on slide" — the eraser's clear button. Null hides it.
+  final VoidCallback? onClearAll;
+
+  /// A short confirmation or limit message (save / duplicate / full /
+  /// removed). Null drops the notices silently.
+  final ValueChanged<String>? onNotice;
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -183,9 +274,9 @@ class _DrawToolboxRow extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         SizedBox(height: 48, width: double.infinity, child: _toolRow()),
-        // The expandable palette band: 0 <-> 46dp — the typing toolbar's
-        // palette-row reveal (the tool row stays ONE instance; only the
-        // band cross-fades, so tooltips/semantics never duplicate).
+        // The expandable band: the typing toolbar's palette-row reveal (the
+        // tool row stays ONE instance; only the band cross-fades, so
+        // tooltips/semantics never duplicate).
         AnimatedCrossFade(
           key: const ValueKey('draw_palette_band'),
           duration: MediaQuery.of(context).disableAnimations
@@ -196,11 +287,7 @@ class _DrawToolboxRow extends StatelessWidget {
               ? CrossFadeState.showSecond
               : CrossFadeState.showFirst,
           firstChild: const SizedBox(height: 0, width: double.infinity),
-          secondChild: SizedBox(
-            height: 46,
-            width: double.infinity,
-            child: _paletteBand(),
-          ),
+          secondChild: _paletteBand(),
         ),
       ],
     );
@@ -216,8 +303,16 @@ class _DrawToolboxRow extends StatelessWidget {
             _DrawToolButton(
               icon: Icons.edit,
               tooltip: 'Pen',
-              active: state.armed && state.tool == InkTool.pen,
-              onTap: () => onChanged(state.toolTapped(InkTool.pen)),
+              active: state.armed &&
+                  state.tool == InkTool.pen &&
+                  !state.pencil,
+              onTap: () => onChanged(state.penTapped(pencilTip: false)),
+            ),
+            _DrawToolButton(
+              icon: Icons.create_outlined,
+              tooltip: 'Pencil',
+              active: state.armed && state.tool == InkTool.pen && state.pencil,
+              onTap: () => onChanged(state.penTapped(pencilTip: true)),
             ),
             _DrawToolButton(
               icon: Icons.highlight,
@@ -231,9 +326,6 @@ class _DrawToolboxRow extends StatelessWidget {
               active: state.armed && state.tool == InkTool.eraser,
               onTap: () => onChanged(state.toolTapped(InkTool.eraser)),
             ),
-            // The settings side. The pen carries color + width; the
-            // highlighter is fixed-width, so just its color; the eraser
-            // carries its reach (S/M/L) and the clear-all button.
             // The hairline that separates tools from settings.
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 6),
@@ -249,12 +341,15 @@ class _DrawToolboxRow extends StatelessWidget {
                     : 'Highlighter color',
                 onTap: () => onChanged(state.bandToggled()),
               ),
-            if (state.tool == InkTool.pen)
+            // The width chip is the ballpoint's: the pencil and the
+            // highlighter are fixed-width by design.
+            if (state.penWidthsVisible)
               _WidthChipButton(
-                label: _penWidthLabel(state.penWidth),
+                label: inkPenSizeLabel(state.penWidth),
                 tooltip: 'Pen width',
                 onTap: () => onChanged(state.bandToggled()),
               ),
+            // The eraser's settings: its reach and the clear-all button.
             if (state.tool == InkTool.eraser) ...[
               _WidthChipButton(
                 label: _eraserSizeLabel(state.eraserRadius),
@@ -273,62 +368,120 @@ class _DrawToolboxRow extends StatelessWidget {
         ),
       );
 
-  // ---- the expanded palette band (46dp) -------------------------------------
+  // ---- the expanded band ----------------------------------------------------
 
-  Widget _paletteBand() => SizedBox(
-        height: 46,
-        child: state.tool == InkTool.eraser
-            ? Row(
-                children: [
-                  for (final (label, r) in _kEraserSizes)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: DreamChoiceChip(
-                        label: label,
-                        selected: state.eraserRadius == r,
-                        onTap: () => onChanged(state.eraserSizePicked(r)),
-                      ),
-                    ),
-                ],
-              )
-            : _colorAndWidthBand(),
+  Widget _paletteBand() => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            height: 46,
+            width: double.infinity,
+            child: state.tool == InkTool.eraser
+                ? _eraserSizesRow()
+                : _colorAndWidthRow(),
+          ),
+          if (state.tool != InkTool.eraser)
+            SizedBox(
+              height: 40,
+              width: double.infinity,
+              child: _presetStrip(),
+            ),
+        ],
       );
 
-  Widget _colorAndWidthBand() => SizedBox(
-        height: 46,
-        child: Row(
-          children: [
-            Expanded(
-              // The SAME horizontal chip row the typing toolbar uses
-              // (one implementation, 30px chips); "no color" is hidden —
-              // ink without a color is not a thing.
-              child: DreamColorChips(
-                palette: palette,
-                selected: state.colorHexFor(defaultPenHex: defaultPenHex),
-                onPick: (hex) {
-                  if (hex != null) onChanged(state.colorPicked(hex));
-                },
-                horizontal: true,
-                chipSize: 30,
-                hideNone: true,
+  Widget _eraserSizesRow() => Row(
+        children: [
+          const SizedBox(width: 8),
+          for (final (label, r) in _kEraserSizes)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: DreamChoiceChip(
+                label: label,
+                selected: state.eraserRadius == r,
+                onTap: () => onChanged(state.eraserSizePicked(r)),
               ),
             ),
-            if (state.tool == InkTool.pen)
-              for (final (label, w) in _kPenWidths)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: DreamChoiceChip(
-                    label: label,
-                    selected: state.penWidth == w,
-                    onTap: () => onChanged(state.widthPicked(w)),
-                  ),
-                ),
-          ],
-        ),
+        ],
       );
-}
 
-String _penWidthLabel(double w) => w <= 4 ? 'S' : (w <= 8 ? 'M' : 'L');
+  Widget _colorAndWidthRow() => Row(
+        children: [
+          Expanded(
+            // The SAME horizontal chip row the typing toolbar uses
+            // (one implementation, 30px chips); "no color" is hidden —
+            // ink without a color is not a thing.
+            child: DreamColorChips(
+              palette: palette,
+              selected: state.colorHexFor(defaultPenHex: defaultPenHex),
+              onPick: (hex) {
+                if (hex != null) onChanged(state.colorPicked(hex));
+              },
+              horizontal: true,
+              chipSize: 30,
+              hideNone: true,
+            ),
+          ),
+          if (state.penWidthsVisible)
+            for (final (label, w) in _kPenWidths)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: DreamChoiceChip(
+                  label: label,
+                  selected: state.penWidth == w,
+                  onTap: () => onChanged(state.widthPicked(w)),
+                ),
+              ),
+        ],
+      );
+
+  /// The preset strip: "Save" first, then the saved styles. A tap applies
+  /// one; a long-press removes it. The chip matching the current tool is
+  /// highlighted.
+  Widget _presetStrip() {
+    final current = state.presetFor(defaultPenHex: defaultPenHex);
+    return ListView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      children: [
+        _PresetChip(
+          label: 'Save',
+          leading: const Icon(Icons.add, size: 14, color: kText2),
+          onTap: () => _savePreset(current),
+        ),
+        for (final p in state.presets)
+          _PresetChip(
+            label: p.label,
+            colorHex: p.colorHex,
+            selected: p == current,
+            onTap: () => onChanged(state.presetApplied(p)),
+            onLongPress: () => _removePreset(p),
+          ),
+      ],
+    );
+  }
+
+  void _savePreset(InkPreset? p) {
+    if (p == null) return;
+    final r = inkSavePreset(state.presets, p);
+    switch (r.result) {
+      case InkSaveResult.saved:
+        onChanged(state.withPresets(r.presets));
+        onNotice?.call('Saved ${p.label}');
+      case InkSaveResult.duplicate:
+        onNotice?.call('${p.label} is already saved');
+      case InkSaveResult.full:
+        onNotice?.call(
+            'Up to $kInkPresetCap presets — long-press one to remove it');
+    }
+  }
+
+  void _removePreset(InkPreset p) {
+    final i = state.presets.indexOf(p);
+    if (i < 0) return;
+    onChanged(state.withPresets(inkRemovePresetAt(state.presets, i)));
+    onNotice?.call('Removed ${p.label}');
+  }
+}
 
 String _eraserSizeLabel(double r) => r <= 12 ? 'S' : (r <= 24 ? 'M' : 'L');
 
@@ -411,8 +564,8 @@ class _ColorChipButton extends StatelessWidget {
   }
 }
 
-/// The compact row's width chip: the pen's current S/M/L; tapping opens
-/// (or closes) the palette band, which carries the width presets.
+/// The compact row's width chip: the current S/M/L; tapping opens (or
+/// closes) the palette band, which carries the presets for that setting.
 class _WidthChipButton extends StatelessWidget {
   const _WidthChipButton({
     required this.label,
@@ -443,6 +596,80 @@ class _WidthChipButton extends StatelessWidget {
                 color: kText2,
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A saved preset chip: an optional color dot, a label, a pill outline.
+/// Selected = the same style as the current tool (soft highlight + brighter
+/// border). Long-press removes; the "Save" chip has no color and a leading
+/// glyph instead.
+class _PresetChip extends StatelessWidget {
+  const _PresetChip({
+    required this.label,
+    required this.onTap,
+    this.colorHex,
+    this.leading,
+    this.selected = false,
+    this.onLongPress,
+  });
+
+  final String label;
+  final String? colorHex;
+  final Widget? leading;
+  final bool selected;
+  final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final hex = colorHex;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(15),
+        onTap: onTap,
+        onLongPress: onLongPress,
+        child: Container(
+          height: 30,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? const Color(0x1FFFFFFF) : null,
+            borderRadius: BorderRadius.circular(15),
+            border: Border.all(color: selected ? kText2 : kHairline),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (hex != null) ...[
+                Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: hexToColor(hex),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: kHairline),
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
+              if (leading != null) ...[
+                leading!,
+                const SizedBox(width: 4),
+              ],
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: kText,
+                ),
+              ),
+            ],
           ),
         ),
       ),

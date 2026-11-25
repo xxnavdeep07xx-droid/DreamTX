@@ -309,3 +309,87 @@ List<String> inkScribbleIds(List<Map<String, dynamic>> objects) {
   }
   return ids;
 }
+
+// ---------------------------------------------------------------------------
+// Draw A-2: pencil tip + pen presets. Pure, so the rules are unit-tested.
+// ---------------------------------------------------------------------------
+
+/// The pencil tip is a thin, slightly translucent pen (not a dashed or
+/// textured stroke — the model has no grain). Fixed width: the pencil has
+/// no S/M/L of its own.
+const double kInkPencilWidth = 3.0;
+const double kInkPencilOpacity = 0.85;
+
+/// How many saved tool styles the Draw band holds.
+const int kInkPresetCap = 6;
+
+/// The kinds a saved preset can be. The eraser never saves.
+enum InkPresetKind { pen, pencil, highlighter }
+
+/// The S/M/L name for a pen width (design px). Same thresholds the
+/// toolbox chips have always used.
+String inkPenSizeLabel(double w) => w <= 4 ? 'S' : (w <= 8 ? 'M' : 'L');
+
+/// A saved tool style — one preset chip. Immutable; [==] covers every
+/// field, so duplicates are detected by value. [width] is the pen's
+/// design-px width (null for the pencil and highlighter, whose widths
+/// are fixed by design).
+class InkPreset {
+  const InkPreset({required this.kind, required this.colorHex, this.width});
+
+  final InkPresetKind kind;
+
+  /// RRGGBB, uppercase, no '#'.
+  final String colorHex;
+
+  final double? width;
+
+  String get label => switch (kind) {
+        InkPresetKind.pen => 'Pen ${inkPenSizeLabel(width ?? 8.0)}',
+        InkPresetKind.pencil => 'Pencil',
+        InkPresetKind.highlighter => 'Highlighter',
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      other is InkPreset &&
+      other.kind == kind &&
+      other.colorHex == colorHex &&
+      other.width == width;
+
+  @override
+  int get hashCode => Object.hash(kind, colorHex, width);
+
+  @override
+  String toString() => 'InkPreset($label, $colorHex)';
+}
+
+/// The outcome of saving a preset: the new list, and why it did or didn't
+/// land (the caller turns [InkSaveResult] into the notice text).
+enum InkSaveResult { saved, duplicate, full }
+
+/// Save [preset] into [presets]. A value-equal preset is never saved twice,
+/// and the list never grows past [kInkPresetCap].
+({List<InkPreset> presets, InkSaveResult result}) inkSavePreset(
+  List<InkPreset> presets,
+  InkPreset preset,
+) {
+  if (presets.contains(preset)) {
+    return (presets: presets, result: InkSaveResult.duplicate);
+  }
+  if (presets.length >= kInkPresetCap) {
+    return (presets: presets, result: InkSaveResult.full);
+  }
+  return (
+    presets: [...presets, preset],
+    result: InkSaveResult.saved,
+  );
+}
+
+/// Remove the preset at [index] (long-press). Out-of-range indices return
+/// an unchanged copy rather than throwing.
+List<InkPreset> inkRemovePresetAt(List<InkPreset> presets, int index) {
+  final next = [...presets];
+  if (index >= 0 && index < next.length) next.removeAt(index);
+  return next;
+}
