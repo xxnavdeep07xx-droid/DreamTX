@@ -44,7 +44,7 @@ Core pieces:
 ### Wave 2 — Draw v2 (the current focus)
 See section 4 for the full PowerPoint Draw-tab map.
 - [x] A-1. Eraser sizes S/M/L + "Erase all ink on slide" (one undo step) — PR #22
-- [ ] A-2. Pen presets (saved tool chips, cap 6) + pencil tip style
+- [x] A-2. Pen presets (saved tool chips, cap 6) + pencil tip style — PR #23
 - [ ] B. Lasso select (circle strokes/objects → temporary group → move / restyle / delete)
 - [ ] R. Ruler (non-persistent guide overlay; toggled from the Draw tab)
 - [ ] D. Ink → shape, locally (line / rect / ellipse / triangle / arrow; deterministic heuristics)
@@ -77,8 +77,8 @@ Status is checked against the code on `ad4b7d9` (before Draw A-1).
 | 5 | Eraser (stroke erase) | **Exists** — sweeps scribbles only; content immune | — |
 | 6 | Eraser size | **Done** (A-1, PR #22) | — |
 | 7 | Erase all ink on slide | **Done** (A-1, PR #22) | — |
-| 8 | Pen presets / pen gallery | Missing | **A-2** |
-| 9 | Pencil / pen tip styles | Missing | **A-2** |
+| 8 | Pen presets / pen gallery | **Done** (A-2, PR #23) — session-scoped, cap 6, long-press removes | — |
+| 9 | Pencil / pen tip styles | **Done** (A-2, PR #23) — thin translucent pen tip (no texture: the model has no grain) | — |
 | 10 | Lasso select | Missing | **B** |
 | 11 | Ruler | Missing | **R** |
 | 12 | Ink replay | Missing | **E** |
@@ -115,7 +115,7 @@ Last updated: 2026-11-25 (Draw A-1 merged via PR #22).
 - [x] Permanent plan file created (this file)
 - [x] Draw-tab feature map written (section 4)
 - [x] A-1 Eraser sizes + Erase all ink (PR #22)
-- [ ] A-2 Pen presets + pencil tip
+- [x] A-2 Pen presets + pencil tip (PR #23)
 - [ ] B Lasso select
 - [ ] R Ruler
 - [ ] D Ink → shape
