@@ -92,6 +92,19 @@ extension _EditorSessionFlow on _EditorScreenState {
     if (changed) _mutate(deck);
   }
 
+  /// "Erase all ink on this slide": every scribble on the current slide
+  /// goes in ONE batch through [_onEraseHits] — one undo step, content
+  /// (text, images, shapes, tables) and locked strokes untouched.
+  void _clearAllInk() {
+    final ids = inkScribbleIds(_objects);
+    if (ids.isEmpty) {
+      _toast('No ink on this slide');
+      return;
+    }
+    _onEraseHits(ids);
+    _toast('Cleared ${ids.length} stroke${ids.length == 1 ? '' : 's'}');
+  }
+
   /// The Draw toolbox's one mutation point (the row's onChanged): state
   /// in, state out. Arming through a tool tap clears the selection (draw
   /// focus — the armed tool consumes canvas taps); style edits and band

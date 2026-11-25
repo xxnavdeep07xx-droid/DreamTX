@@ -52,6 +52,7 @@ class SlideStage extends StatelessWidget {
     this.onGestureStart,
     this.onStroke,
     this.onEraseHits,
+    this.eraserRadius = kInkEraserRadius,
     this.onObjectLongPress,
     this.onCanvasLongPress,
     this.textController,
@@ -106,6 +107,9 @@ class SlideStage extends StatelessWidget {
   /// The eraser's sweep/tap batch — the marked scribble ids. Passed
   /// verbatim to [ShapesLayer]; the editor owns the delete chain.
   final void Function(List<String>)? onEraseHits;
+
+  /// The eraser's reach (design px) — forwarded to the ink layer.
+  final double eraserRadius;
 
   /// Long-press wiring (editing only; the presenter passes nothing —
   /// read-only stages never build the recognizers): an object long-press
@@ -198,6 +202,7 @@ class SlideStage extends StatelessWidget {
             onGestureStart: onGestureStart,
             onStroke: onStroke,
             onEraseHits: onEraseHits,
+            eraserRadius: eraserRadius,
             onObjectLongPress: onObjectLongPress,
             onCanvasLongPress: onCanvasLongPress,
             // This layer rides OPAQUE above the archetype canvas, so it

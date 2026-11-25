@@ -279,6 +279,7 @@ extension _EditorBuildFlow on _EditorScreenState {
                                     onGestureStart: _objectGestureStart,
                                     onStroke: _onStrokeDone,
                                     onEraseHits: _onEraseHits,
+                                    eraserRadius: _drawToolbox.eraserRadius,
                                     onObjectLongPress: _objectActions,
                                     onCanvasLongPress: _pasteObjectAt,
                                     textController: _selectedObject != null &&

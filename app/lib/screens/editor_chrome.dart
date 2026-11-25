@@ -358,6 +358,7 @@ extension _EditorChrome on _EditorScreenState {
           defaultPenHex: _dnaAccentHex,
           palette: _deckPalette,
           onChanged: _setDrawToolbox,
+          onClearAll: _clearAllInk,
         );
       case _NavTab.design:
         final current = ((_deck['dna'] ?? const {})['family'] ?? '').toString();
