@@ -26,12 +26,19 @@ void main() {
   final recordedObjectOps = <Map<String, dynamic>>[];
   final recordedDeletes = <Map<String, dynamic>>[];
 
+  /// Every request that carried a deck (add/update/delete, plus the
+  /// get_layout each _setDeck re-fires) — the live-deck read for probes.
+  final recordedDeckOps = <Map<String, dynamic>>[];
+
   Map<String, dynamic> recordingEngine(Map<String, dynamic> req) {
     if (req['op'] == 'add_object' || req['op'] == 'update_object') {
       recordedObjectOps.add(Map<String, dynamic>.from(req));
     }
     if (req['op'] == 'delete_object') {
       recordedDeletes.add(Map<String, dynamic>.from(req));
+    }
+    if (req['deck'] is Map) {
+      recordedDeckOps.add(Map<String, dynamic>.from(req));
     }
     return smoke.testFakeEngine(req);
   }
@@ -45,6 +52,7 @@ void main() {
     ImagePickers.testOverride = null;
     recordedObjectOps.clear();
     recordedDeletes.clear();
+    recordedDeckOps.clear();
   });
 
   tearDown(() {
@@ -121,7 +129,7 @@ void main() {
   }
 
   Map<String, dynamic> lastDeck() =>
-      recordedObjectOps.lastOrNull?['deck'] as Map<String, dynamic>? ?? {};
+      recordedDeckOps.lastOrNull?['deck'] as Map<String, dynamic>? ?? {};
 
   String? imageId(Map<String, dynamic> deck) {
     final meta = deck['imageMeta'];
@@ -240,7 +248,8 @@ void main() {
 
     final shape =
         recordedObjectOps.lastOrNull?['shape'] as Map<String, dynamic>?;
-    expect(shape?['resource_id'], 'img2', reason: 'the new id landed');
+    expect(shape?['content']?['resource_id'], 'img2',
+        reason: 'the new id landed');
     expect(shape?['w'], 480, reason: 'the frame survived the swap');
   });
 
@@ -267,12 +276,9 @@ void main() {
     await tester.pumpAndSettle(const Duration(milliseconds: 500));
     expect(recordedDeletes, isNotEmpty, reason: 'the delete went to the engine');
 
-    // Probe with a fresh insert; the recorded deck is the live one.
-    await tester.tap(find.text('Insert'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Text Box'));
-    await tester.pumpAndSettle(const Duration(milliseconds: 500));
-
+    // Every _setDeck re-fires get_layout with the live deck — the most
+    // recent deck-carrying request is the post-delete one (no probe
+    // navigation needed).
     final deck = lastDeck();
     expect(deck['imageMeta'], isNot(isA<Map>()),
         reason: 'the entry is swept with the image');
