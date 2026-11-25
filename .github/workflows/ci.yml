@@ -105,7 +105,12 @@ jobs:
               tail -c 60000 test.txt
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
-            grep -E '\[E\]|Some tests failed|Failed to load|Exception' test.txt \
-              | head -50 | sed 's/^/::error::/'
+            # Surface the failure context: the -N progress lines carry the
+            # failing test names, and the tail holds the exception blocks
+            # (the new reporter drops the old [E] marker).
+            # The reporter marks passing tests with ✅ — anything else
+            # carrying a test path or an assertion is failure context.
+            grep -E '_test\.dart|Expected:|Actual:|Which:|was thrown' test.txt \
+              | grep -v '✅' | tail -40 | sed 's/^/::error::/'
           fi
           exit $code

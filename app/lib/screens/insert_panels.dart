@@ -16,6 +16,9 @@ class _ObjectPanel extends StatelessWidget {
     required this.onTableStyle,
     required this.onEditStyleSheet,
     required this.onStartTyping,
+    this.imageEntry,
+    this.onImageUpdate,
+    this.onReplaceImage,
     this.onPlayMedia,
     this.bottomInset = 0,
   });
@@ -40,6 +43,17 @@ class _ObjectPanel extends StatelessWidget {
 
   /// Applies a named table style — the editor resolves DNA colors.
   final void Function(String style) onTableStyle;
+
+  /// The selected image's metadata entry (shape/brightness/contrast/alt),
+  /// null for non-image selections. See [InsertSheet.imageEntry].
+  final Map<String, dynamic>? imageEntry;
+
+  /// Commits an image metadata change (null/empty = entry folds away).
+  final void Function(Map<String, dynamic> obj, Map<String, dynamic>? entry)?
+      onImageUpdate;
+
+  /// Opens the image library to swap the selected image's asset.
+  final VoidCallback? onReplaceImage;
 
   final VoidCallback onEditStyleSheet;
   final VoidCallback onStartTyping;
@@ -181,7 +195,12 @@ class _ObjectPanel extends StatelessWidget {
             icon: Icons.image_outlined,
             label: 'Frame',
             body: (p, ctx) => _FrameTools(
-                obj: obj, onObjectStyle: onObjectStyle, palette: palette),
+                obj: obj,
+                onObjectStyle: onObjectStyle,
+                palette: palette,
+                entry: p.imageEntry,
+                onImageUpdate: p.onImageUpdate,
+                onReplaceImage: p.onReplaceImage),
           ),
         ];
       case kContentIcon:
@@ -881,16 +900,29 @@ class _FrameTools extends StatelessWidget {
     required this.obj,
     required this.onObjectStyle,
     required this.palette,
+    this.entry,
+    this.onImageUpdate,
+    this.onReplaceImage,
   });
 
   final Map<String, dynamic> obj;
   final void Function(Map<String, dynamic>) onObjectStyle;
   final List<Color> palette;
 
+  /// The image's deck-level metadata entry (shape/brightness/contrast/alt)
+  /// and its commit path — null outside an image selection wired by the
+  /// editor (the crop-shape / adjust / alt sections hide without it).
+  final Map<String, dynamic>? entry;
+  final void Function(Map<String, dynamic> obj, Map<String, dynamic>? entry)?
+      onImageUpdate;
+  final VoidCallback? onReplaceImage;
+
   @override
   Widget build(BuildContext context) {
     final stroke = (obj['stroke'] as Map?) ?? const {};
     final width = ((stroke['width'] ?? 0) as num).toDouble();
+    final w = ((obj['w'] as num?) ?? 480).toDouble();
+    final shape = entry?['shape']?.toString();
     return _PanelBody(
       children: [
         const _PanelLabel('BORDER'),
@@ -926,7 +958,261 @@ class _FrameTools extends StatelessWidget {
               _styled(obj, stroke: {...stroke, 'color': hex ?? '17181A'})),
         ),
         _OpacityControl(obj: obj, onObjectStyle: onObjectStyle),
+        // ---- image depth (roadmap #11 wave 1 step 5) ----------------------
+        // Crop ratios re-shape the FRAME (the engine's cover fit does the
+        // center-crop); crop-to-shape, brightness/contrast and alt text are
+        // app-owned metadata the core's Shape struct drops on round-trips.
+        const SizedBox(height: 10),
+        const _PanelLabel('CROP RATIO'),
+        _PanelRow(
+          children: [
+            for (final (label, ratio) in const [
+              ('1:1', 1.0),
+              ('4:3', 4.0 / 3.0),
+              ('16:9', 16.0 / 9.0),
+              ('3:2', 3.0 / 2.0),
+            ]) ...[
+              DreamChoiceChip(
+                key: ValueKey('crop_ratio_${label.replaceAll(':', '_')}'),
+                label: label,
+                selected: (_frameAspect(obj) - ratio).abs() < 0.02,
+                onTap: () => onObjectStyle(
+                    <String, dynamic>{...obj, 'h': w / ratio}),
+              ),
+              if (label != '3:2') const SizedBox(width: 8),
+            ],
+          ],
+        ),
+        if (onImageUpdate != null) ...[
+          const SizedBox(height: 10),
+          const _PanelLabel('CROP SHAPE'),
+          _PanelRow(
+            children: [
+              DreamChoiceChip(
+                key: const ValueKey('crop_shape_rect'),
+                label: 'Rect',
+                selected: shape == null || shape == 'rect',
+                onTap: () => _commitShape(null),
+              ),
+              const SizedBox(width: 8),
+              DreamChoiceChip(
+                key: const ValueKey('crop_shape_round'),
+                label: 'Round',
+                selected: shape == 'round',
+                onTap: () => _commitShape('round'),
+              ),
+              const SizedBox(width: 8),
+              DreamChoiceChip(
+                key: const ValueKey('crop_shape_circle'),
+                label: 'Circle',
+                selected: shape == 'circle',
+                onTap: () => _commitShape('circle'),
+              ),
+            ],
+          ),
+          _ImageAdjust(obj: obj, entry: entry, onImageUpdate: onImageUpdate!),
+          if (onReplaceImage != null) ...[
+            const SizedBox(height: 6),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                key: const ValueKey('img_replace'),
+                onPressed: onReplaceImage,
+                icon: const Icon(Icons.swap_horiz, size: 16),
+                label: const Text('Replace image'),
+              ),
+            ),
+          ],
+          _AltTextField(obj: obj, entry: entry, onImageUpdate: onImageUpdate!),
+        ],
       ],
+    );
+  }
+
+  void _commitShape(String? shape) {
+    final next = _imageEntryWith(entry, 'shape', shape);
+    onImageUpdate!(obj, next.isEmpty ? null : next);
+  }
+}
+
+/// The object's frame aspect (w/h); a degenerate frame reads 16:9.
+double _frameAspect(Map<String, dynamic> obj) {
+  final w = ((obj['w'] as num?) ?? 480).toDouble();
+  final h = ((obj['h'] as num?) ?? 270).toDouble();
+  if (h <= 0) return 16 / 9;
+  return w / h;
+}
+
+/// Entry surgery: copy [entry], set [key] to [value] (null removes it).
+Map<String, dynamic> _imageEntryWith(
+    Map<String, dynamic>? entry, String key, Object? value) {
+  final next = <String, dynamic>{...?entry};
+  if (value == null) {
+    next.remove(key);
+  } else {
+    next[key] = value;
+  }
+  return next;
+}
+
+/// Brightness / contrast sliders for the selected image. Local while
+/// dragging (one gesture, one commit on release = one undo step); values
+/// are −100..100, 0 omitted from the entry (absent = untouched).
+class _ImageAdjust extends StatefulWidget {
+  const _ImageAdjust({
+    required this.obj,
+    required this.entry,
+    required this.onImageUpdate,
+  });
+
+  final Map<String, dynamic> obj;
+  final Map<String, dynamic>? entry;
+  final void Function(Map<String, dynamic> obj, Map<String, dynamic>? entry)
+      onImageUpdate;
+
+  @override
+  State<_ImageAdjust> createState() => _ImageAdjustState();
+}
+
+class _ImageAdjustState extends State<_ImageAdjust> {
+  late int _brightness;
+  late int _contrast;
+
+  @override
+  void initState() {
+    super.initState();
+    _read();
+  }
+
+  @override
+  void didUpdateWidget(_ImageAdjust old) {
+    super.didUpdateWidget(old);
+    if (!identical(old.entry, widget.entry)) _read();
+  }
+
+  void _read() {
+    _brightness = ((widget.entry?['brightness'] ?? 0) as num).toInt();
+    _contrast = ((widget.entry?['contrast'] ?? 0) as num).toInt();
+  }
+
+  void _commit() {
+    var next = _imageEntryWith(
+        widget.entry, 'brightness', _brightness == 0 ? null : _brightness);
+    next = _imageEntryWith(next, 'contrast', _contrast == 0 ? null : _contrast);
+    widget.onImageUpdate(widget.obj, next.isEmpty ? null : next);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 10),
+        _PanelLabel(
+            'BRIGHTNESS — ${_brightness > 0 ? '+' : ''}$_brightness'),
+        Slider(
+          key: const ValueKey('img_brightness'),
+          value: _brightness.clamp(-100, 100).toDouble(),
+          min: -100,
+          max: 100,
+          divisions: 100,
+          activeColor: kPurple,
+          onChanged: (v) => setState(() => _brightness = v.round()),
+          onChangeEnd: (_) => _commit(),
+        ),
+        _PanelLabel('CONTRAST — ${_contrast > 0 ? '+' : ''}$_contrast'),
+        Slider(
+          key: const ValueKey('img_contrast'),
+          value: _contrast.clamp(-100, 100).toDouble(),
+          min: -100,
+          max: 100,
+          divisions: 100,
+          activeColor: kPurple,
+          onChanged: (v) => setState(() => _contrast = v.round()),
+          onChangeEnd: (_) => _commit(),
+        ),
+        if (_brightness != 0 || _contrast != 0)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: DreamChoiceChip(
+              key: const ValueKey('img_adjust_reset'),
+              label: 'Reset adjust',
+              selected: false,
+              onTap: () {
+                setState(() {
+                  _brightness = 0;
+                  _contrast = 0;
+                });
+                _commit();
+              },
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Alt text for the selected image — app-side accessibility metadata the
+/// exporters and the AI protocol ignore; committed on focus loss / done.
+class _AltTextField extends StatefulWidget {
+  const _AltTextField({
+    required this.obj,
+    required this.entry,
+    required this.onImageUpdate,
+  });
+
+  final Map<String, dynamic> obj;
+  final Map<String, dynamic>? entry;
+  final void Function(Map<String, dynamic> obj, Map<String, dynamic>? entry)
+      onImageUpdate;
+
+  @override
+  State<_AltTextField> createState() => _AltTextFieldState();
+}
+
+class _AltTextFieldState extends State<_AltTextField> {
+  late final TextEditingController _ctrl;
+  var _dirty = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: widget.entry?['alt']?.toString() ?? '');
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _commit() {
+    if (!_dirty) return;
+    _dirty = false;
+    final next = _imageEntryWith(
+        widget.entry, 'alt', _ctrl.text.isEmpty ? null : _ctrl.text);
+    widget.onImageUpdate(widget.obj, next.isEmpty ? null : next);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: TextField(
+        key: const ValueKey('img_alt'),
+        controller: _ctrl,
+        decoration: const InputDecoration(
+          isDense: true,
+          labelText: 'Alt text (description)',
+          border: OutlineInputBorder(),
+        ),
+        onChanged: (_) => _dirty = true,
+        onSubmitted: (_) => _commit(),
+        onEditingComplete: () {
+          _commit();
+          FocusScope.of(context).unfocus();
+        },
+      ),
     );
   }
 }

@@ -252,6 +252,12 @@ extension _EditorBuildFlow on _EditorScreenState {
                                     // engine round-trip by [_setDeck].
                                     tableMeta: (_deck['tables'] as Map?)
                                         ?.cast<String, dynamic>(),
+                                    // Image metadata (shape/brightness/
+                                    // contrast/alt) rides the deck — the
+                                    // same map the content layer reads,
+                                    // carried by [_setDeck].
+                                    imageMeta: (_deck['imageMeta'] as Map?)
+                                        ?.cast<String, dynamic>(),
                                     selectedId: _selectedObjectId,
                                     interactive: _mode == _Mode.editing,
                                     // The Draw toolbox: the armed tool
@@ -562,6 +568,9 @@ extension _EditorBuildFlow on _EditorScreenState {
                                   tableEntry: _selectedTableEntry,
                                   onTableUpdate: _tableUpdate,
                                   onTableStyle: _tableStyle,
+                                  imageEntry: _selectedImageEntry,
+                                  onImageUpdate: _imageMetaUpdate,
+                                  onReplaceImage: _replaceSelectedImage,
                                   onShowLayers: _showLayers,
                                   onEditStyleSheet: _editSelectedObjectStyle,
                                   onStartTyping: _beginTyping,

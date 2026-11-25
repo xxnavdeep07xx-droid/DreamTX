@@ -33,6 +33,7 @@ class ObjectContentLayer extends StatelessWidget {
     required this.resolveResourcePath,
     this.singleObject = false,
     this.tableMeta,
+    this.imageMeta,
   });
 
   final List<Map<String, dynamic>> objects;
@@ -63,6 +64,11 @@ class ObjectContentLayer extends StatelessWidget {
   /// core drops on round-trips — the editor carries it; read-only stages
   /// just pass the deck's map. Null/absent entries render plain tables.
   final Map<String, dynamic>? tableMeta;
+
+  /// The deck-level image metadata (`deck['imageMeta']`): objectId → the
+  /// image's entry (crop shape, brightness, contrast, alt). Same app-owned
+  /// contract as [tableMeta]; null/absent entries render untouched images.
+  final Map<String, dynamic>? imageMeta;
 
   @override
   Widget build(BuildContext context) {
@@ -119,7 +125,14 @@ class ObjectContentLayer extends StatelessWidget {
           baseFontSize: baseFontSize,
         );
       case kContentImage:
-        return _ImageView(obj: obj, resolve: resolveResourcePath);
+        return _ImageView(
+          obj: obj,
+          resolve: resolveResourcePath,
+          meta: imageMeta == null
+              ? null
+              : (imageMeta![obj['id']?.toString()] as Map?)
+                  ?.cast<String, dynamic>(),
+        );
       case kContentIcon:
         return _IconView(obj: obj, baseColor: baseColor);
       case kContentMedia:
@@ -564,11 +577,30 @@ class _ParaLayout {
 // Image
 // ---------------------------------------------------------------------------
 
+/// Brightness/contrast color matrix for the image content layer. Values
+/// are −1..1 (panel sliders store −100..100); contrast pivots at mid-gray,
+/// brightness offsets in 0..255. Identity at (0, 0) — callers skip the
+/// filter entirely there.
+List<double> _bcMatrix(double brightness, double contrast) {
+  final s = 1 + contrast;
+  final off = (1 - s) * 128 + brightness * 255;
+  return <double>[
+    s, 0, 0, 0, off,
+    0, s, 0, 0, off,
+    0, 0, s, 0, off,
+    0, 0, 0, 1, 0,
+  ];
+}
+
 class _ImageView extends StatefulWidget {
-  const _ImageView({required this.obj, required this.resolve});
+  const _ImageView({required this.obj, required this.resolve, this.meta});
 
   final Map<String, dynamic> obj;
   final String? Function(Map<String, dynamic> content) resolve;
+
+  /// The image's deck-level metadata entry (crop shape / brightness /
+  /// contrast) — null renders the untouched image (canvas = exports).
+  final Map<String, dynamic>? meta;
 
   @override
   State<_ImageView> createState() => _ImageViewState();
@@ -637,18 +669,44 @@ class _ImageViewState extends State<_ImageView> {
             ),
             child: provider == null
                 ? _missingAssetFallback(obj)
-                : Image(
-                    image: provider,
-                    fit: BoxFit.cover,
-                    width: w,
-                    height: h,
-                    gaplessPlayback: true,
-                    errorBuilder: (_, __, ___) => _missingAssetFallback(obj),
-                  ),
+                : _adjusted(provider, w, h),
           ),
         ),
       );
     });
+  }
+
+  /// The image with the entry's crop-shape mask and brightness/contrast
+  /// applied — cover-fit underneath (the ratio chips re-shape the frame,
+  /// the engine's own semantics), clip on top.
+  Widget _adjusted(ImageProvider provider, double w, double h) {
+    final meta = widget.meta;
+    final shape = meta?['shape']?.toString();
+    final brightness =
+        ((meta?['brightness'] ?? 0) as num).toDouble() / 100;
+    final contrast = ((meta?['contrast'] ?? 0) as num).toDouble() / 100;
+    Widget image = Image(
+      image: provider,
+      fit: BoxFit.cover,
+      width: w,
+      height: h,
+      gaplessPlayback: true,
+      errorBuilder: (_, __, ___) => _missingAssetFallback(widget.obj),
+    );
+    if (brightness != 0 || contrast != 0) {
+      image = ColorFiltered(
+        colorFilter: ColorFilter.matrix(_bcMatrix(brightness, contrast)),
+        child: image,
+      );
+    }
+    return switch (shape) {
+      'round' => ClipRRect(
+          borderRadius: BorderRadius.circular(math.min(w, h) * 0.12),
+          child: image,
+        ),
+      'circle' => ClipOval(child: image),
+      _ => image,
+    };
   }
 
   Widget _missingAssetFallback(Map<String, dynamic> obj) {

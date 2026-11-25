@@ -117,7 +117,7 @@ refuses updates across signers).
   pairing Registry DO (code+secret, TTL, attempt limiting), Deck DO with
   hibernating WebSocket broadcast and version log. Not yet deployed.
 - Flutter: everything under "What's in the app" above; the widget suite
-  (106 tests at v0.2.38 — the Draw toolbox added 31) keeps the contracts.
+  (138 tests at v0.2.40 — image depth added 7) keeps the contracts.
 - CI: cargo test (native + wasm32), worker typecheck + end-to-end MCP flow
   against a local workerd, flutter analyze + widget tests, resolved-pin and
   lock-drift gates, per-ABI release-signed APK on tags.

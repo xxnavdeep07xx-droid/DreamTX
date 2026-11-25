@@ -165,6 +165,42 @@ extension _EditorDeckFlow on _EditorScreenState {
         deck['tables'] = liveTables;
       }
     }
+    // Image metadata rides the SAME deck-level carry: `deck['imageMeta']`
+    // (objectId → {shape, brightness, contrast, alt}) is app-owned deck
+    // data the Rust core's Shape struct drops on every round-trip.
+    // Carried forward, then sanitized against the NEW deck's image
+    // objects — deleting an image (or its whole slide) folds its entry
+    // away instead of haunting the deck. The empty-map tombstone is the
+    // tables lesson: a missing key reads as "engine dropped it" and
+    // would resurrect the old value on this very settle.
+    if (!deck.containsKey('imageMeta')) {
+      final carried = _deck['imageMeta'];
+      if (carried is Map && carried.isNotEmpty) {
+        deck['imageMeta'] = Map<String, dynamic>.from(carried);
+      }
+    }
+    if (deck['imageMeta'] is Map && (deck['imageMeta'] as Map).isNotEmpty) {
+      final liveImageIds = <String>{
+        for (final s in ((deck['slides'] as List?) ?? const [])
+            .whereType<Map>())
+          for (final o in ((s['objects'] as List?) ?? const [])
+              .whereType<Map<String, dynamic>>())
+            if (ObjectContent.isImage(o) && o['id'] != null)
+              o['id'].toString(),
+      };
+      final liveMeta = <String, dynamic>{
+        for (final e in (deck['imageMeta'] as Map).entries)
+          if (liveImageIds.contains(e.key.toString()) &&
+              e.value is Map &&
+              (e.value as Map).isNotEmpty)
+            e.key.toString(): e.value,
+      };
+      if (liveMeta.isEmpty) {
+        deck.remove('imageMeta');
+      } else {
+        deck['imageMeta'] = liveMeta;
+      }
+    }
     _deck = deck;
     unawaited(_persist());
     _refreshLayout();

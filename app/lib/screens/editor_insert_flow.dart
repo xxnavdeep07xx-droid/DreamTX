@@ -261,7 +261,9 @@ extension _EditorInsertFlow on _EditorScreenState {
   }
 
   /// Pick an image from the device's resource libraries (deck or brand).
-  Future<void> _pickImageResource(bool brand) async {
+  /// [replace] swaps the ASSET on the currently selected image object
+  /// instead of inserting a new one (frame + metadata survive).
+  Future<void> _pickImageResource(bool brand, {bool replace = false}) async {
     try {
       final store = await ResourceStore.open();
       final items = await store.list(
@@ -290,6 +292,15 @@ extension _EditorInsertFlow on _EditorScreenState {
       final resolved = _resourcePathOf(choice, brand: brand);
       if (resolved != null) {
         _resourcePaths['${brand ? 'brand' : 'deck'}:${choice['id']}'] = resolved;
+      }
+      if (replace) {
+        final obj = _selectedObject;
+        if (obj == null || !ObjectContent.isImage(obj)) return;
+        final updated = Map<String, dynamic>.from(obj);
+        updated['content'] = ObjectContent.image('${choice['id']}',
+            brand: brand, name: '${choice['name']}');
+        _styleChanged(updated);
+        return;
       }
       _insertObject(
         _newContentObject(
@@ -472,4 +483,63 @@ extension _EditorInsertFlow on _EditorScreenState {
     _tableUpdate(obj, entry);
   }
 
+  // ---- image depth (roadmap #11 wave 1 step 5) -----------------------------
+
+  /// The selected image's deck-level metadata entry (shape / brightness /
+  /// contrast / alt), or null — the same app-owned deck-data contract as
+  /// [entry] for tables: the core's Shape struct drops it on every engine
+  /// round-trip, so it lives on the deck and rides the [_setDeck] carry.
+  /// (Crop ratios are frame geometry — they ride the object itself.)
+  Map<String, dynamic>? get _selectedImageEntry {
+    final obj = _selectedObject;
+    if (obj == null || !ObjectContent.isImage(obj)) return null;
+    final id = obj['id']?.toString();
+    if (id == null) return null;
+    final e = (_deck['imageMeta'] as Map?)?[id];
+    return e is Map ? Map<String, dynamic>.from(e) : null;
+  }
+
+  /// One image-metadata change = one undo step. The object payload never
+  /// changes (nothing for the engine to do), so the deck goes straight
+  /// through [_mutate] with the entry patched in — the undo snapshot is
+  /// the true pre state, entry and all.
+  void _imageMetaUpdate(Map<String, dynamic> obj, Map<String, dynamic>? entry) {
+    final id = obj['id']?.toString();
+    if (id == null) return;
+    final existing = (_deck['imageMeta'] as Map?)?[id];
+    // Same-value commits (a slider's trailing onChangeEnd, an untouched
+    // alt field) must not stack undo steps.
+    if (jsonEncode(existing ?? const <String, dynamic>{}) ==
+        jsonEncode(entry ?? const <String, dynamic>{})) {
+      return;
+    }
+    final deck = Map<String, dynamic>.from(_deck);
+    final raw = (deck['imageMeta'] as Map?) ?? const {};
+    final meta = <String, dynamic>{
+      for (final e in raw.entries)
+        e.key.toString():
+            Map<String, dynamic>.from((e.value as Map?) ?? const {}),
+    };
+    if (entry == null || entry.isEmpty) {
+      meta.remove(id);
+    } else {
+      meta[id] = entry;
+    }
+    if (meta.isEmpty) {
+      // An EMPTY tombstone, never a removal — the _setDeck carry cannot
+      // tell a legitimate removal from an engine round-trip drop, so a
+      // removed key would resurrect on the very next settle (the exact
+      // lesson the tables/sections tombstones document).
+      deck['imageMeta'] = const <String, dynamic>{};
+    } else {
+      deck['imageMeta'] = meta;
+    }
+    _mutate(deck);
+  }
+
+  /// Replace the selected image's asset from the deck's library — frame,
+  /// stroke, rotation and the metadata entry all survive; only the bytes
+  /// change (one `update_object`, one undo step).
+  Future<void> _replaceSelectedImage() => _pickImageResource(false,
+      replace: true);
 }
