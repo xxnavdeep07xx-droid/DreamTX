@@ -359,6 +359,7 @@ extension _EditorChrome on _EditorScreenState {
           palette: _deckPalette,
           onChanged: _setDrawToolbox,
           onClearAll: _clearAllInk,
+          onNotice: _toast,
         );
       case _NavTab.design:
         final current = ((_deck['dna'] ?? const {})['family'] ?? '').toString();
