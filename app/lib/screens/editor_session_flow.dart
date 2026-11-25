@@ -97,7 +97,7 @@ extension _EditorSessionFlow on _EditorScreenState {
   /// focus — the armed tool consumes canvas taps); style edits and band
   /// toggles never touch anything but the toolbox.
   void _setDrawToolbox(_DrawToolboxState next) {
-    setState(() {
+    _setState(() {
       final nowArmed = next.armed && !_drawToolbox.armed;
       _drawToolbox = next;
       if (nowArmed) _selectedObjectId = null;
@@ -176,7 +176,7 @@ extension _EditorSessionFlow on _EditorScreenState {
     if (id == null) {
       _flushTextSession();
       _disposeTextSession();
-      setState(() => _selectedObjectId = null);
+      _setState(() => _selectedObjectId = null);
       return;
     }
     if (id == _selectedObjectId) {
@@ -206,7 +206,7 @@ extension _EditorSessionFlow on _EditorScreenState {
     _styleUndoPushed = false;
     _objectCommitDebounce?.cancel();
     _objectCommitDebounce = null;
-    setState(() {
+    _setState(() {
       _selectedObjectId = id;
       if (id == null) return;
       final obj = _selectedObject;
@@ -246,7 +246,7 @@ extension _EditorSessionFlow on _EditorScreenState {
     }
     _syncSessionDocIntoDeck();
     _scheduleTextCommit();
-    if (mounted) setState(() {});
+    if (mounted) _setState(() {});
   }
 
   /// The session's doc, written back into the LOCAL deck map (the debounced
@@ -330,7 +330,7 @@ extension _EditorSessionFlow on _EditorScreenState {
     if (s == null) return;
     // The field mounts focused (autofocus) — the focus listener below
     // flips the typing state, hides the sheet, shows the toolbar.
-    setState(() {
+    _setState(() {
       _typing = true;
       // The sheet (Files OR Insert — whichever is the active tab) stands
       // down while the keyboard owns the bottom of the screen: it slides
@@ -361,7 +361,7 @@ extension _EditorSessionFlow on _EditorScreenState {
     if (_typing || _typingToolbarEntry != null) {
       s?.focus.unfocus();
     }
-    setState(() {
+    _setState(() {
       _typing = false;
       // If the typing state was what stood the sheet down (the keyboard
       // covered it), ending it rises the sheet back through the same
@@ -386,7 +386,7 @@ extension _EditorSessionFlow on _EditorScreenState {
                 _drawerDragging) {
               return;
             }
-            setState(() => _sheetEntering = false);
+            _setState(() => _sheetEntering = false);
           });
         }
       }
@@ -398,7 +398,7 @@ extension _EditorSessionFlow on _EditorScreenState {
     final s = _textSession;
     if (s == null || !mounted) return;
     if (s.focus.hasFocus) {
-      setState(() => _typing = true);
+      _setState(() => _typing = true);
       _showTypingToolbar();
     } else {
       // Keyboard closed with the text box still selected: the sheet (and
@@ -406,7 +406,7 @@ extension _EditorSessionFlow on _EditorScreenState {
       // flow-order, so the spacer is honest through the reparent.
       _removeTypingToolbar();
       final footprint = _liveStripFlowHeight();
-      setState(() {
+      _setState(() {
         _typing = false;
         _frozenStripFootprint = footprint;
         // An EXTERNAL focus loss (this listener firing without
@@ -432,7 +432,7 @@ extension _EditorSessionFlow on _EditorScreenState {
                   _drawerDragging) {
                 return;
               }
-              setState(() => _sheetEntering = false);
+              _setState(() => _sheetEntering = false);
             });
           }
         }

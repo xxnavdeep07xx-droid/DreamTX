@@ -252,7 +252,7 @@ extension _EditorChrome on _EditorScreenState {
   /// Selection, scroll offset, and the ribbon's own tab state are all kept —
   /// nothing here touches them.
   void _toggleFilmstrip() {
-    setState(() => _filmOpen = !_filmOpen);
+    _setState(() => _filmOpen = !_filmOpen);
   }
 
   // ---- the sheet drawers' shared layer (Files + Insert) --------------------
@@ -268,7 +268,7 @@ extension _EditorChrome on _EditorScreenState {
     if (_sheetEntering || _sheetClosing) return;
     final base = _drawerExtent ?? _drawerHalf;
     final floor = math.min(_drawerSliver, _drawerTall);
-    setState(() {
+    _setState(() {
       _drawerDragging = true;
       _drawerExtent = (base - dy).clamp(floor, _drawerTall).toDouble();
     });
@@ -309,7 +309,7 @@ extension _EditorChrome on _EditorScreenState {
   /// itself was tracking the finger directly, no rubber-banding — the
   /// detents stay honest).
   void _snapDrawer(double target) {
-    setState(() {
+    _setState(() {
       _drawerDragging = false;
       _drawerExtent = target;
     });
@@ -463,7 +463,7 @@ extension _EditorChrome on _EditorScreenState {
   // ---- editor modes (More menu) ---------------------------------------------
 
   void _setMode(_Mode m) {
-    setState(() {
+    _setState(() {
       _mode = m;
       if (m == _Mode.viewing) {
         _navTab = null;
@@ -495,7 +495,7 @@ extension _EditorChrome on _EditorScreenState {
     if (target < 0) target = 0;
     if (target >= _slides.length) target = _slides.length - 1;
     if (target == _index) return;
-    setState(() => _index = target);
+    _setState(() => _index = target);
     _refreshLayout();
   }
 
@@ -522,7 +522,7 @@ extension _EditorChrome on _EditorScreenState {
         comments: _comments,
         field: _commentField,
         onPost: (text) {
-          setState(() => _comments.add({'text': text}));
+          _setState(() => _comments.add({'text': text}));
           _commentField.clear();
         },
       ),

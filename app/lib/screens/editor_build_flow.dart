@@ -524,7 +524,7 @@ extension _EditorBuildFlow on _EditorScreenState {
                                     !_sheetHiddenForTyping)) {
                               return;
                             }
-                            setState(() {
+                            _setState(() {
                               _sheetClosing = false;
                               _sheetEntering = false;
                               _drawerExtent = null;
