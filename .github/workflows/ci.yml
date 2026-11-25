@@ -108,9 +108,9 @@ jobs:
             # Surface the failure context: the -N progress lines carry the
             # failing test names, and the tail holds the exception blocks
             # (the new reporter drops the old [E] marker).
-            # Raw failure context: the last non-empty lines of the output
-            # carry the full exception messages and stacks.
-            tail -n 200 test.txt | grep -v '^[[:space:]]*$' | tail -45 \
-              | sed 's/^/::error::/'
+            # The reporter marks passing tests with ✅ — anything else
+            # carrying a test path or an assertion is failure context.
+            grep -E '_test\.dart|Expected:|Actual:|Which:|was thrown' test.txt \
+              | grep -v '✅' | tail -40 | sed 's/^/::error::/'
           fi
           exit $code
