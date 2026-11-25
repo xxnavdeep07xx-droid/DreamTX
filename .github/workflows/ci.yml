@@ -72,5 +72,40 @@ jobs:
       # The committed lock governs resolution; pub get must not drift it.
       - name: Enforce committed dependency lock
         run: git diff --exit-code -- pubspec.lock
-      - run: flutter analyze
-      - run: flutter test
+      # Analyze/test failures must be legible WITHOUT log access (the logs
+      # endpoint needs auth; annotations render on the job page for anyone).
+      # Every issue line becomes a ::error:: annotation + the full output
+      # lands in the step summary; the exit code still gates the job.
+      - name: flutter analyze
+        run: |
+          set +e
+          flutter analyze > analyze.txt 2>&1
+          code=$?
+          cat analyze.txt
+          if [ "$code" -ne 0 ]; then
+            {
+              echo "### flutter analyze"
+              echo '```'
+              tail -c 60000 analyze.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            grep ' • ' analyze.txt | head -50 | sed 's/^/::error::/'
+          fi
+          exit $code
+      - name: flutter test
+        run: |
+          set +e
+          flutter test > test.txt 2>&1
+          code=$?
+          tail -n 120 test.txt
+          if [ "$code" -ne 0 ]; then
+            {
+              echo "### flutter test"
+              echo '```'
+              tail -c 60000 test.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            grep -E '\[E\]|Some tests failed|Failed to load|Exception' test.txt \
+              | head -50 | sed 's/^/::error::/'
+          fi
+          exit $code

@@ -56,6 +56,9 @@ class InsertSheet extends StatefulWidget {
     this.onPlayMedia,
     required this.onObjectStyle,
     required this.onTableCell,
+    required this.tableEntry,
+    required this.onTableUpdate,
+    required this.onTableStyle,
     required this.onShowLayers,
     required this.onEditStyleSheet,
     required this.onStartTyping,
@@ -105,6 +108,21 @@ class InsertSheet extends StatefulWidget {
 
   /// Opens the cell editor for table cell [index].
   final void Function(int index) onTableCell;
+
+  /// The selected table's deck-level metadata entry (merges + style),
+  /// or null — app-owned deck data the engine drops on round-trips and
+  /// the editor carries. Non-table selections read null.
+  final Map<String, dynamic>? tableEntry;
+
+  /// Commits a table structure change: the updated object (rows/cols/
+  /// cells) AND its updated metadata entry (null = the entry folds away).
+  /// One call = one undo step, the cell-editor contract.
+  final void Function(Map<String, dynamic> obj, Map<String, dynamic>? entry)
+      onTableUpdate;
+
+  /// Applies a named table style ('plain' | 'header' | 'banded' |
+  /// 'header_banded') — the editor resolves the DNA colors at apply time.
+  final void Function(String style) onTableStyle;
 
   /// The existing layers sheet (groups, components, z-order).
   final VoidCallback onShowLayers;
