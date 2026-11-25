@@ -291,3 +291,21 @@ List<String> inkEraseHits(
   }
   return hits;
 }
+
+/// Every scribble on a slide — the set "Erase all ink" may delete. Same
+/// eligibility as [inkEraseHits]: path objects without content, not
+/// locked, with at least two points. Text, images, shapes and tables are
+/// never listed, so a clear-all can never eat content.
+List<String> inkScribbleIds(List<Map<String, dynamic>> objects) {
+  final ids = <String>[];
+  for (final obj in objects) {
+    if (obj['preset'] != 'path') continue;
+    if (obj['content'] != null) continue;
+    if (obj['locked'] == true) continue;
+    final pts = obj['points'];
+    if (pts is! List || pts.length < 2) continue;
+    final id = obj['id'];
+    if (id is String) ids.add(id);
+  }
+  return ids;
+}

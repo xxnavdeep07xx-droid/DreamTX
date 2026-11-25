@@ -24,6 +24,14 @@ const List<(String, double)> _kPenWidths = [
 const double _kHighlighterWidth = 28.0;
 const double _kHighlighterOpacity = 0.35;
 
+/// The eraser's reach presets (design px, the sweep corridor radius):
+/// S 12 / M 24 (the default, [kInkEraserRadius]) / L 40.
+const List<(String, double)> _kEraserSizes = [
+  ('S', 12.0),
+  ('M', 24.0),
+  ('L', 40.0),
+];
+
 /// The Draw toolbox's immutable state — the ONE editor field for the Draw
 /// tab (replacing the old `_scribbleMode` bool). Everything the tab needs:
 /// the armed bit, the last tool, the per-tool color memory, the pen width,
@@ -39,6 +47,7 @@ class _DrawToolboxState {
     this.penColorHex,
     this.hlColorHex = 'FFD400',
     this.penWidth = 8.0,
+    this.eraserRadius = kInkEraserRadius,
     this.expanded = false,
   });
 
@@ -53,6 +62,9 @@ class _DrawToolboxState {
 
   /// The pen's width in design px (one of [_kPenWidths]).
   final double penWidth;
+
+  /// The eraser's reach in design px (one of [_kEraserSizes]).
+  final double eraserRadius;
 
   /// Whether the palette band under the tool row is open.
   final bool expanded;
@@ -100,6 +112,11 @@ class _DrawToolboxState {
   _DrawToolboxState widthPicked(double w) =>
       _copy(penWidth: w, expanded: false);
 
+  /// An eraser-size pick (only offered while the eraser is active): sets
+  /// the reach, collapses the band.
+  _DrawToolboxState eraserSizePicked(double r) =>
+      _copy(eraserRadius: r, expanded: false);
+
   /// The compact row's color/width chip tap: toggle the band.
   _DrawToolboxState bandToggled() => _copy(expanded: !expanded);
 
@@ -116,6 +133,7 @@ class _DrawToolboxState {
     String? penColorHex,
     String? hlColorHex,
     double? penWidth,
+    double? eraserRadius,
     bool? expanded,
   }) =>
       _DrawToolboxState(
@@ -124,6 +142,7 @@ class _DrawToolboxState {
         penColorHex: penColorHex ?? this.penColorHex,
         hlColorHex: hlColorHex ?? this.hlColorHex,
         penWidth: penWidth ?? this.penWidth,
+        eraserRadius: eraserRadius ?? this.eraserRadius,
         expanded: expanded ?? this.expanded,
       );
 }
@@ -139,9 +158,13 @@ class _DrawToolboxRow extends StatelessWidget {
     required this.defaultPenHex,
     required this.palette,
     required this.onChanged,
+    this.onClearAll,
   });
 
   final _DrawToolboxState state;
+
+  /// "Erase all ink on slide" — the eraser's clear button. Null hides it.
+  final VoidCallback? onClearAll;
 
   /// The deck's DNA accent (RRGGBB) — what an unpicked pen color follows.
   final String defaultPenHex;
@@ -208,16 +231,17 @@ class _DrawToolboxRow extends StatelessWidget {
               active: state.armed && state.tool == InkTool.eraser,
               onTap: () => onChanged(state.toolTapped(InkTool.eraser)),
             ),
-            // The settings side — hidden for the eraser (it has none: the
-            // sweep's reach is fixed, its targets are scribbles only).
-            if (state.tool != InkTool.eraser) ...[
-              // The hairline that separates tools from settings.
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 6),
-                width: 1,
-                height: 26,
-                color: kHairline,
-              ),
+            // The settings side. The pen carries color + width; the
+            // highlighter is fixed-width, so just its color; the eraser
+            // carries its reach (S/M/L) and the clear-all button.
+            // The hairline that separates tools from settings.
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 6),
+              width: 1,
+              height: 26,
+              color: kHairline,
+            ),
+            if (state.tool != InkTool.eraser)
               _ColorChipButton(
                 colorHex: state.colorHexFor(defaultPenHex: defaultPenHex),
                 tooltip: state.tool == InkTool.pen
@@ -225,12 +249,24 @@ class _DrawToolboxRow extends StatelessWidget {
                     : 'Highlighter color',
                 onTap: () => onChanged(state.bandToggled()),
               ),
-              // The width chip is the pen's: the highlighter is fixed-width
-              // by design, so its settings are just the color.
-              if (state.tool == InkTool.pen)
-                _WidthChipButton(
-                  label: _penWidthLabel(state.penWidth),
-                  onTap: () => onChanged(state.bandToggled()),
+            if (state.tool == InkTool.pen)
+              _WidthChipButton(
+                label: _penWidthLabel(state.penWidth),
+                tooltip: 'Pen width',
+                onTap: () => onChanged(state.bandToggled()),
+              ),
+            if (state.tool == InkTool.eraser) ...[
+              _WidthChipButton(
+                label: _eraserSizeLabel(state.eraserRadius),
+                tooltip: 'Eraser size',
+                onTap: () => onChanged(state.bandToggled()),
+              ),
+              if (onClearAll != null)
+                _DrawToolButton(
+                  icon: Icons.delete_sweep_outlined,
+                  tooltip: 'Erase all ink on this slide',
+                  active: false,
+                  onTap: onClearAll!,
                 ),
             ],
           ],
@@ -240,6 +276,25 @@ class _DrawToolboxRow extends StatelessWidget {
   // ---- the expanded palette band (46dp) -------------------------------------
 
   Widget _paletteBand() => SizedBox(
+        height: 46,
+        child: state.tool == InkTool.eraser
+            ? Row(
+                children: [
+                  for (final (label, r) in _kEraserSizes)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: DreamChoiceChip(
+                        label: label,
+                        selected: state.eraserRadius == r,
+                        onTap: () => onChanged(state.eraserSizePicked(r)),
+                      ),
+                    ),
+                ],
+              )
+            : _colorAndWidthBand(),
+      );
+
+  Widget _colorAndWidthBand() => SizedBox(
         height: 46,
         child: Row(
           children: [
@@ -274,6 +329,8 @@ class _DrawToolboxRow extends StatelessWidget {
 }
 
 String _penWidthLabel(double w) => w <= 4 ? 'S' : (w <= 8 ? 'M' : 'L');
+
+String _eraserSizeLabel(double r) => r <= 12 ? 'S' : (r <= 24 ? 'M' : 'L');
 
 /// A toolbox tool button — the typing toolbar's exact button geometry:
 /// 44x48 compact IconButton, the active state carried by color + the soft
@@ -359,16 +416,18 @@ class _ColorChipButton extends StatelessWidget {
 class _WidthChipButton extends StatelessWidget {
   const _WidthChipButton({
     required this.label,
+    required this.tooltip,
     required this.onTap,
   });
 
   final String label;
+  final String tooltip;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return Tooltip(
-      message: 'Pen width',
+      message: tooltip,
       waitDuration: const Duration(milliseconds: 500),
       child: InkWell(
         onTap: onTap,

@@ -31,6 +31,7 @@ class ShapesLayer extends StatefulWidget {
     this.onGestureStart,
     this.onStroke,
     this.onEraseHits,
+    this.eraserRadius = kInkEraserRadius,
     this.onObjectLongPress,
     this.onCanvasLongPress,
     this.onBackgroundTap,
@@ -87,6 +88,11 @@ class ShapesLayer extends StatefulWidget {
   /// the sweep marked. The layer NEVER deletes: it collects and dims; the
   /// editor owns the delete_object chain and the single undo step.
   final void Function(List<String>)? onEraseHits;
+
+  /// The eraser's reach in design px (the Draw toolbox's S/M/L). The
+  /// hit-test corridor and the reach disc both read it, so the disc is
+  /// exactly what erases.
+  final double eraserRadius;
 
   /// long-press over an OBJECT (edit mode, no armed tool) — the editor
   /// opens the object's actions sheet (copy / duplicate / format painter /
@@ -178,6 +184,7 @@ class _ShapesLayerState extends State<ShapesLayer> {
                 inkStyle: widget.inkStyle,
                 eraseHitIds: _eraseHits,
                 erasePos: _erasePos,
+                eraserRadius: widget.eraserRadius,
                 overlayOnly: widget.overlayOnly,
                 designW: widget.designW,
                 designH: widget.designH,
@@ -275,7 +282,8 @@ class _ShapesLayerState extends State<ShapesLayer> {
     // same hit-test the sweep uses, one probe point).
     if (widget.inkTool == InkTool.eraser) {
       final design = _toDesign(d.localPosition);
-      final hits = inkEraseHits(widget.objects, [design]);
+      final hits = inkEraseHits(widget.objects, [design],
+          radius: widget.eraserRadius);
       if (hits.isNotEmpty) widget.onEraseHits?.call(hits);
       return;
     }
@@ -327,7 +335,10 @@ class _ShapesLayerState extends State<ShapesLayer> {
           ? <Offset>[design]
           : inkSweepSamples(origin, design);
       setState(() {
-        _eraseHits = {...inkEraseHits(widget.objects, probes)};
+        _eraseHits = {
+          ...inkEraseHits(widget.objects, probes,
+              radius: widget.eraserRadius)
+        };
         _erasePos = design;
       });
       return;
@@ -376,7 +387,8 @@ class _ShapesLayerState extends State<ShapesLayer> {
       final prev = _erasePos;
       final samples =
           prev == null ? <Offset>[design] : inkSweepSamples(prev, design);
-      final fresh = inkEraseHits(widget.objects, samples);
+      final fresh = inkEraseHits(widget.objects, samples,
+          radius: widget.eraserRadius);
       setState(() {
         _erasePos = design;
         if (fresh.isNotEmpty) _eraseHits = {..._eraseHits, ...fresh};
@@ -669,6 +681,7 @@ class _ShapesPainter extends CustomPainter {
     required this.inkStyle,
     required this.eraseHitIds,
     required this.erasePos,
+    this.eraserRadius = kInkEraserRadius,
     this.overlayOnly = false,
     this.designW = 1280,
     this.designH = 720,
@@ -689,6 +702,9 @@ class _ShapesPainter extends CustomPainter {
   /// that.
   final Set<String> eraseHitIds;
   final Offset? erasePos;
+
+  /// The eraser's reach (design px) — the disc's radius.
+  final double eraserRadius;
   final bool overlayOnly;
 
   /// The deck's design frame — the smart guide lines run to the frame's
@@ -741,12 +757,12 @@ class _ShapesPainter extends CustomPainter {
     if (erasePos != null) {
       canvas.drawCircle(
         erasePos!,
-        kInkEraserRadius,
+        eraserRadius,
         Paint()..color = const Color(0x29FFFFFF),
       );
       canvas.drawCircle(
         erasePos!,
-        kInkEraserRadius,
+        eraserRadius,
         Paint()
           ..color = const Color(0xB3FFFFFF)
           ..style = PaintingStyle.stroke
@@ -784,6 +800,7 @@ class _ShapesPainter extends CustomPainter {
       oldDelegate.inkStyle != inkStyle ||
       oldDelegate.eraseHitIds != eraseHitIds ||
       oldDelegate.erasePos != erasePos ||
+      oldDelegate.eraserRadius != eraserRadius ||
       oldDelegate.overlayOnly != overlayOnly ||
       oldDelegate.designW != designW ||
       oldDelegate.designH != designH;

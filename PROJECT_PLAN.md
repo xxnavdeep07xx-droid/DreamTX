@@ -1,0 +1,126 @@
+# DreamTX — Project Plan (permanent)
+
+This file is the single living plan for the project. Update it in the same PR that
+completes an item. The checklists at the bottom are the source of truth for status.
+
+---
+
+## 1. What we are making
+
+**DreamTX** — a presentation app (Flutter Android app + Rust engine + Cloudflare Worker).
+The user's own AI (ChatGPT, Claude, Gemini, any MCP client) builds decks through MCP.
+The app is the editor, presenter, and exporter (.pptx / .pdf).
+
+Core pieces:
+- `app/` — Flutter Android editor, presenter, Files drawer, Insert/Draw/Design tabs.
+- `core/` — Rust engine (deck model, layout, DNAs, exporters). Native FFI + wasm.
+- `worker/` — Cloudflare Worker: MCP endpoint, pairing Registry DO, per-deck Deck DO.
+- `.github/workflows/` — CI: cargo tests, worker typecheck + MCP e2e, flutter analyze +
+  widget tests, per-ABI release-signed APKs on tags.
+
+## 2. Working rules (standing)
+
+- **Branch:** `arena/937c19a3-dreamtx` only. Push only there; PRs only from there.
+- **One feature PR in flight at a time.** Each increment is PR-sized and CI-green before merge.
+- **CI is the only test oracle** (no local Flutter/Cargo). Keep static sweeps tight before pushing.
+- **Each merged increment:** update this file, comment the step on issue #11, and tag/release
+  when the milestone asks for an APK.
+- **No core changes** unless the item says so (Wave 3 is the exception).
+- **Build, don't cut**: gaps are built (fast, scoped), not deleted.
+- **Timeline:** frontend completion in 2–5 days; backend (MCP / Worker deploy) after.
+  Project freeze **Dec 2 2026** (token expiry); launch **Dec 3 2026**.
+
+## 3. Roadmap (mirrors issue #11)
+
+### Wave 1 — Insert Tier 1 (done except 6–7)
+- [x] 1. Object actions (PR #12)
+- [x] 2. Filmstrip sections (PR #13)
+- [x] 3. WordArt (PR #14)
+- [x] 4. Table depth (PR #15/#16)
+- [x] 5. Image depth (PR #17, v0.2.40)
+- [ ] 6. Slide furniture (slide number / date / footer) — needs an export-design decision first
+- [ ] 7. Outline view (View tab)
+
+### Wave 2 — Draw v2 (the current focus)
+See section 4 for the full PowerPoint Draw-tab map.
+- [ ] A-1. Eraser sizes S/M/L + "Erase all ink on slide" (one undo step)
+- [ ] A-2. Pen presets (saved tool chips, cap 6) + pencil tip style
+- [ ] B. Lasso select (circle strokes/objects → temporary group → move / restyle / delete)
+- [ ] R. Ruler (non-persistent guide overlay; toggled from the Draw tab)
+- [ ] D. Ink → shape, locally (line / rect / ellipse / triangle / arrow; deterministic heuristics)
+- [ ] E. Ink replay (strokes animate in draw order)
+- [ ] C. Floating island (dock, 500 ms hold to lift, compact mode, persisted position, coach mark)
+
+### Wave 3 — Insert Tier 2 (core/protocol changes)
+- [ ] 1. Link / tap-action (`link {kind: url|slide, target}`; PPTX hyperlinks + PDF link annotations)
+- [ ] 2. Chart (object kind, renderer, panel, both exporters; decision: native PPTX chart vs grouped shapes)
+
+### Wave 4 — AI / Worker
+- [ ] Ink → text / math (through the AI tab; needs recognition — AI/Worker dependent)
+- [ ] LIVE present (Worker deploy: Registry DO + Deck DO + WebSocket broadcast)
+
+### Non-goals (unchanged unless the user says otherwise)
+3D models, screen recording, compare/merge UI, B&W view.
+Note: the **ruler** was a non-goal in the earlier design; it is now in scope (R) per the
+Draw-tab request.
+
+## 4. Draw tab — PowerPoint feature map
+
+Status is checked against the code on `ad4b7d9` (before Draw A-1).
+
+| # | PowerPoint Draw-tab feature | App status | Plan |
+|---|---|---|---|
+| 1 | Pen (ink) | **Exists** — pen tool, arms via tap | — |
+| 2 | Highlighter | **Exists** — translucent 28px marker, exports translucent | — |
+| 3 | Pen / ink color | **Exists** — palette band, DNA accent default | — |
+| 4 | Pen thickness | **Exists** — S/M/L (4 / 8 / 16 px) | — |
+| 5 | Eraser (stroke erase) | **Exists** — sweeps scribbles only; content immune | — |
+| 6 | Eraser size | Missing | **A-1** |
+| 7 | Erase all ink on slide | Missing | **A-1** |
+| 8 | Pen presets / pen gallery | Missing | **A-2** |
+| 9 | Pencil / pen tip styles | Missing | **A-2** |
+| 10 | Lasso select | Missing | **B** |
+| 11 | Ruler | Missing | **R** |
+| 12 | Ink replay | Missing | **E** |
+| 13 | Ink to shape | Missing | **D** |
+| 14 | Ink to text | Missing — needs handwriting recognition | **Wave 4** (AI/Worker) |
+| 15 | Ink to math | Missing — needs math recognition | **Wave 4** (AI/Worker) |
+| 16 | Draw with touch (touch draws instead of selects) | **Covered** — Draw is an armed mode; the canvas consumes touches while armed; tap the tool again to disarm | — |
+
+Extra (not PowerPoint, from the Draw v2 plan): **C. Floating island** (see Wave 2).
+
+## 5. Known issues / risks
+
+- **Issue writes via the sandbox:** resolved 2026-11-25 — the Arena app installation was
+  granted Issues + Pull requests write. If comments/edits start returning 403 again, check
+  github.com/settings/installations for a pending "Permission updates requested".
+- **No local Flutter:** every UI change is verified only by CI. Keep changes small and
+  pure-function-tested where possible (`ink_math.dart`).
+- **Widget tests are brittle around gestures** (`warnIfMissed` on long-press; use explicit
+  finders). See `TESTING.md`.
+- **CI logs unreachable from the sandbox:** use `gh pr checks`, the signed-out Annotations
+  page, and the `::error::` lines emitted by ci.yml.
+- **Android platform folders are generated in CI** (not committed).
+- **Ink to text/math** cannot be done offline in Dart with reasonable quality; it waits for
+  the AI/Worker path. Do not fake it.
+- **Exports:** highlighter opacity exports; eraser and lasso are editor-only (no export impact).
+  Ruler is an overlay and never exports.
+- **Presenter:** new Draw features that alter objects (ink→shape, lasso groups) must render
+  identically in presenter mode.
+
+## 6. Checklist (live status)
+
+Last updated: 2026-11-25 (plan created; Draw A-1 in progress).
+
+- [x] Permanent plan file created (this file)
+- [x] Draw-tab feature map written (section 4)
+- [ ] A-1 Eraser sizes + Erase all ink (PR pending)
+- [ ] A-2 Pen presets + pencil tip
+- [ ] B Lasso select
+- [ ] R Ruler
+- [ ] D Ink → shape
+- [ ] E Ink replay
+- [ ] C Floating island
+- [ ] Wave 1 items 6–7
+- [ ] Wave 3 items 1–2
+- [ ] Wave 4 (ink→text/math, LIVE present)
