@@ -108,11 +108,9 @@ jobs:
             # Surface the failure context: the -N progress lines carry the
             # failing test names, and the tail holds the exception blocks
             # (the new reporter drops the old [E] marker).
-            # Pull the failure assertions + file:line locations out of the
-            # output tail — those identify the failing tests even when the
-            # reporter's markers change between Flutter versions.
-            tail -n 250 test.txt \
-              | grep -E 'Expected:|Actual:|Which:|_test\.dart:[0-9]+|tests passed,|Some tests failed|Failed to load|The following' \
-              | head -40 | sed 's/^/::error::/'
+            # Raw failure context: the last non-empty lines of the output
+            # carry the full exception messages and stacks.
+            tail -n 200 test.txt | grep -v '^[[:space:]]*$' | tail -45 \
+              | sed 's/^/::error::/'
           fi
           exit $code

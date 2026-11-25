@@ -258,7 +258,10 @@ void main() {
     final image = find.descendant(
         of: find.byType(SlideStage), matching: find.byType(Image));
     expect(image, findsOneWidget);
-    await tester.longPress(image);
+    // warnIfMissed off: the content layer never claims pointers (the
+    // sibling ShapesLayer owns every gesture) — the finder's own widget
+    // can't pass a hit test even though the gesture lands on the object.
+    await tester.longPress(image, warnIfMissed: false);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Delete'));
     await tester.pumpAndSettle(const Duration(milliseconds: 500));
