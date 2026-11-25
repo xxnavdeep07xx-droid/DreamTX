@@ -43,7 +43,7 @@ Core pieces:
 
 ### Wave 2 — Draw v2 (the current focus)
 See section 4 for the full PowerPoint Draw-tab map.
-- [ ] A-1. Eraser sizes S/M/L + "Erase all ink on slide" (one undo step)
+- [x] A-1. Eraser sizes S/M/L + "Erase all ink on slide" (one undo step) — PR #22
 - [ ] A-2. Pen presets (saved tool chips, cap 6) + pencil tip style
 - [ ] B. Lasso select (circle strokes/objects → temporary group → move / restyle / delete)
 - [ ] R. Ruler (non-persistent guide overlay; toggled from the Draw tab)
@@ -75,8 +75,8 @@ Status is checked against the code on `ad4b7d9` (before Draw A-1).
 | 3 | Pen / ink color | **Exists** — palette band, DNA accent default | — |
 | 4 | Pen thickness | **Exists** — S/M/L (4 / 8 / 16 px) | — |
 | 5 | Eraser (stroke erase) | **Exists** — sweeps scribbles only; content immune | — |
-| 6 | Eraser size | Missing | **A-1** |
-| 7 | Erase all ink on slide | Missing | **A-1** |
+| 6 | Eraser size | **Done** (A-1, PR #22) | — |
+| 7 | Erase all ink on slide | **Done** (A-1, PR #22) | — |
 | 8 | Pen presets / pen gallery | Missing | **A-2** |
 | 9 | Pencil / pen tip styles | Missing | **A-2** |
 | 10 | Lasso select | Missing | **B** |
@@ -110,11 +110,11 @@ Extra (not PowerPoint, from the Draw v2 plan): **C. Floating island** (see Wave 
 
 ## 6. Checklist (live status)
 
-Last updated: 2026-11-25 (plan created; Draw A-1 in progress).
+Last updated: 2026-11-25 (Draw A-1 merged via PR #22).
 
 - [x] Permanent plan file created (this file)
 - [x] Draw-tab feature map written (section 4)
-- [ ] A-1 Eraser sizes + Erase all ink (PR pending)
+- [x] A-1 Eraser sizes + Erase all ink (PR #22)
 - [ ] A-2 Pen presets + pencil tip
 - [ ] B Lasso select
 - [ ] R Ruler
