@@ -84,7 +84,7 @@ extension _EditorChrome on _EditorScreenState {
                   ),
                   child: SizedBox(
                     key: const ValueKey('filmstrip_row'),
-                    height: _filmstripBandHeight,
+                    height: _EditorScreenState._filmstripBandHeight,
                     child: Stack(
                       clipBehavior: Clip.none,
                       children: [
@@ -243,7 +243,7 @@ extension _EditorChrome on _EditorScreenState {
   /// what the spacer hands back to on close.
   double _liveStripFlowHeight() {
     final revealH = _filmstripRevealHost.currentContext?.size?.height ??
-        (_filmOpen ? _filmstripBandHeight : 0.0);
+        (_filmOpen ? _EditorScreenState._filmstripBandHeight : 0.0);
     return _FilmstripDivider.regionHeight + revealH;
   }
 
@@ -267,7 +267,7 @@ extension _EditorChrome on _EditorScreenState {
     // lands mid-slide is dead until the sheet is in place.
     if (_sheetEntering || _sheetClosing) return;
     final base = _drawerExtent ?? _drawerHalf;
-    final floor = math.min(_drawerSliver, _drawerTall);
+    final floor = math.min(_EditorScreenState._drawerSliver, _drawerTall);
     _setState(() {
       _drawerDragging = true;
       _drawerExtent = (base - dy).clamp(floor, _drawerTall).toDouble();

@@ -135,7 +135,7 @@ extension _EditorBuildFlow on _EditorScreenState {
             // spacer hands back to on close, and the fallback for a missing
             // freeze.
             final stripFlowHeight = _FilmstripDivider.regionHeight +
-                (_filmOpen ? _filmstripBandHeight : 0.0);
+                (_filmOpen ? _EditorScreenState._filmstripBandHeight : 0.0);
             // The sheet's anchor: the ribbon's top edge, full stop. While
             // the sheet is open the ribbon's own top hairline always shows
             // (both the open tray and the collapsed divider sit directly on
@@ -143,7 +143,7 @@ extension _EditorBuildFlow on _EditorScreenState {
             // so the band is a constant 77dp — which makes the anchor a
             // constant: toggling the filmstrip never moves the sheet, the
             // canvas, or the ribbon by a single pixel.
-            const sheetAnchor = _navBarHeight + 1.0;
+            const sheetAnchor = _EditorScreenState._navBarHeight + 1.0;
             // The space the sheet may occupy: everything above the ribbon
             // inside this body. From it, the two detents EITHER drawer's
             // header drag settles between — the resting HALF (floor 296 so
@@ -171,7 +171,7 @@ extension _EditorBuildFlow on _EditorScreenState {
             // animated height, so the tray can never poke above the
             // sheet's top edge into the preview at any instant.
             final stripH = _filmOpen
-                ? _FilmstripDivider.regionHeight + _filmstripBandHeight
+                ? _FilmstripDivider.regionHeight + _EditorScreenState._filmstripBandHeight
                 : _FilmstripDivider.regionHeight;
             final sheetHeight = _sheetLiveHeightFor();
             final overlayH = math.min(stripH, sheetHeight);
@@ -541,7 +541,7 @@ extension _EditorBuildFlow on _EditorScreenState {
                           child: _lastSheetTab == _NavTab.insert
                               ? InsertSheet(
                                   bottomInset: _FilmstripDivider.regionHeight +
-                                      _filmstripBandHeight,
+                                      _EditorScreenState._filmstripBandHeight,
                                   selectedObject: _selectedObject,
                                   textController: _selectedObject != null &&
                                           ObjectContent.isText(_selectedObject!)
@@ -595,7 +595,7 @@ extension _EditorBuildFlow on _EditorScreenState {
                                   // raised handle. Scroll content, never chrome:
                                   // the sheet's outer height is the detents' alone.
                                   bottomInset: _FilmstripDivider.regionHeight +
-                                      _filmstripBandHeight,
+                                      _EditorScreenState._filmstripBandHeight,
                                   onDragUpdate: _drawerDragUpdate,
                                   onDragSettle: _drawerDragSettle,
                                 ),
