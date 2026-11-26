@@ -59,8 +59,8 @@ See section 4 for the full PowerPoint Draw-tab map.
 - [x] 2. Chart (object kind, renderer, panel, both exporters). Native PPTX chart (chosen). Core PR #36, app PR #37. Known limits: literal data (no Edit Data in PowerPoint); the sheet edits the first series only
 
 ### Wave 4 — AI / Worker
-- [ ] Ink → text / math (through the AI tab; needs recognition — AI/Worker dependent)
-- [ ] LIVE present (Worker deploy: Registry DO + Deck DO + WebSocket broadcast)
+- [~] Ink → text / math: DROPPED (user decision). The MCP server is the core product, so handwriting recognition is out of scope.
+- [~] LIVE present (Registry DO + Deck DO + WebSocket broadcast): ON HOLD pending a decision after market feedback. Worker code exists in the repo but is not deployed (no Cloudflare account yet).
 
 ### Non-goals (unchanged unless the user says otherwise)
 3D models, screen recording, compare/merge UI, B&W view.
@@ -86,8 +86,8 @@ Status is checked against the code on `ad4b7d9` (before Draw A-1).
 | 11 | Ruler | **Done** (R, PR #25) — editor-only overlay | — |
 | 12 | Ink replay | **Done** (E, PR #27) — replay button on the Draw row; scribbles draw in z-order; shapes from ink are not replayed | — |
 | 13 | Ink to shape | **Done** (D, PR #26) — line, rect, ellipse, triangle; arrow not built | Arrow left as a follow-up |
-| 14 | Ink to text | Missing — needs handwriting recognition | **Wave 4** (AI/Worker) |
-| 15 | Ink to math | Missing — needs math recognition | **Wave 4** (AI/Worker) |
+| 14 | Ink to text | Missing — needs handwriting recognition | Dropped (user decision: MCP is the core) |
+| 15 | Ink to math | Missing — needs math recognition | Dropped (user decision: MCP is the core) |
 | 16 | Draw with touch (touch draws instead of selects) | **Covered** — Draw is an armed mode; the canvas consumes touches while armed; tap the tool again to disarm | — |
 
 Extra (not PowerPoint, from the Draw v2 plan): **C. Floating island** (see Wave 2).
