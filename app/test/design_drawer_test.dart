@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:dreamtx/screens/design_drawer.dart';
 
@@ -28,7 +28,7 @@ void main() {
                 currentFamily: 'swiss_editorial',
                 onFamily: (id) => family = id,
                 onShuffle: () => shuffled = true,
-                variants: <Map<String, dynamic>>[
+                variants: const <Map<String, dynamic>>[
                   {
                     'seed': 5,
                     'palette': {'bg': 'FFFFFF', 'accent': '000000'},

@@ -37,6 +37,7 @@ import '../widgets/rich_doc.dart';
 import '../widgets/slide_stage.dart';
 import '../widgets/outline_sheet.dart';
 import '../widgets/typing_toolbar.dart';
+import 'design_drawer.dart';
 import 'files_drawer.dart';
 import 'insert_sheet.dart';
 import 'pair_sheet.dart';
