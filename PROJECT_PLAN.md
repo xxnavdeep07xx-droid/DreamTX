@@ -96,6 +96,27 @@ Status is checked against the code on `ad4b7d9` (before Draw A-1).
 
 Extra (not PowerPoint, from the Draw v2 plan): **C. Floating island** (see Wave 2).
 
+## 4b. Design tab — PowerPoint feature map
+
+Status is checked against the code on `main` (`e3a1cf2`). The Design row holds the theme chips and the variant shuffle. The Files drawer holds slide size, and the View row holds slide furniture.
+
+| # | PowerPoint Design-tab feature | App status | Plan |
+|---|---|---|---|
+| 1 | Themes gallery | **Partial** — 3 families as chips (Swiss editorial, Cinematic, Magazine serif). Each sets palette, fonts and motif. Deck-wide only | Decide: more families, and per-slide apply |
+| 2 | Variants gallery (colour variants) | **Partial** — the shuffle button makes a new seed in the same family. No preview, no choice | Replace shuffle with a visible variant strip |
+| 3 | Theme colours (pick or edit) | **Missing** — palette comes from the DNA. The user cannot choose or edit it | Decide: palette picker over the DNA set |
+| 4 | Theme fonts (pick) | **Missing** — fonts are fixed by the family (serif or sans roles) | Decide: font-pair picker |
+| 5 | Slide size (16:9, 16:10, 4:3, 1:1) | **Exists**, but in the Files drawer (Aspect sheet), not Design | Surface it from Design, or leave and link |
+| 6 | Custom slide size | **Missing** — presets only (`ASPECTS`) | Low priority |
+| 7 | Format Background (solid, gradient, picture; apply to all) | **Missing** — `Slide` and `Deck` have no background field. Background is the DNA `bg` only | Core change needed (protocol); high value |
+| 8 | Hide background graphics | **Missing** — the DNA motif (rule line, number stamp, edge bar) always draws | Small: a per-slide flag |
+| 9 | Design Ideas / Designer | **Not planned** — needs AI layout generation; the MCP server is the AI path | Out of scope for now |
+| 10 | Slide furniture (slide number, date, footer) | **Exists** (Wave 1 item 6, PR #32), in the View row | — |
+| 11 | Apply theme to selected slides only | **Missing** — `apply_dna` changes the whole deck | Decide with row 1 |
+| 12 | Motif choice | **Missing** — motif is set by the DNA, not picked | Decide with row 3 |
+
+Proposed order (for the user to confirm): 8 (hide background graphics), then 7 (format background, the core change), then 2 (variant strip), then 1 and 11 (theme scope), then 3, 4, 12 (customisation), then 5 and 6 (size).
+
 ## 5. Known issues / risks
 
 - **Issue writes via the sandbox:** resolved 2026-11-25 — the Arena app installation was
@@ -131,4 +152,5 @@ Last updated: 2026-11-25 (Draw E in PR #27).
 - [x] Wave 1 items 6–7 (PR #31 outline, PR #32 furniture)
 - [x] Wave 3 item 1 (link)
 - [x] Wave 3 item 2 (chart, native PPTX)
+- [x] Design tab feature map (section 4b)
 - [ ] Wave 4 (ink→text/math, LIVE present)
