@@ -11,8 +11,8 @@ void main() {
     const data = ChartData(
       style: 'column',
       title: null,
-      labels: const ['Q1', 'Q2'],
-      series: const [
+      labels: ['Q1', 'Q2'],
+      series: [
         ChartSeriesData(name: 'A', values: [1, 2], color: 'EF4444'),
         ChartSeriesData(name: 'B', values: [3, 4]),
       ],
@@ -25,7 +25,7 @@ void main() {
             key: const Key('open'),
             onPressed: () async {
               out = await Navigator.of(ctx).push<ChartData>(MaterialPageRoute(
-                  builder: (_) => Scaffold(body: ChartSheet(data: data))));
+                  builder: (_) => const Scaffold(body: ChartSheet(data: data))));
             },
             child: const Text('open'),
           ),
