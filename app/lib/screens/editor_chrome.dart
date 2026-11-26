@@ -401,11 +401,17 @@ extension _EditorChrome on _EditorScreenState {
                     selected: id == current,
                     onTap: () => _applyDesign(id)),
               ),
-            IconButton(
-              tooltip: 'New variant of this design',
-              icon: const Icon(Icons.shuffle),
-              onPressed: () => _applyDesign('next_variant'),
-            ),
+            // Variants of this family: pick one (each shows its palette).
+            for (final v in _variantStrip)
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: _VariantSwatch(
+                  bg: hexToColor(v['palette']['bg'] as String),
+                  accent: hexToColor(v['palette']['accent'] as String),
+                  selected: (v['seed'] as num).toInt() == _deckSeed,
+                  onTap: () => _pickVariant((v['seed'] as num).toInt()),
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.only(right: 6),
               child: DreamChoiceChip(

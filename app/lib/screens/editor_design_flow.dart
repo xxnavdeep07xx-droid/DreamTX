@@ -15,6 +15,31 @@ extension _EditorDesignFlow on _EditorScreenState {
     if (r['ok'] == true && r['deck'] is Map) _mutate(r['deck'] as Map);
   }
 
+  /// Design tab: a strip of this family's variants. Each entry is a seed and
+  /// its palette from the core, so the user sees a variant before picking it.
+  List<Map<String, dynamic>> get _variantStrip {
+    final r = Bridge.command({'op': 'dna_variants', 'deck': _deck, 'count': 6});
+    if (r['ok'] != true || r['variants'] is! List) return const [];
+    return [
+      for (final v in r['variants'] as List) Map<String, dynamic>.from(v as Map),
+    ];
+  }
+
+  /// The deck's seed, reduced to the strip's 53-bit range, for matching a
+  /// variant to the current look.
+  int? get _deckSeed {
+    final dna = _deck['dna'];
+    if (dna is! Map) return null;
+    final seed = (dna['seed'] as num?)?.toInt();
+    return seed == null ? null : seed & ((1 << 53) - 1);
+  }
+
+  void _pickVariant(int seed) {
+    if (seed == _deckSeed) return;
+    final r = Bridge.command({'op': 'set_dna_variant', 'deck': _deck, 'seed': seed});
+    if (r['ok'] == true && r['deck'] is Map) _mutate(r['deck'] as Map);
+  }
+
   /// Design tab: the current slide's own background (6 hex digits), or null
   /// when it uses the DNA background.
   String? get _slideBackground {
@@ -486,6 +511,47 @@ class _BackgroundSwatch extends StatelessWidget {
             color: selected ? kAccent : kText3,
             width: selected ? 2.5 : 1,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One variant in the Design strip: the variant's background, with its accent
+/// as a dot, and a ring when it is the deck's current look.
+class _VariantSwatch extends StatelessWidget {
+  const _VariantSwatch({
+    required this.bg,
+    required this.accent,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final Color bg;
+  final Color accent;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 28,
+        height: 28,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: bg,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: selected ? kAccent : kText3,
+            width: selected ? 2.5 : 1,
+          ),
+        ),
+        child: Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
         ),
       ),
     );
