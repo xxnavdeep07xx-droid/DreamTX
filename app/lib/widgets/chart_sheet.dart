@@ -48,7 +48,7 @@ class _ChartSheetState extends State<ChartSheet> {
     _style = d.style;
     _title = TextEditingController(text: d.title ?? '');
     final series = d.series.isEmpty
-        ? [ChartSeriesData(name: 'Series 1', values: const [])]
+        ? const [ChartSeriesData(name: 'Series 1', values: [])]
         : d.series;
     final rows = [
       d.labels.length,

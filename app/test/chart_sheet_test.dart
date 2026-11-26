@@ -8,7 +8,7 @@ import 'package:dreamtx/widgets/chart_sheet.dart';
 /// and Done returns all of them (names and colors kept).
 void main() {
   testWidgets('editing a second series returns both series', (tester) async {
-    final data = ChartData(
+    const data = ChartData(
       style: 'column',
       title: null,
       labels: const ['Q1', 'Q2'],
@@ -52,7 +52,7 @@ void main() {
   });
 
   testWidgets('Done stays disabled while any series has a non-number', (tester) async {
-    final data = ChartData(
+    const data = ChartData(
       style: 'line',
       title: 'T',
       labels: const ['Q1'],
