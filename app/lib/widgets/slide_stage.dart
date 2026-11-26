@@ -56,6 +56,7 @@ class SlideStage extends StatelessWidget {
     this.lassoIds = const {},
     this.onLasso,
     this.onLassoMove,
+    this.showRuler = false,
     this.onObjectLongPress,
     this.onCanvasLongPress,
     this.textController,
@@ -119,6 +120,9 @@ class SlideStage extends StatelessWidget {
   final Set<String> lassoIds;
   final void Function(List<Offset>)? onLasso;
   final void Function(Offset)? onLassoMove;
+
+  /// Draw R: the editor's ruler overlay (forwarded to the ink layer).
+  final bool showRuler;
 
   /// Long-press wiring (editing only; the presenter passes nothing —
   /// read-only stages never build the recognizers): an object long-press
@@ -215,6 +219,7 @@ class SlideStage extends StatelessWidget {
             lassoIds: lassoIds,
             onLasso: onLasso,
             onLassoMove: onLassoMove,
+            showRuler: showRuler,
             onObjectLongPress: onObjectLongPress,
             onCanvasLongPress: onCanvasLongPress,
             // This layer rides OPAQUE above the archetype canvas, so it
