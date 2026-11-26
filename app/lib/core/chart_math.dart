@@ -88,8 +88,11 @@ ChartData defaultChartData() => const ChartData(
       ],
     );
 
-/// The series color as 6 hex digits (no `#`), or the palette color for [i].
-String chartColorAt(ChartSeriesData s, int i) {
+/// The series color as 6 hex digits (no `#`). A series with no valid color
+/// of its own takes entry [i] of [palette] — the deck's DNA chart palette
+/// (`resolve_dna` → `chart_palette`), so a chart matches its deck.
+String chartColorAt(ChartSeriesData s, int i,
+    {List<String> palette = kChartPalette}) {
   final c = s.color;
   if (c != null) {
     final h = c.startsWith('#') ? c.substring(1) : c;
@@ -97,7 +100,19 @@ String chartColorAt(ChartSeriesData s, int i) {
       return h.toUpperCase();
     }
   }
-  return kChartPalette[i % kChartPalette.length];
+  final pal = palette.isEmpty ? kChartPalette : palette;
+  return pal[i % pal.length];
+}
+
+/// The chart palette from a `resolve_dna` result's `chart_palette` list. Six
+/// hex entries are kept; anything else falls back to the default palette.
+List<String> chartPaletteFrom(Object? raw) {
+  if (raw is! List) return kChartPalette;
+  final out = [
+    for (final e in raw)
+      if (e is String && RegExp(r'^[0-9a-fA-F]{6}$').hasMatch(e)) e.toUpperCase(),
+  ];
+  return out.isEmpty ? kChartPalette : out;
 }
 
 /// The value scale: lowest and highest values, always including zero. A

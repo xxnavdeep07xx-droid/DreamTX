@@ -2,6 +2,9 @@
 // unit-tested. The URL rule mirrors the core's `Link::safe_url`, so the
 // sheet never offers a link the exporters would drop.
 
+import 'dart:math' as math;
+import 'dart:ui' show Offset, Size;
+
 /// Whether [raw] is a link the exporters accept: http, https, or mailto,
 /// with a target after the scheme and no whitespace or control characters.
 bool isSafeLinkUrl(String raw) {
@@ -45,4 +48,48 @@ String linkDescription(
   final i = slides.indexWhere((s) => s['id'] == link['target']);
   if (i < 0) return 'Target slide is missing';
   return 'Slide ${i + 1}: ${titleOf(slides[i])}';
+}
+
+/// Where a screen tap lands in slide design coordinates. The slide frame is
+/// the largest rectangle with the design's aspect, centred on the screen
+/// (how the presenter lays out a page). Null when the tap is outside it.
+Offset? designPointOf(Offset tap, Size screen, Size design) {
+  if (screen.width <= 0 || screen.height <= 0 || design.width <= 0 || design.height <= 0) {
+    return null;
+  }
+  final aspect = design.width / design.height;
+  final double bw;
+  final double bh;
+  if (screen.width / screen.height > aspect) {
+    bh = screen.height;
+    bw = bh * aspect;
+  } else {
+    bw = screen.width;
+    bh = bw / aspect;
+  }
+  final x = tap.dx - (screen.width - bw) / 2;
+  final y = tap.dy - (screen.height - bh) / 2;
+  if (x < 0 || y < 0 || x > bw || y > bh) return null;
+  return Offset(x / bw * design.width, y / bh * design.height);
+}
+
+/// The topmost linked object under a design-space point, or null. Objects
+/// are in z-order (last is on top), and rotation is undone around the
+/// object's centre, so a rotated link is hit where it is drawn.
+Map<String, dynamic>? linkObjectAt(List<Map<String, dynamic>> objects, Offset p) {
+  for (final obj in objects.reversed) {
+    if (linkOf(obj) == null) continue;
+    final x = ((obj['x'] as num?) ?? 0).toDouble();
+    final y = ((obj['y'] as num?) ?? 0).toDouble();
+    final w = ((obj['w'] as num?) ?? 1).toDouble();
+    final h = ((obj['h'] as num?) ?? 1).toDouble();
+    final rot = ((obj['rotation'] as num?) ?? 0).toDouble();
+    final dx = p.dx - (x + w / 2);
+    final dy = p.dy - (y + h / 2);
+    final a = -rot * math.pi / 180;
+    final rx = dx * math.cos(a) - dy * math.sin(a);
+    final ry = dx * math.sin(a) + dy * math.cos(a);
+    if (rx.abs() <= w / 2 && ry.abs() <= h / 2) return obj;
+  }
+  return null;
 }

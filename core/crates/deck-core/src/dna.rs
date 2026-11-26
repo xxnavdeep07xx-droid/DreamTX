@@ -12,6 +12,10 @@ use serde::{Deserialize, Serialize};
 pub struct ResolvedDna {
     pub family: String,
     pub palette: Palette,
+    /// Six chart series colors (6 hex digits, no `#`), derived from the
+    /// palette: accent first, then fg and muted, then tints. Charts with no
+    /// explicit series color read this list, so a chart matches its deck.
+    pub chart_palette: Vec<String>,
     /// "serif" or "sans" display role; maps to bundled font files.
     pub display_font: FontRole,
     pub body_font: FontRole,
@@ -21,6 +25,26 @@ pub struct ResolvedDna {
     pub motif: Motif,
     /// Type scale ratio (display sizes multiplier).
     pub scale: f64,
+}
+
+/// The chart series palette for a deck: accent, fg, muted, then mixes of
+/// those with the accent and the background. Every entry is 6 hex digits.
+pub fn chart_palette_of(p: &Palette) -> Vec<String> {
+    vec![
+        p.accent.clone(),
+        p.fg.clone(),
+        p.muted.clone(),
+        mix_hex(&p.accent, &p.fg, 0.5),
+        mix_hex(&p.accent, &p.bg, 0.5),
+        mix_hex(&p.muted, &p.bg, 0.5),
+    ]
+}
+
+/// Linear RGB mix of two 6-digit hex colors; `t` is the share of `b`.
+fn mix_hex(a: &str, b: &str, t: f64) -> String {
+    let ch = |h: &str, i: usize| u8::from_str_radix(h.get(i..i + 2).unwrap_or("00"), 16).unwrap_or(0) as f64;
+    let mix = |i: usize| (ch(a, i) * (1.0 - t) + ch(b, i) * t).round() as u8;
+    format!("{:02X}{:02X}{:02X}", mix(0), mix(2), mix(4))
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -139,9 +163,12 @@ pub fn resolve(dna: &Dna) -> ResolvedDna {
     let motif = motifs[(r() % motifs.len() as u64) as usize];
     let scale = scale * (0.97 + (r() % 7) as f64 / 100.0); // ±3% type-scale drift
 
+    let palette = Palette { bg: bg.to_string(), surface: surface.to_string(), fg, muted, accent };
+    let chart_palette = chart_palette_of(&palette);
     ResolvedDna {
         family: dna.family.label().to_string(),
-        palette: Palette { bg: bg.to_string(), surface: surface.to_string(), fg, muted, accent },
+        palette,
+        chart_palette,
         display_font: display,
         body_font: body,
         corner,
@@ -177,6 +204,17 @@ mod tests {
     fn deterministic_resolution() {
         let dna = Dna { family: DnaFamily::SwissEditorial, seed: 42 };
         assert_eq!(resolve(&dna), resolve(&dna));
+    }
+
+    #[test]
+    fn chart_palette_comes_from_the_dna() {
+        let r = resolve(&Dna { family: DnaFamily::SwissEditorial, seed: 7 });
+        assert_eq!(r.chart_palette.len(), 6);
+        assert_eq!(r.chart_palette[0], r.palette.accent);
+        assert_eq!(r.chart_palette[1], r.palette.fg);
+        for c in &r.chart_palette {
+            assert!(c.len() == 6 && c.chars().all(|ch| ch.is_ascii_hexdigit()), "hex: {c}");
+        }
     }
 
     #[test]

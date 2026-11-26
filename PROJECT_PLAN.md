@@ -56,7 +56,11 @@ See section 4 for the full PowerPoint Draw-tab map.
 
 ### Wave 3 — Insert Tier 2 (core/protocol changes)
 - [x] 1. Link / tap-action (`link {kind: url|slide, target}`; PPTX hyperlinks + PDF link annotations). Core PR #33, UI PR #34 (object actions → Link)
-- [x] 2. Chart (object kind, renderer, panel, both exporters). Native PPTX chart (chosen). Core PR #36, app PR #37. Known limits: literal data (no Edit Data in PowerPoint); the sheet edits the first series only
+  - [x] 1a. Link badge on linked objects in edit mode (never while presenting)
+  - [x] 1b. Presenter taps follow links: `url` opens outside the app (http, https, mailto only), `slide` jumps to that slide. A link tap does not also turn the page
+- [x] 2. Chart (object kind, renderer, panel, both exporters). Native PPTX chart (chosen). Core PR #36, app PR #37. Known limits: literal data (no Edit Data in PowerPoint)
+  - [x] 2a. Uncolored series take colors from the deck's DNA chart palette (`resolve_dna` → `chart_palette`; core and app share it)
+  - [x] 2b. The chart sheet edits every series' values (one column per series); names and colors are kept
 
 ### Wave 4 — AI / Worker
 - [~] Ink → text / math: DROPPED (user decision). The MCP server is the core product, so handwriting recognition is out of scope.

@@ -265,16 +265,21 @@ pub struct ChartSeries {
 pub const CHART_PALETTE: [&str; 6] = ["4F46E5", "10B981", "F59E0B", "EF4444", "6B7280", "0EA5E9"];
 
 impl ChartSeries {
-    /// The series color as 6 hex digits (no `#`). Index `i` picks a palette
-    /// color when the series has no valid color of its own.
-    pub fn color_at(&self, i: usize) -> String {
+    /// The series color as 6 hex digits (no `#`). Without a valid color of
+    /// its own, the series takes entry `i` of `palette` (the deck's chart
+    /// palette); an empty palette falls back to `CHART_PALETTE`.
+    pub fn color_at(&self, i: usize, palette: &[String]) -> String {
         if let Some(c) = &self.color {
             let h = c.trim_start_matches('#');
             if h.len() == 6 && h.chars().all(|ch| ch.is_ascii_hexdigit()) {
                 return h.to_ascii_uppercase();
             }
         }
-        CHART_PALETTE[i % CHART_PALETTE.len()].to_string()
+        if palette.is_empty() {
+            CHART_PALETTE[i % CHART_PALETTE.len()].to_string()
+        } else {
+            palette[i % palette.len()].clone()
+        }
     }
 }
 
@@ -725,11 +730,14 @@ mod chart_tests {
     #[test]
     fn series_color_accepts_hex_and_falls_back_to_palette() {
         let mut s = ChartSeries { name: "a".into(), values: vec![], color: Some("#10b981".into()) };
-        assert_eq!(s.color_at(0), "10B981");
+        assert_eq!(s.color_at(0, &[]), "10B981");
         s.color = Some("red".into());
-        assert_eq!(s.color_at(0), CHART_PALETTE[0]);
+        assert_eq!(s.color_at(0, &[]), CHART_PALETTE[0]);
         s.color = None;
-        assert_eq!(s.color_at(2), CHART_PALETTE[2]);
+        assert_eq!(s.color_at(2, &[]), CHART_PALETTE[2]);
+        let deck_pal: Vec<String> = vec!["AAAAAA".into(), "BBBBBB".into(), "CCCCCC".into()];
+        assert_eq!(s.color_at(1, &deck_pal), "BBBBBB");
+        assert_eq!(s.color_at(4, &deck_pal), "BBBBBB");
     }
 
     #[test]

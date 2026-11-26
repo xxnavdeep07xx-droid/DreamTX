@@ -35,6 +35,7 @@ extension _EditorDeckFlow on _EditorScreenState {
     if (accentHex != null && accentHex.length == 6) {
       _dnaAccentHex = accentHex.toUpperCase();
     }
+    _dnaChartPalette = chartPaletteFrom(r['dna']['chart_palette']);
     _dnaHexes = {
       for (final key in ['bg', 'surface', 'fg', 'muted', 'accent'])
         if (palette[key] is String &&

@@ -2,7 +2,11 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../theme.dart';
+
+import '../core/chart_math.dart';
 import '../core/ink_math.dart';
+import '../core/link_math.dart';
 import '../core/object_content.dart';
 import 'object_content_layer.dart';
 import 'rich_doc.dart';
@@ -43,6 +47,8 @@ class SlideStage extends StatelessWidget {
     this.imageMeta,
     this.selectedId,
     this.interactive = false,
+    this.showLinkBadges = false,
+    this.chartPalette = kChartPalette,
     this.inkTool,
     this.inkStyle = const InkStyle(colorHex: 'D03028', width: 8.0),
     this.onTextTap,
@@ -96,6 +102,13 @@ class SlideStage extends StatelessWidget {
   /// Selection / gesture wiring (the editor passes its own; the presenter
   /// passes nothing — the stage is read-only there).
   final String? selectedId;
+
+  /// Edit mode only: a small link mark on each object that has a tap link,
+  /// so the author can see which objects will act when presented.
+  final bool showLinkBadges;
+
+  /// The deck's DNA chart palette, for charts without their own colors.
+  final List<String> chartPalette;
   final bool interactive;
 
   /// The Draw tab's armed tool (null = not drawing) and its style —
@@ -202,6 +215,7 @@ class SlideStage extends StatelessWidget {
               final rot = ((obj['rotation'] ?? 0) as num?)?.toDouble() ?? 0.0;
               final contentChild = ObjectContent.hasContent(obj)
                   ? ObjectContentLayer(
+                      chartPalette: chartPalette,
                       objects: [obj],
                       designW: designW,
                       designH: designH,
@@ -214,6 +228,21 @@ class SlideStage extends StatelessWidget {
                       singleObject: true,
                     )
                   : scribblePaint(obj);
+              // The badge sits inside the rotated child, so it turns with
+              // the object; IgnorePointer keeps every tap on the object.
+              final badged = showLinkBadges && linkOf(obj) != null
+                  ? Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        contentChild,
+                        const Positioned(
+                          top: -7,
+                          right: -7,
+                          child: IgnorePointer(child: _LinkBadge()),
+                        ),
+                      ],
+                    )
+                  : contentChild;
               return Positioned(
                 left: x,
                 top: y,
@@ -222,9 +251,9 @@ class SlideStage extends StatelessWidget {
                 child: rot != 0
                     ? Transform.rotate(
                         angle: rot * math.pi / 180.0,
-                        child: contentChild,
+                        child: badged,
                       )
-                    : contentChild,
+                    : badged,
               );
             }(),
           // The interaction + selection overlay on TOP of everything: all
@@ -285,5 +314,25 @@ class SlideStage extends StatelessWidget {
         ],
       );
     });
+  }
+}
+
+/// The small link mark drawn on a linked object while editing.
+class _LinkBadge extends StatelessWidget {
+  const _LinkBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const ValueKey('link_badge'),
+      width: 18,
+      height: 18,
+      decoration: BoxDecoration(
+        color: kAccent,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 1.5),
+      ),
+      child: const Icon(Icons.link, size: 11, color: Colors.white),
+    );
   }
 }
