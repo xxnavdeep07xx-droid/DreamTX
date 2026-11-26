@@ -131,7 +131,7 @@ mod tests {
             },
             _ => SlideContent::Statement { text: "x".into(), attribution: None },
         };
-        Slide { hide_graphics: false, id: "s".into(), archetype: a, content, objects: Vec::new() }
+        Slide { background: None, hide_graphics: false, id: "s".into(), archetype: a, content, objects: Vec::new() }
     }
 
     #[test]
