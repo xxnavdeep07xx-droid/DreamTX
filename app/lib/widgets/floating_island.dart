@@ -72,6 +72,7 @@ class _FloatingIslandState extends State<FloatingIsland> {
       }),
       child: SizedBox(
         width: 22,
+        height: 48,
         child: Icon(Icons.drag_indicator,
             size: 18,
             color: _lifted ? const Color(0xFFFFFFFF) : const Color(0xFF6B6B74)),
@@ -109,14 +110,12 @@ class _FloatingIslandState extends State<FloatingIsland> {
           ),
           child: KeyedSubtree(
             key: _bodyKey,
-            child: IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  grip,
-                  Expanded(child: widget.child),
-                ],
-              ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                grip,
+                Expanded(child: widget.child),
+              ],
             ),
           ),
         ),
