@@ -402,6 +402,14 @@ extension _EditorChrome on _EditorScreenState {
               icon: const Icon(Icons.shuffle),
               onPressed: () => _applyDesign('next_variant'),
             ),
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: DreamChoiceChip(
+                  magenta: true,
+                  label: 'Hide graphics',
+                  selected: _slideHidesGraphics,
+                  onTap: _toggleSlideGraphics),
+            ),
           ],
         );
       case _NavTab.transitions:

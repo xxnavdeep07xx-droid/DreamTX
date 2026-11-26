@@ -77,6 +77,7 @@ pub fn layout_slide(deck: &Deck, slide: &Slide) -> Layout {
     let scale = r.scale;
     let w = deck_dims(deck).0;
     let mut b = Builder::new(&r, scale, w);
+    b.motif_on = !slide.hide_graphics;
     match &slide.content {
         SlideContent::Cover { kicker, title, subtitle } => b.cover(kicker.as_deref(), title, subtitle.as_deref()),
         SlideContent::Agenda { title, items } => b.agenda(title, items),
@@ -101,11 +102,13 @@ struct Builder {
     w: f64,
     elements: Vec<Element>,
     warnings: Vec<String>,
+    /// False when the slide hides its background graphics: motif stamps are skipped.
+    motif_on: bool,
 }
 
 impl Builder {
     fn new(r: &ResolvedDna, scale: f64, w: f64) -> Self {
-        Builder { r: r.clone(), scale, w, elements: Vec::new(), warnings: Vec::new() }
+        Builder { r: r.clone(), scale, w, elements: Vec::new(), warnings: Vec::new(), motif_on: true }
     }
 
     fn finish(mut self) -> Layout {
@@ -123,6 +126,9 @@ impl Builder {
     }
 
     fn motif_stamp(&mut self, y: f64) {
+        if !self.motif_on {
+            return;
+        }
         match self.r.motif {
             Motif::RuleLine => {
                 let c = self.r.palette.accent.clone();
@@ -441,11 +447,27 @@ mod tests {
 
     fn cover_slide() -> Slide {
         Slide {
+            hide_graphics: false,
             id: "s1".into(),
             archetype: Archetype::Cover,
             content: SlideContent::Cover { kicker: Some("Q3 review".into()), title: "Revenue up".into(), subtitle: Some("FY26".into()) },
             objects: Vec::new(),
         }
+    }
+
+    #[test]
+    fn hiding_graphics_drops_the_motif_only() {
+        let shown = cover_slide();
+        let mut hidden = cover_slide();
+        hidden.hide_graphics = true;
+        let deck = deck_for("16:9", shown.clone());
+        let a = layout_slide(&deck, &shown);
+        let b = layout_slide(&deck, &hidden);
+        // Same text and background; only the motif element is gone.
+        // Every motif variant pushes exactly one rect.
+        assert_eq!(a.elements.len() - b.elements.len(), 1);
+        let texts = |l: &Layout| l.elements.iter().filter(|e| matches!(e, Element::Text { .. })).count();
+        assert_eq!(texts(&a), texts(&b));
     }
 
     #[test]
@@ -478,6 +500,7 @@ mod tests {
     fn overflow_is_flagged_not_shrunk_forever() {
         let long = "word ".repeat(400);
         let slide = Slide {
+            hide_graphics: false,
             id: "s".into(),
             archetype: Archetype::Statement,
             content: SlideContent::Statement { text: long, attribution: None },

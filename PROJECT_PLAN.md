@@ -109,7 +109,7 @@ Status is checked against the code on `main` (`e3a1cf2`). The Design row holds t
 | 5 | Slide size (16:9, 16:10, 4:3, 1:1) | **Exists**, but in the Files drawer (Aspect sheet), not Design | Surface it from Design, or leave and link |
 | 6 | Custom slide size | **Missing** — presets only (`ASPECTS`) | Low priority |
 | 7 | Format Background (solid, gradient, picture; apply to all) | **Missing** — `Slide` and `Deck` have no background field. Background is the DNA `bg` only | Core change needed (protocol); high value |
-| 8 | Hide background graphics | **Missing** — the DNA motif (rule line, number stamp, edge bar) always draws | Small: a per-slide flag |
+| 8 | Hide background graphics | **Done** (this PR) — per-slide `hide_graphics` flag in the core; the DNA motif is skipped on that slide, and exports and the presenter follow it. Design row chip: "Hide graphics". MCP tool not added yet | — |
 | 9 | Design Ideas / Designer | **Not planned** — needs AI layout generation; the MCP server is the AI path | Out of scope for now |
 | 10 | Slide furniture (slide number, date, footer) | **Exists** (Wave 1 item 6, PR #32), in the View row | — |
 | 11 | Apply theme to selected slides only | **Missing** — `apply_dna` changes the whole deck | Decide with row 1 |
