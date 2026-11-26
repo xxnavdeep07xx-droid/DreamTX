@@ -57,6 +57,7 @@ class SlideStage extends StatelessWidget {
     this.onLasso,
     this.onLassoMove,
     this.showRuler = false,
+    this.inkReplay,
     this.onObjectLongPress,
     this.onCanvasLongPress,
     this.textController,
@@ -124,6 +125,10 @@ class SlideStage extends StatelessWidget {
   /// Draw R: the editor's ruler overlay (forwarded to the ink layer).
   final bool showRuler;
 
+  /// Draw E: the ink replay clock (0..1). Scribbles draw in z-order as it
+  /// runs; at 1 (the idle value) every scribble is whole. Null = no replay.
+  final Animation<double>? inkReplay;
+
   /// Long-press wiring (editing only; the presenter passes nothing —
   /// read-only stages never build the recognizers): an object long-press
   /// opens its actions sheet, an empty-canvas long-press pastes the
@@ -148,6 +153,31 @@ class SlideStage extends StatelessWidget {
     return LayoutBuilder(builder: (context, constraints) {
       final scale = math.min(constraints.biggest.width / designW,
           constraints.biggest.height / designH);
+      // Draw E: the replay's draw order — each scribble's index in z-order.
+      final replay = inkReplay;
+      final replayIndex = <Object?, int>{};
+      if (replay != null) {
+        final ids = inkScribbleIds(objects);
+        for (var i = 0; i < ids.length; i++) {
+          replayIndex[ids[i]] = i;
+        }
+      }
+      final replayCount = replayIndex.length;
+      Widget _scribblePaint(Map<String, dynamic> obj) {
+        final i = replayIndex[obj['id']];
+        if (replay == null || i == null) {
+          return ShapeObjectPaint(obj: obj, scale: scale);
+        }
+        return AnimatedBuilder(
+          animation: replay,
+          builder: (context, _) => ShapeObjectPaint(
+            obj: obj,
+            scale: scale,
+            replayProgress: inkReplayProgress(i, replayCount, replay.value),
+          ),
+        );
+      }
+
       return Stack(
         clipBehavior: Clip.none,
         children: [
@@ -183,7 +213,7 @@ class SlideStage extends StatelessWidget {
                       imageMeta: imageMeta,
                       singleObject: true,
                     )
-                  : ShapeObjectPaint(obj: obj, scale: scale);
+                  : _scribblePaint(obj);
               return Positioned(
                 left: x,
                 top: y,

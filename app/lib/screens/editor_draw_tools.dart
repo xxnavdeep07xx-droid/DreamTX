@@ -270,6 +270,7 @@ class _DrawToolboxRow extends StatelessWidget {
     required this.palette,
     required this.onChanged,
     this.onClearAll,
+    this.onReplayInk,
     this.onNotice,
     this.lassoCount = 0,
     this.onLassoColor,
@@ -290,6 +291,9 @@ class _DrawToolboxRow extends StatelessWidget {
 
   /// "Erase all ink on slide" — the eraser's clear button. Null hides it.
   final VoidCallback? onClearAll;
+
+  /// Draw E: replay the slide's ink in draw order. Null hides the button.
+  final VoidCallback? onReplayInk;
 
   /// A short confirmation or limit message (save / duplicate / full /
   /// removed). Null drops the notices silently.
@@ -426,6 +430,13 @@ class _DrawToolboxRow extends StatelessWidget {
               active: state.ruler,
               onTap: () => onChanged(state.rulerToggled()),
             ),
+            if (onReplayInk != null)
+              _DrawToolButton(
+                icon: Icons.replay,
+                tooltip: 'Replay ink',
+                active: false,
+                onTap: onReplayInk!,
+              ),
           ],
         ),
           ),

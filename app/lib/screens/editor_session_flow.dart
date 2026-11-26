@@ -105,6 +105,18 @@ extension _EditorSessionFlow on _EditorScreenState {
     _toast('Cleared ${ids.length} stroke${ids.length == 1 ? '' : 's'}');
   }
 
+  /// Draw E: replay the slide's ink in draw order. Display only — nothing
+  /// in the deck changes and nothing is exported.
+  void _replayInk() {
+    final count = inkScribbleIds(_objects).length;
+    if (count == 0) {
+      _toast('No ink on this slide');
+      return;
+    }
+    _inkReplay.duration = inkReplayDuration(count);
+    _inkReplay.forward(from: 0);
+  }
+
   /// The Draw toolbox's one mutation point (the row's onChanged): state
   /// in, state out. Arming through a tool tap clears the selection (draw
   /// focus — the armed tool consumes canvas taps); style edits and band

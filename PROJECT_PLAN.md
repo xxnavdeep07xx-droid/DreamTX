@@ -48,7 +48,7 @@ See section 4 for the full PowerPoint Draw-tab map.
 - [x] B. Lasso select — PR #24 (loop selects; move, recolor, delete as one undo step each; selection is editor-owned, not an engine group)
 - [x] R. Ruler — PR #25 (editor-only tick rulers on the top and left edges; toggled from the Draw row; never exported)
 - [x] D. Ink → shape, locally (line / rect / ellipse / triangle; deterministic heuristics; arrow not built) — PR #26
-- [ ] E. Ink replay (strokes animate in draw order)
+- [x] E. Ink replay (strokes animate in draw order; Draw-row button; display only, never exported) — PR #27
 - [ ] C. Floating island (dock, 500 ms hold to lift, compact mode, persisted position, coach mark)
 
 ### Wave 3 — Insert Tier 2 (core/protocol changes)
@@ -81,7 +81,7 @@ Status is checked against the code on `ad4b7d9` (before Draw A-1).
 | 9 | Pencil / pen tip styles | **Done** (A-2, PR #23) — thin translucent pen tip (no texture: the model has no grain) | — |
 | 10 | Lasso select | **Done** (B, PR #24) — frame-center rule; move / recolor / delete as one batch | — |
 | 11 | Ruler | **Done** (R, PR #25) — editor-only overlay | — |
-| 12 | Ink replay | Missing | **E** |
+| 12 | Ink replay | **Done** (E, PR #27) — replay button on the Draw row; scribbles draw in z-order; shapes from ink are not replayed | — |
 | 13 | Ink to shape | **Done** (D, PR #26) — line, rect, ellipse, triangle; arrow not built | Arrow left as a follow-up |
 | 14 | Ink to text | Missing — needs handwriting recognition | **Wave 4** (AI/Worker) |
 | 15 | Ink to math | Missing — needs math recognition | **Wave 4** (AI/Worker) |
@@ -110,7 +110,7 @@ Extra (not PowerPoint, from the Draw v2 plan): **C. Floating island** (see Wave 
 
 ## 6. Checklist (live status)
 
-Last updated: 2026-11-25 (Draw D merged via PR #26).
+Last updated: 2026-11-25 (Draw E in PR #27).
 
 - [x] Permanent plan file created (this file)
 - [x] Draw-tab feature map written (section 4)
@@ -119,7 +119,7 @@ Last updated: 2026-11-25 (Draw D merged via PR #26).
 - [x] B Lasso select (PR #24)
 - [x] R Ruler (PR #25)
 - [x] D Ink → shape (PR #26)
-- [ ] E Ink replay
+- [x] E Ink replay (PR #27)
 - [ ] C Floating island
 - [ ] Wave 1 items 6–7
 - [ ] Wave 3 items 1–2
