@@ -385,14 +385,21 @@ extension _EditorBuildFlow on _EditorScreenState {
                           if (_mode == _Mode.editing &&
                               _navTab == _NavTab.draw)
                             Positioned(
-                              left: 0,
-                              right: 0,
-                              top: _islandDock == IslandDock.top ? 0 : null,
+                              // Full: the canvas width. Compact: the side.
+                              left: !_island.compact ||
+                                      _island.side == IslandSide.left
+                                  ? 0
+                                  : null,
+                              right: !_island.compact ||
+                                      _island.side == IslandSide.right
+                                  ? 0
+                                  : null,
+                              top: _island.dock == IslandDock.top ? 0 : null,
                               bottom:
-                                  _islandDock == IslandDock.bottom ? 0 : null,
+                                  _island.dock == IslandDock.bottom ? 0 : null,
                               child: FloatingIsland(
-                                dock: _islandDock,
-                                onDock: _setIslandDock,
+                                placement: _island,
+                                onPlace: _setIsland,
                                 child: _contextualRow(),
                               ),
                             ),

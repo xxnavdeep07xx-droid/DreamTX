@@ -4,23 +4,27 @@ import 'package:material_ui/material_ui.dart';
 import '../core/island_math.dart';
 import '../theme.dart';
 
-/// Draw C: a floating island — the contextual toolbar lifted off the
-/// band. It docks to the canvas's top or bottom edge. A 500 ms hold on
-/// the grip lifts it (haptic + shadow); it follows the finger; release
-/// magnets it to the nearer edge and reports the dock via [onDock].
+/// Draw C: a floating island over the canvas. Full mode is the toolbar
+/// spanning the canvas width, docked top or bottom. Compact mode is a
+/// narrow column that docks to any corner. A 500 ms hold on the grip
+/// lifts it (haptic + shadow); it follows the finger; release magnets it
+/// to the nearest dock and reports the placement via [onPlace].
 ///
-/// Only the grip starts a drag: the toolbar's own buttons keep their
-/// taps and long-presses (the pen presets remove on long-press).
+/// The island lives inside the canvas area only, so it never covers the
+/// ribbon or the filmstrip (the keep-outs).
+///
+/// Only the grip starts a drag: the toolbar's own buttons keep their taps
+/// and long-presses (the pen presets remove on long-press).
 class FloatingIsland extends StatefulWidget {
   const FloatingIsland({
     super.key,
-    required this.dock,
-    required this.onDock,
+    required this.placement,
+    required this.onPlace,
     required this.child,
   });
 
-  final IslandDock dock;
-  final ValueChanged<IslandDock> onDock;
+  final IslandPlacement placement;
+  final ValueChanged<IslandPlacement> onPlace;
   final Widget child;
 
   @override
@@ -30,36 +34,54 @@ class FloatingIsland extends StatefulWidget {
 class _FloatingIslandState extends State<FloatingIsland> {
   final _bodyKey = GlobalKey();
   bool _lifted = false;
+  double _dx = 0;
   double _dy = 0;
+  double _areaW = 0;
   double _areaH = 0;
 
-  double get _h => _bodyKey.currentContext?.size?.height ?? 48;
+  Size get _body => _bodyKey.currentContext?.size ?? const Size(360, 48);
 
   void _lift() {
     HapticFeedback.mediumImpact();
     setState(() {
       _lifted = true;
+      _dx = 0;
       _dy = 0;
     });
   }
 
   void _follow(LongPressMoveUpdateDetails d) {
+    final p = widget.placement;
+    final b = _body;
     setState(() {
-      _dy = islandDyClamp(widget.dock, d.offsetFromOrigin.dy, _areaH, _h);
+      _dx = islandDxClamp(p.side, d.offsetFromOrigin.dx, _areaW, b.width);
+      _dy = islandDyClamp(p.dock, d.offsetFromOrigin.dy, _areaH, b.height);
     });
   }
 
   void _release() {
-    final next = islandSnap(widget.dock, _dy, _areaH, _h);
+    final p = widget.placement;
+    final b = _body;
+    final IslandPlacement next;
+    if (p.compact) {
+      final c = islandSnapCorner(
+          p, _dx, _dy, _areaW, _areaH, b.width, b.height);
+      next = p.copyWith(dock: c.dock, side: c.side);
+    } else {
+      next = p.copyWith(
+          dock: islandSnap(p.dock, _dy, _areaH, b.height));
+    }
     setState(() {
       _lifted = false;
+      _dx = 0;
       _dy = 0;
     });
-    widget.onDock(next);
+    widget.onPlace(next);
   }
 
   @override
   Widget build(BuildContext context) {
+    final p = widget.placement;
     final grip = GestureDetector(
       key: const ValueKey('island_grip'),
       behavior: HitTestBehavior.opaque,
@@ -68,6 +90,7 @@ class _FloatingIslandState extends State<FloatingIsland> {
       onLongPressEnd: (_) => _release(),
       onLongPressCancel: () => setState(() {
         _lifted = false;
+        _dx = 0;
         _dy = 0;
       }),
       child: SizedBox(
@@ -80,46 +103,45 @@ class _FloatingIslandState extends State<FloatingIsland> {
     );
 
     return LayoutBuilder(builder: (context, constraints) {
-      // The area's height is the Stack's; the island's own height is
-      // measured on its body after layout (see [_h]).
+      _areaW = constraints.maxWidth;
       _areaH = constraints.maxHeight;
-      // The island takes its natural height (the palette band grows it);
-      // only the width is the canvas's. Without this, a short canvas
-      // overflowed the column when the band opened.
+      // The island takes its natural height (the palette band grows it).
+      // Full mode is width-bound by the canvas; compact is natural width.
       return UnconstrainedBox(
-        constrainedAxis: Axis.horizontal,
-        alignment: widget.dock == IslandDock.top
+        constrainedAxis: p.compact ? null : Axis.horizontal,
+        alignment: p.dock == IslandDock.top
             ? Alignment.topCenter
             : Alignment.bottomCenter,
         child: Transform.translate(
-        offset: Offset(0, _dy),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          decoration: BoxDecoration(
-            color: kSurface,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: kHairline),
-            boxShadow: _lifted
-                ? const [
-                    BoxShadow(
-                        color: Color(0x88000000),
-                        blurRadius: 18,
-                        offset: Offset(0, 6)),
-                  ]
-                : const [],
-          ),
-          child: KeyedSubtree(
-            key: _bodyKey,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                grip,
-                Expanded(child: widget.child),
-              ],
+          offset: Offset(_dx, _dy),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            decoration: BoxDecoration(
+              color: kSurface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: kHairline),
+              boxShadow: _lifted
+                  ? const [
+                      BoxShadow(
+                          color: Color(0x88000000),
+                          blurRadius: 18,
+                          offset: Offset(0, 6)),
+                    ]
+                  : const [],
+            ),
+            child: KeyedSubtree(
+              key: _bodyKey,
+              child: Row(
+                mainAxisSize: p.compact ? MainAxisSize.min : MainAxisSize.max,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  grip,
+                  p.compact ? widget.child : Expanded(child: widget.child),
+                ],
+              ),
             ),
           ),
         ),
-      ),
       );
     });
   }

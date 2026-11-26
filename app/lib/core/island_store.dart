@@ -5,29 +5,28 @@ import 'package:path_provider/path_provider.dart';
 
 import 'island_math.dart';
 
-/// Draw C: the island's dock is remembered per device in one small JSON
-/// file. Every failure degrades to the default (bottom), never throws.
+/// Draw C: the island's placement is remembered per device in one small
+/// JSON file. Every failure degrades to the default, never throws.
 Future<File> _islandFile() async {
   final dir = await getApplicationDocumentsDirectory();
   return File('${dir.path}/island.json');
 }
 
-Future<IslandDock> loadIslandDock() async {
+Future<IslandPlacement> loadIslandPlacement() async {
   try {
     final f = await _islandFile();
-    if (!await f.exists()) return IslandDock.bottom;
-    final j = jsonDecode(await f.readAsString());
-    return islandDockFromName(j is Map ? j['dock'] as String? : null);
+    if (!await f.exists()) return const IslandPlacement();
+    return IslandPlacement.fromJson(jsonDecode(await f.readAsString()));
   } catch (_) {
-    return IslandDock.bottom;
+    return const IslandPlacement();
   }
 }
 
-Future<void> saveIslandDock(IslandDock dock) async {
+Future<void> saveIslandPlacement(IslandPlacement placement) async {
   try {
     final f = await _islandFile();
-    await f.writeAsString(jsonEncode({'dock': islandDockName(dock)}));
+    await f.writeAsString(jsonEncode(placement.toJson()));
   } catch (_) {
-    // Best effort: the island simply docks to its default next launch.
+    // Best effort: the island falls back to its default next launch.
   }
 }

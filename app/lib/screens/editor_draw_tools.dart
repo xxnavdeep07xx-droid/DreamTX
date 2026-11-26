@@ -271,6 +271,7 @@ class _DrawToolboxRow extends StatelessWidget {
     required this.onChanged,
     this.onClearAll,
     this.onReplayInk,
+    this.onCompact,
     this.onNotice,
     this.lassoCount = 0,
     this.onLassoColor,
@@ -294,6 +295,9 @@ class _DrawToolboxRow extends StatelessWidget {
 
   /// Draw E: replay the slide's ink in draw order. Null hides the button.
   final VoidCallback? onReplayInk;
+
+  /// Draw C-2: fold the toolbar into the compact column. Null hides it.
+  final VoidCallback? onCompact;
 
   /// A short confirmation or limit message (save / duplicate / full /
   /// removed). Null drops the notices silently.
@@ -436,6 +440,13 @@ class _DrawToolboxRow extends StatelessWidget {
                 tooltip: 'Replay ink',
                 active: false,
                 onTap: onReplayInk!,
+              ),
+            if (onCompact != null)
+              _DrawToolButton(
+                icon: Icons.unfold_less,
+                tooltip: 'Compact toolbar',
+                active: false,
+                onTap: onCompact!,
               ),
           ],
         ),
@@ -649,6 +660,101 @@ class _DrawToolButton extends StatelessWidget {
           visualDensity: VisualDensity.compact,
           style: IconButton.styleFrom(
             backgroundColor: active ? const Color(0x1FFFFFFF) : null,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Draw C-2: the compact island — the core tools as a narrow column and
+/// the colour dot. The dot opens the palette in a bottom sheet (the
+/// island's popover). Every action goes through the same [onChanged]
+/// the full toolbar uses, so both modes always agree.
+class _DrawToolboxCompact extends StatelessWidget {
+  const _DrawToolboxCompact({
+    required this.state,
+    required this.defaultPenHex,
+    required this.palette,
+    required this.onChanged,
+    required this.onExpand,
+  });
+
+  final _DrawToolboxState state;
+  final String defaultPenHex;
+  final List<Color> palette;
+  final ValueChanged<_DrawToolboxState> onChanged;
+  final VoidCallback onExpand;
+
+  @override
+  Widget build(BuildContext context) {
+    final inkTool =
+        state.tool == InkTool.pen || state.tool == InkTool.highlighter;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _DrawToolButton(
+          icon: Icons.open_in_full,
+          tooltip: 'Full toolbar',
+          active: false,
+          onTap: onExpand,
+        ),
+        _DrawToolButton(
+          icon: Icons.edit,
+          tooltip: 'Pen',
+          active: state.armed && state.tool == InkTool.pen && !state.pencil,
+          onTap: () => onChanged(state.penTapped(pencilTip: false)),
+        ),
+        _DrawToolButton(
+          icon: Icons.highlight,
+          tooltip: 'Highlighter',
+          active: state.armed && state.tool == InkTool.highlighter,
+          onTap: () => onChanged(state.toolTapped(InkTool.highlighter)),
+        ),
+        _DrawToolButton(
+          icon: Icons.backspace_outlined,
+          tooltip: 'Eraser',
+          active: state.armed && state.tool == InkTool.eraser,
+          onTap: () => onChanged(state.toolTapped(InkTool.eraser)),
+        ),
+        _DrawToolButton(
+          icon: Icons.highlight_alt,
+          tooltip: 'Lasso select',
+          active: state.armed && state.tool == InkTool.lasso,
+          onTap: () => onChanged(state.toolTapped(InkTool.lasso)),
+        ),
+        if (inkTool)
+          _ColorChipButton(
+            colorHex: state.colorHexFor(defaultPenHex: defaultPenHex),
+            tooltip: 'Color',
+            onTap: () => _openPalette(context),
+          ),
+      ],
+    );
+  }
+
+  void _openPalette(BuildContext context) {
+    final selected = state.colorHexFor(defaultPenHex: defaultPenHex);
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: kSurface,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: SizedBox(
+            height: 46,
+            width: double.infinity,
+            child: DreamColorChips(
+              palette: palette,
+              selected: selected,
+              onPick: (hex) {
+                Navigator.of(sheetContext).pop();
+                if (hex != null) onChanged(state.colorPicked(hex));
+              },
+              horizontal: true,
+              chipSize: 30,
+              hideNone: true,
+            ),
           ),
         ),
       ),

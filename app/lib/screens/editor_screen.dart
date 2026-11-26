@@ -89,8 +89,8 @@ class _EditorScreenState extends State<EditorScreen>
   late final AnimationController _inkReplay =
       AnimationController(vsync: this, value: 1.0);
 
-  /// Draw C: where the Draw island is docked (remembered per device).
-  IslandDock _islandDock = IslandDock.bottom;
+  /// Draw C: where the Draw island sits and what it shows (per device).
+  IslandPlacement _island = const IslandPlacement();
   Map<String, dynamic>? _layout;
   List<String> _warnings = [];
   bool _busy = false;
@@ -293,8 +293,8 @@ class _EditorScreenState extends State<EditorScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _deck = Map<String, dynamic>.from(widget.deck);
-    loadIslandDock().then((dock) {
-      if (mounted) setState(() => _islandDock = dock);
+    loadIslandPlacement().then((placement) {
+      if (mounted) setState(() => _island = placement);
     });
     final meta = Bridge.command({'op': 'meta'});
     _objectPresets = ((meta['object_presets'] as List?) ?? const [])
