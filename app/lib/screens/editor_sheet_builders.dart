@@ -288,7 +288,14 @@ class _SlideActionsSheet extends StatelessWidget {
 /// orchestrating method maps it onto the deck. Apply style stays disabled
 /// until a style has been picked up — the subtitle says what's missing.
 class _ObjectActionsSheet extends StatelessWidget {
-  const _ObjectActionsSheet({required this.canApplyStyle, required this.linkText});
+  const _ObjectActionsSheet({
+    required this.canApplyStyle,
+    required this.linkText,
+    required this.isChart,
+  });
+
+  /// Whether the object is a native chart (adds Edit chart).
+  final bool isChart;
 
   /// Whether the style clipboard holds a pickup (Copy style ran first).
   final bool canApplyStyle;
@@ -336,6 +343,14 @@ class _ObjectActionsSheet extends StatelessWidget {
               style: const TextStyle(fontSize: 11.5)),
           onTap: () => Navigator.pop(context, 'applyStyle'),
         ),
+        if (isChart)
+          ListTile(
+            leading: const Icon(Icons.bar_chart),
+            title: const Text('Edit chart'),
+            subtitle: const Text('Title, style, and data',
+                style: TextStyle(fontSize: 11.5)),
+            onTap: () => Navigator.pop(context, 'chart'),
+          ),
         ListTile(
           leading: const Icon(Icons.link),
           title: const Text('Link'),

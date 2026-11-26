@@ -297,6 +297,7 @@ extension _EditorObjectOps on _EditorScreenState {
       builder: (context) => _ObjectActionsSheet(
         canApplyStyle: _styleClipboard != null,
         linkText: linkDescription(linkOf(obj), _slides, _slideTitle),
+        isChart: ObjectContent.isChart(obj),
       ),
     );
     switch (action) {
@@ -310,9 +311,33 @@ extension _EditorObjectOps on _EditorScreenState {
         _applyStyle(obj);
       case 'link':
         _editLinkOf(id);
+      case 'chart':
+        _editChartOf(id);
       case 'del':
         _deleteObject(id);
     }
+  }
+
+  /// Object actions → Edit chart: change the chart's data and style, then
+  /// write the new content through the style path (one undo step).
+  void _editChartOf(String id) {
+    Map<String, dynamic>? obj;
+    for (final o in _objects) {
+      if (o['id'] == id) obj = o;
+    }
+    if (obj == null) return;
+    final current = obj;
+    final data = chartDataOf(ObjectContent.of(current));
+    if (data == null) return;
+    dreamSheet<ChartData>(
+      context,
+      builder: (context) => ChartSheet(data: data),
+    ).then((picked) {
+      if (picked == null) return;
+      final updated = Map<String, dynamic>.from(current);
+      updated['content'] = ObjectContent.chart(picked);
+      _styleChanged(updated);
+    });
   }
 
   /// Object actions → Link: pick none, a web address, or a slide, then

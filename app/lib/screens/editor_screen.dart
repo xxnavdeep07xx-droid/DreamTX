@@ -12,6 +12,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../core/aspects.dart';
 import '../core/bridge.dart';
+import '../core/chart_math.dart';
 import '../core/color_utils.dart';
 import '../core/furniture_math.dart';
 import '../core/ink_math.dart';
@@ -24,6 +25,7 @@ import '../core/object_content.dart';
 import '../core/resources.dart';
 import '../core/store.dart';
 import '../theme.dart';
+import '../widgets/chart_sheet.dart';
 import '../widgets/content_editor.dart';
 import '../widgets/controls.dart';
 import '../widgets/design_sheets.dart';

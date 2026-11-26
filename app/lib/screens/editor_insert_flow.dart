@@ -193,6 +193,17 @@ extension _EditorInsertFlow on _EditorScreenState {
     );
   }
 
+  /// Chart: a column chart with sample data; edit it from the object menu.
+  void _insertChart() {
+    _insertObject(
+      _newContentObject(
+        w: 560,
+        h: 340,
+        content: ObjectContent.chart(defaultChartData()),
+      ),
+    );
+  }
+
   /// Icon sticker from the searchable registry.
   void _insertIcon(String name) {
     _insertObject(

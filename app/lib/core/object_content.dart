@@ -6,6 +6,7 @@ library;
 
 import 'dart:math' as math;
 
+import 'chart_math.dart';
 import 'color_utils.dart';
 import '../widgets/rich_doc.dart';
 
@@ -15,6 +16,7 @@ const kContentImage = 'image';
 const kContentIcon = 'icon';
 const kContentMedia = 'media';
 const kContentTable = 'table';
+const kContentChart = 'chart';
 
 class ObjectContent {
   ObjectContent._();
@@ -37,6 +39,11 @@ class ObjectContent {
       kindOf(obj) == kContentMedia;
   static bool isTable(Map<String, dynamic> obj) =>
       kindOf(obj) == kContentTable;
+  static bool isChart(Map<String, dynamic> obj) =>
+      kindOf(obj) == kContentChart;
+
+  /// A native chart payload (see chart_math.dart).
+  static Map<String, dynamic> chart(ChartData d) => chartPayload(d);
 
   static bool hasContent(Map<String, dynamic> obj) => of(obj) != null;
 
@@ -203,6 +210,8 @@ class ObjectContent {
         return n.isEmpty ? 'Media' : n;
       case kContentTable:
         return 'Table';
+      case kContentChart:
+        return 'Chart';
     }
     return (obj['preset'] ?? 'shape').toString().replaceAll('_', ' ');
   }

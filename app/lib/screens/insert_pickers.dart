@@ -201,14 +201,17 @@ class _InsertSheetState extends State<InsertSheet> {
             ),
           ]),
           const SizedBox(height: 10),
-          // The seventh card — WordArt: styled-text presets over a plain
-          // text box. Full-width for now; Chart and Link join this row in
-          // Tier 2 to complete the 3×3 grid.
+          // WordArt (styled-text presets over a plain text box) and Chart.
           DreamTileRow(tiles: [
             DreamToolTile(
               icon: Icons.auto_awesome,
               label: 'WordArt',
               onTap: widget.onInsertWordArt,
+            ),
+            DreamToolTile(
+              icon: Icons.bar_chart,
+              label: 'Chart',
+              onTap: widget.onInsertChart,
             ),
           ]),
         ],

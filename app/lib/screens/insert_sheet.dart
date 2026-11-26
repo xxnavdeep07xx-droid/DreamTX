@@ -51,6 +51,7 @@ class InsertSheet extends StatefulWidget {
     required this.onPickImage,
     required this.onPickShape,
     required this.onInsertTable,
+    required this.onInsertChart,
     required this.onInsertIcon,
     required this.onPickMedia,
     this.onPlayMedia,
@@ -94,6 +95,9 @@ class InsertSheet extends StatefulWidget {
 
   final void Function(String preset) onPickShape;
   final VoidCallback onInsertTable;
+
+  /// Inserts a native chart with sample data (edit it from the object menu).
+  final VoidCallback onInsertChart;
 
   /// Inserts an icon sticker by registry name.
   final void Function(String iconName) onInsertIcon;

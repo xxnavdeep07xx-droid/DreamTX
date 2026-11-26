@@ -600,6 +600,7 @@ extension _EditorBuildFlow on _EditorScreenState {
                                   onPickImage: _pickImage,
                                   onPickShape: _addObject,
                                   onInsertTable: _insertTable,
+                                  onInsertChart: _insertChart,
                                   onInsertIcon: _insertIcon,
                                   onPickMedia: _pickMedia,
                                   onPlayMedia: _playMedia,

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../core/chart_math.dart';
 import '../core/color_utils.dart';
 import '../core/object_content.dart';
 import '../theme.dart';
@@ -137,6 +138,8 @@ class ObjectContentLayer extends StatelessWidget {
         return _IconView(obj: obj, baseColor: baseColor);
       case kContentMedia:
         return _MediaView(obj: obj, resolve: resolveResourcePath);
+      case kContentChart:
+        return _ChartView(obj: obj, baseColor: baseColor);
       case kContentTable:
         return _TableView(
           obj: obj,
@@ -855,6 +858,218 @@ class _MediaView extends StatelessWidget {
 // ---------------------------------------------------------------------------
 // Table
 // ---------------------------------------------------------------------------
+
+/// A native chart, drawn in the object's design space (same geometry as the
+/// PDF export, so the canvas and the export agree).
+class _ChartView extends StatelessWidget {
+  const _ChartView({required this.obj, required this.baseColor});
+
+  final Map<String, dynamic> obj;
+  final Color baseColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final data = chartDataOf(ObjectContent.of(obj));
+    if (data == null) return const SizedBox.shrink();
+    final w = ((obj['w'] as num?) ?? 1).toDouble();
+    final h = ((obj['h'] as num?) ?? 1).toDouble();
+    return LayoutBuilder(builder: (context, constraints) {
+      final scale = constraints.maxWidth / w;
+      return _designScaled(
+        scale: scale,
+        w: w,
+        h: h,
+        child: Opacity(
+          opacity: _opacityOf(obj),
+          child: CustomPaint(
+            size: Size(w, h),
+            painter: ChartPainter(data: data, textColor: baseColor),
+          ),
+        ),
+      );
+    });
+  }
+}
+
+/// Paints a chart into a design-space canvas (origin top-left, y down).
+class ChartPainter extends CustomPainter {
+  ChartPainter({required this.data, required this.textColor});
+
+  final ChartData data;
+  final Color textColor;
+
+  Color _hex(String hex) => hexToColor(hex);
+
+  void _text(Canvas canvas, String s, Offset at,
+      {double size = 9, bool bold = false}) {
+    final tp = TextPainter(
+      text: TextSpan(
+        text: s,
+        style: TextStyle(
+          color: textColor,
+          fontSize: size,
+          fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, at);
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final style = data.style;
+    final series = data.series;
+    final labels = data.labels;
+    final axis = Paint()
+      ..color = const Color(0xFF9E9EA6)
+      ..strokeWidth = 0.5;
+
+    var top = 8.0;
+    final title = data.title;
+    if (title != null) {
+      _text(canvas, title, const Offset(8, 6), size: 14, bold: true);
+      top = 30.0;
+    }
+    const left = 8.0;
+    final right = w - 8.0;
+    final bottom = h - 34.0;
+    final legendY = h - 14.0;
+
+    // Legend: pie slices are named by label, other charts by series.
+    final legend = <(String, String)>[
+      if (style == 'pie')
+        for (var i = 0; i < labels.length; i++)
+          (
+            labels[i],
+            series.isEmpty ? '9E9EA6' : chartColorAt(series.first, i)
+          )
+      else
+        for (var i = 0; i < series.length; i++)
+          (series[i].name, chartColorAt(series[i], i)),
+    ];
+    if (legend.length > 1) {
+      var lx = left;
+      for (final (name, color) in legend) {
+        canvas.drawRect(Rect.fromLTWH(lx, legendY, 8, 8),
+            Paint()..color = _hex(color));
+        _text(canvas, name, Offset(lx + 12, legendY - 2));
+        lx += 12.0 + name.length * 5.5 + 14.0;
+      }
+    }
+
+    if (style == 'pie') {
+      final vals = series.isEmpty ? const <double>[] : series.first.values;
+      final total = vals.where((v) => v > 0).fold<double>(0, (a, b) => a + b);
+      if (total > 0) {
+        final rect = Rect.fromCircle(
+          center: Offset((left + right) / 2, (top + bottom) / 2),
+          radius: math.max(1, math.min(right - left, bottom - top) / 2),
+        );
+        var a = -math.pi / 2;
+        for (var i = 0; i < vals.length; i++) {
+          if (vals[i] <= 0) continue;
+          final sweep = vals[i] / total * 2 * math.pi;
+          canvas.drawArc(rect, a, sweep, true,
+              Paint()..color = _hex(chartColorAt(series.first, i)));
+          a += sweep;
+        }
+      }
+      return;
+    }
+
+    final n = math.max(
+        1,
+        math.max(labels.length,
+            series.fold<int>(0, (m, s) => math.max(m, s.values.length))));
+    final (lo, hi) = chartRangeOf(series);
+    final span = hi - lo;
+    double bandOf(double slot) => slot * 0.7 / math.max(1, series.length);
+
+    if (style == 'bar') {
+      final pl = left + 70.0;
+      double xOf(double v) => pl + (v - lo) / span * (right - pl);
+      final zero = xOf(0);
+      final gs = (bottom - top) / n;
+      final band = bandOf(gs);
+      canvas.drawLine(Offset(zero, top), Offset(zero, bottom), axis);
+      for (var g = 0; g < n; g++) {
+        final gy = top + g * gs;
+        if (g < labels.length) {
+          _text(canvas, labels[g], Offset(left, gy + gs / 2 - 6));
+        }
+        for (var si = 0; si < series.length; si++) {
+          if (g >= series[si].values.length) continue;
+          final v = series[si].values[g];
+          final y0 = gy + gs * 0.15 + si * band;
+          canvas.drawRect(
+            Rect.fromLTRB(math.min(zero, xOf(v)), y0,
+                math.max(zero, xOf(v)), y0 + band),
+            Paint()..color = _hex(chartColorAt(series[si], si)),
+          );
+        }
+      }
+      return;
+    }
+
+    // Column and line: one group per label along the bottom.
+    final gw = (right - left) / n;
+    double yOf(double v) => top + (hi - v) / span * (bottom - top);
+    final zeroY = yOf(0);
+    canvas.drawLine(Offset(left, zeroY), Offset(right, zeroY), axis);
+    for (var g = 0; g < n && g < labels.length; g++) {
+      final cx = left + g * gw + gw / 2;
+      final tp = TextPainter(
+        text: TextSpan(
+            text: labels[g],
+            style: TextStyle(color: textColor, fontSize: 9)),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      _text(canvas, labels[g], Offset(cx - tp.width / 2, bottom + 4));
+    }
+    if (style == 'column') {
+      final band = bandOf(gw);
+      for (var g = 0; g < n; g++) {
+        final gx = left + g * gw;
+        for (var si = 0; si < series.length; si++) {
+          if (g >= series[si].values.length) continue;
+          final x0 = gx + gw * 0.15 + si * band;
+          canvas.drawRect(
+            Rect.fromLTRB(x0, yOf(series[si].values[g]), x0 + band, zeroY),
+            Paint()..color = _hex(chartColorAt(series[si], si)),
+          );
+        }
+      }
+    } else {
+      for (var si = 0; si < series.length; si++) {
+        final pts = <Offset>[
+          for (var g = 0; g < n && g < series[si].values.length; g++)
+            Offset(left + g * gw + gw / 2, yOf(series[si].values[g])),
+        ];
+        if (pts.length < 2) continue;
+        final color = _hex(chartColorAt(series[si], si));
+        final path = Path()..moveTo(pts.first.dx, pts.first.dy);
+        for (final p in pts.skip(1)) {
+          path.lineTo(p.dx, p.dy);
+        }
+        canvas.drawPath(
+            path,
+            Paint()
+              ..color = color
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 2);
+        for (final p in pts) {
+          canvas.drawCircle(p, 3, Paint()..color = color);
+        }
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant ChartPainter old) => true;
+}
 
 class _TableView extends StatelessWidget {
   const _TableView({
