@@ -55,13 +55,13 @@ void main() {
     const data = ChartData(
       style: 'line',
       title: 'T',
-      labels: const ['Q1'],
-      series: const [
+      labels: ['Q1'],
+      series: [
         ChartSeriesData(name: 'A', values: [1]),
         ChartSeriesData(name: 'B', values: [2]),
       ],
     );
-    await tester.pumpWidget(MaterialApp(
+    await tester.pumpWidget(const MaterialApp(
         home: Scaffold(body: ChartSheet(data: data))));
     await tester.pumpAndSettle();
 
