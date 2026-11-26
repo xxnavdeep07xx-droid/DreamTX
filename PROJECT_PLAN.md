@@ -47,7 +47,7 @@ See section 4 for the full PowerPoint Draw-tab map.
 - [x] A-2. Pen presets (saved tool chips, cap 6) + pencil tip style — PR #23
 - [x] B. Lasso select — PR #24 (loop selects; move, recolor, delete as one undo step each; selection is editor-owned, not an engine group)
 - [x] R. Ruler — PR #25 (editor-only tick rulers on the top and left edges; toggled from the Draw row; never exported)
-- [ ] D. Ink → shape, locally (line / rect / ellipse / triangle / arrow; deterministic heuristics)
+- [x] D. Ink → shape, locally (line / rect / ellipse / triangle; deterministic heuristics; arrow not built) — PR #26
 - [ ] E. Ink replay (strokes animate in draw order)
 - [ ] C. Floating island (dock, 500 ms hold to lift, compact mode, persisted position, coach mark)
 
@@ -82,7 +82,7 @@ Status is checked against the code on `ad4b7d9` (before Draw A-1).
 | 10 | Lasso select | **Done** (B, PR #24) — frame-center rule; move / recolor / delete as one batch | — |
 | 11 | Ruler | **Done** (R, PR #25) — editor-only overlay | — |
 | 12 | Ink replay | Missing | **E** |
-| 13 | Ink to shape | Missing | **D** |
+| 13 | Ink to shape | **Done** (D, PR #26) — line, rect, ellipse, triangle; arrow not built | Arrow left as a follow-up |
 | 14 | Ink to text | Missing — needs handwriting recognition | **Wave 4** (AI/Worker) |
 | 15 | Ink to math | Missing — needs math recognition | **Wave 4** (AI/Worker) |
 | 16 | Draw with touch (touch draws instead of selects) | **Covered** — Draw is an armed mode; the canvas consumes touches while armed; tap the tool again to disarm | — |
@@ -110,7 +110,7 @@ Extra (not PowerPoint, from the Draw v2 plan): **C. Floating island** (see Wave 
 
 ## 6. Checklist (live status)
 
-Last updated: 2026-11-25 (Draw A-1 merged via PR #22).
+Last updated: 2026-11-25 (Draw D merged via PR #26).
 
 - [x] Permanent plan file created (this file)
 - [x] Draw-tab feature map written (section 4)
@@ -118,7 +118,7 @@ Last updated: 2026-11-25 (Draw A-1 merged via PR #22).
 - [x] A-2 Pen presets + pencil tip (PR #23)
 - [x] B Lasso select (PR #24)
 - [x] R Ruler (PR #25)
-- [ ] D Ink → shape
+- [x] D Ink → shape (PR #26)
 - [ ] E Ink replay
 - [ ] C Floating island
 - [ ] Wave 1 items 6–7
