@@ -78,6 +78,7 @@ pub fn layout_slide(deck: &Deck, slide: &Slide) -> Layout {
     let w = deck_dims(deck).0;
     let mut b = Builder::new(&r, scale, w);
     b.motif_on = !slide.hide_graphics;
+    b.bg_override = slide.background.clone();
     match &slide.content {
         SlideContent::Cover { kicker, title, subtitle } => b.cover(kicker.as_deref(), title, subtitle.as_deref()),
         SlideContent::Agenda { title, items } => b.agenda(title, items),
@@ -95,6 +96,19 @@ pub fn layout_slide(deck: &Deck, slide: &Slide) -> Layout {
     b.finish()
 }
 
+/// The text ink that reads on `bg`: the DNA ink when it has enough contrast,
+/// otherwise white or black, whichever contrasts more.
+fn readable_ink(bg: &str, fg: &str) -> String {
+    if crate::dna::contrast(fg, bg) >= 4.5 {
+        return fg.to_string();
+    }
+    if crate::dna::contrast("FFFFFF", bg) >= crate::dna::contrast("000000", bg) {
+        "FFFFFF".to_string()
+    } else {
+        "000000".to_string()
+    }
+}
+
 struct Builder {
     r: ResolvedDna,
     scale: f64,
@@ -104,16 +118,31 @@ struct Builder {
     warnings: Vec<String>,
     /// False when the slide hides its background graphics: motif stamps are skipped.
     motif_on: bool,
+    /// The slide's own background color, when it has one.
+    bg_override: Option<String>,
 }
 
 impl Builder {
     fn new(r: &ResolvedDna, scale: f64, w: f64) -> Self {
-        Builder { r: r.clone(), scale, w, elements: Vec::new(), warnings: Vec::new(), motif_on: true }
+        Builder { r: r.clone(), scale, w, elements: Vec::new(), warnings: Vec::new(), motif_on: true, bg_override: None }
     }
 
     fn finish(mut self) -> Layout {
-        // Full-bleed background.
-        let bg = self.r.palette.bg.clone();
+        // Full-bleed background: the slide's own color when it has one.
+        let bg = self.bg_override.clone().unwrap_or_else(|| self.r.palette.bg.clone());
+        if self.bg_override.is_some() {
+            // Text drawn in the DNA ink only switches when it would not read on
+            // the new background; other inks (accents, cards) are left alone.
+            let fg = self.r.palette.fg.clone();
+            let ink = readable_ink(&bg, &fg);
+            for el in self.elements.iter_mut() {
+                if let Element::Text { color, .. } = el {
+                    if *color == fg {
+                        *color = ink.clone();
+                    }
+                }
+            }
+        }
         self.elements.insert(
             0,
             Element::Rect { x: 0.0, y: 0.0, w: self.w, h: SLIDE_H, color: bg, radius: 0.0 },
@@ -447,11 +476,33 @@ mod tests {
 
     fn cover_slide() -> Slide {
         Slide {
+            background: None,
             hide_graphics: false,
             id: "s1".into(),
             archetype: Archetype::Cover,
             content: SlideContent::Cover { kicker: Some("Q3 review".into()), title: "Revenue up".into(), subtitle: Some("FY26".into()) },
             objects: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn slide_background_sets_the_base_and_keeps_text_readable() {
+        let mut slide = cover_slide();
+        slide.background = Some("101010".into());
+        let deck = deck_for("16:9", slide.clone());
+        let l = layout_slide(&deck, &slide);
+        match &l.elements[0] {
+            Element::Rect { color, .. } => assert_eq!(color, "101010"),
+            _ => panic!("expected the background rect first"),
+        }
+        // If the DNA ink does not read on the new background, no text keeps it.
+        let fg = crate::dna::resolve(&deck.dna).palette.fg;
+        if crate::dna::contrast(&fg, "101010") < 4.5 {
+            for e in &l.elements {
+                if let Element::Text { color, .. } = e {
+                    assert_ne!(color, &fg);
+                }
+            }
         }
     }
 
@@ -500,6 +551,7 @@ mod tests {
     fn overflow_is_flagged_not_shrunk_forever() {
         let long = "word ".repeat(400);
         let slide = Slide {
+            background: None,
             hide_graphics: false,
             id: "s".into(),
             archetype: Archetype::Statement,

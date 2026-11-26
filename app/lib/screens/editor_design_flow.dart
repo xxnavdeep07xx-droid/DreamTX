@@ -15,6 +15,34 @@ extension _EditorDesignFlow on _EditorScreenState {
     if (r['ok'] == true && r['deck'] is Map) _mutate(r['deck'] as Map);
   }
 
+  /// Design tab: the current slide's own background (6 hex digits), or null
+  /// when it uses the DNA background.
+  String? get _slideBackground {
+    if (_slides.isEmpty) return null;
+    final b = _slides[_index]['background'];
+    return b is String ? b.toUpperCase() : null;
+  }
+
+  /// Design tab: set or clear the background of the current slide, or of
+  /// every slide with [all]. One undo step; the engine owns the value, so
+  /// the canvas, presenter and exports all follow it.
+  void _setSlideBackground(String? hex, {bool all = false}) {
+    final id = _slideId;
+    if (id == null) return;
+    final r = Bridge.command({
+      'op': 'set_slide_background',
+      'deck': _deck,
+      'slide_id': id,
+      'color': hex,
+      'apply_all': all,
+    });
+    if (r['ok'] == true && r['deck'] is Map) {
+      _mutate(r['deck'] as Map);
+    } else {
+      _toast('Could not change the background');
+    }
+  }
+
   /// Design tab: whether the current slide hides the DNA background graphics.
   bool get _slideHidesGraphics =>
       _slides.isNotEmpty && _slides[_index]['hide_graphics'] == true;
@@ -428,5 +456,38 @@ extension _EditorDesignFlow on _EditorScreenState {
   void _toast(String msg) {
     if (!mounted) return; // async flows can outlive the editor
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+}
+
+/// One background swatch in the Design band: a filled circle, ringed in the
+/// accent when it is the current slide's background.
+class _BackgroundSwatch extends StatelessWidget {
+  const _BackgroundSwatch({
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: selected ? kAccent : kText3,
+            width: selected ? 2.5 : 1,
+          ),
+        ),
+      ),
+    );
   }
 }
