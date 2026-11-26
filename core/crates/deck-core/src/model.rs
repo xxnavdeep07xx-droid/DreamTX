@@ -222,6 +222,77 @@ pub enum ObjectContent {
         #[serde(default)]
         cells: Vec<String>,
     },
+    /// A native chart with literal data: `labels` are the categories and
+    /// each series holds one value per label. PPTX gets a real chart part;
+    /// PDF gets the same drawing as vectors.
+    Chart {
+        style: ChartStyle,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        #[serde(default)]
+        labels: Vec<String>,
+        #[serde(default)]
+        series: Vec<ChartSeries>,
+    },
+}
+
+/// How a chart draws its data.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ChartStyle {
+    /// Vertical bars, one group per label.
+    Column,
+    /// Horizontal bars, one group per label.
+    Bar,
+    /// One line per series across the labels.
+    Line,
+    /// A pie of the first series; labels name the slices.
+    Pie,
+}
+
+/// One data series of a chart. `color` is a 6-digit hex (with or without
+/// `#`); anything else falls back to the palette.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ChartSeries {
+    pub name: String,
+    #[serde(default)]
+    pub values: Vec<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+}
+
+/// Default chart colors, used in order when a series has no valid color.
+pub const CHART_PALETTE: [&str; 6] = ["4F46E5", "10B981", "F59E0B", "EF4444", "6B7280", "0EA5E9"];
+
+impl ChartSeries {
+    /// The series color as 6 hex digits (no `#`). Index `i` picks a palette
+    /// color when the series has no valid color of its own.
+    pub fn color_at(&self, i: usize) -> String {
+        if let Some(c) = &self.color {
+            let h = c.trim_start_matches('#');
+            if h.len() == 6 && h.chars().all(|ch| ch.is_ascii_hexdigit()) {
+                return h.to_ascii_uppercase();
+            }
+        }
+        CHART_PALETTE[i % CHART_PALETTE.len()].to_string()
+    }
+}
+
+/// The value scale for a set of series: the lowest and highest values,
+/// always including zero. A flat range is widened by 1 so it still draws.
+pub fn chart_range(series: &[ChartSeries]) -> (f64, f64) {
+    let mut lo = 0.0_f64;
+    let mut hi = 0.0_f64;
+    for v in series.iter().flat_map(|s| s.values.iter().copied()) {
+        if v.is_finite() {
+            lo = lo.min(v);
+            hi = hi.max(v);
+        }
+    }
+    if hi <= lo {
+        hi = lo + 1.0;
+    }
+    (lo, hi)
 }
 
 /// A rich text document: plain text + formatting marks. Offsets are UTF-16
@@ -644,5 +715,45 @@ mod link_tests {
         assert_eq!(url("").safe_url(), None);
         let slide = Link { kind: LinkKind::Slide, target: "s2".into() };
         assert_eq!(slide.safe_url(), None);
+    }
+}
+
+#[cfg(test)]
+mod chart_tests {
+    use super::*;
+
+    #[test]
+    fn series_color_accepts_hex_and_falls_back_to_palette() {
+        let mut s = ChartSeries { name: "a".into(), values: vec![], color: Some("#10b981".into()) };
+        assert_eq!(s.color_at(0), "10B981");
+        s.color = Some("red".into());
+        assert_eq!(s.color_at(0), CHART_PALETTE[0]);
+        s.color = None;
+        assert_eq!(s.color_at(2), CHART_PALETTE[2]);
+    }
+
+    #[test]
+    fn chart_range_includes_zero_and_widens_flat_data() {
+        let s = vec![ChartSeries { name: "a".into(), values: vec![-2.0, 5.0], color: None }];
+        assert_eq!(chart_range(&s), (-2.0, 5.0));
+        let flat = vec![ChartSeries { name: "a".into(), values: vec![0.0, 0.0], color: None }];
+        assert_eq!(chart_range(&flat), (0.0, 1.0));
+    }
+
+    #[test]
+    fn chart_content_reads_from_json() {
+        let c: ObjectContent = serde_json::from_value(serde_json::json!({
+            "kind": "chart", "style": "pie", "labels": ["a"], "series": [{"name": "s", "values": [1]}]
+        }))
+        .unwrap();
+        match c {
+            ObjectContent::Chart { style, title, labels, series } => {
+                assert_eq!(style, ChartStyle::Pie);
+                assert!(title.is_none());
+                assert_eq!(labels, vec!["a".to_string()]);
+                assert_eq!(series[0].values, vec![1.0]);
+            }
+            _ => panic!("expected a chart"),
+        }
     }
 }
