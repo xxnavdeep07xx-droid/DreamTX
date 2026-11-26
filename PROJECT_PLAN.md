@@ -56,7 +56,7 @@ See section 4 for the full PowerPoint Draw-tab map.
 
 ### Wave 3 — Insert Tier 2 (core/protocol changes)
 - [x] 1. Link / tap-action (`link {kind: url|slide, target}`; PPTX hyperlinks + PDF link annotations). Core PR #33, UI PR #34 (object actions → Link)
-- [ ] 2. Chart (object kind, renderer, panel, both exporters). Decision: native PPTX chart (chosen by user)
+- [x] 2. Chart (object kind, renderer, panel, both exporters). Native PPTX chart (chosen). Core PR #36, app PR #37. Known limits: literal data (no Edit Data in PowerPoint); the sheet edits the first series only
 
 ### Wave 4 — AI / Worker
 - [ ] Ink → text / math (through the AI tab; needs recognition — AI/Worker dependent)
@@ -126,5 +126,5 @@ Last updated: 2026-11-25 (Draw E in PR #27).
 - [x] C Floating island (PR #28 C-1, PR #29 C-2, PR #30 C-3)
 - [x] Wave 1 items 6–7 (PR #31 outline, PR #32 furniture)
 - [x] Wave 3 item 1 (link)
-- [ ] Wave 3 item 2 (chart, native PPTX)
+- [x] Wave 3 item 2 (chart, native PPTX)
 - [ ] Wave 4 (ink→text/math, LIVE present)
