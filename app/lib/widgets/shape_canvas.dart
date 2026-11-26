@@ -762,13 +762,13 @@ void paintInkReplay(Canvas canvas, Map obj, double progress) {
 /// The leading [fraction] (0..1) of every contour of [path], by arc length.
 /// Null when nothing is left to draw.
 Path? inkPartialPath(Path path, double fraction) {
-  final f = fraction.clamp(0.0, 1.0);
+  final double f = fraction.clamp(0.0, 1.0).toDouble();
   if (f <= 0) return null;
   if (f >= 1) return path;
   final out = Path();
   var any = false;
   for (final m in path.computeMetrics()) {
-    final end = m.length * f;
+    final double end = m.length * f;
     if (end <= 0) continue;
     out.addPath(m.extractPath(0, end), Offset.zero);
     any = true;

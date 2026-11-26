@@ -163,7 +163,7 @@ class SlideStage extends StatelessWidget {
         }
       }
       final replayCount = replayIndex.length;
-      Widget _scribblePaint(Map<String, dynamic> obj) {
+      Widget scribblePaint(Map<String, dynamic> obj) {
         final i = replayIndex[obj['id']];
         if (replay == null || i == null) {
           return ShapeObjectPaint(obj: obj, scale: scale);
@@ -213,7 +213,7 @@ class SlideStage extends StatelessWidget {
                       imageMeta: imageMeta,
                       singleObject: true,
                     )
-                  : _scribblePaint(obj);
+                  : scribblePaint(obj);
               return Positioned(
                 left: x,
                 top: y,

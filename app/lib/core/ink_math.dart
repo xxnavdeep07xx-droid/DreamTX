@@ -331,8 +331,10 @@ Duration inkReplayDuration(int count) {
 /// overall replay time [t] (0..1). Strokes play one after another, each
 /// in an equal slice of the timeline: 0 = not started, 1 = complete.
 double inkReplayProgress(int index, int count, double t) {
-  if (count <= 0 || index < 0 || index >= count) return index < 0 ? 0 : 1;
-  final v = t.clamp(0.0, 1.0) * count - index;
+  if (count <= 0 || index < 0 || index >= count) {
+    return index < 0 ? 0.0 : 1.0;
+  }
+  final double v = t.clamp(0.0, 1.0).toDouble() * count - index;
   return v.clamp(0.0, 1.0).toDouble();
 }
 
