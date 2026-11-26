@@ -1,5 +1,5 @@
-/// Outline view (View tab): the text a slide shows under its title. Pure,
-/// so the rules are unit-tested.
+// Outline view (View tab): the text a slide shows under its title. Pure,
+// so the rules are unit-tested.
 
 /// The slide's body text, one line: every non-empty string in [content]
 /// except the title, whitespace collapsed, joined with a middle dot, and
