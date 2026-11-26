@@ -84,6 +84,19 @@ pub enum Command {
         #[serde(default)]
         apply_all: bool,
     },
+    /// A strip of DNA variants of the deck's family (Design tab): the first
+    /// is the deck's current seed, each next one steps the seed. `count` is
+    /// clamped to 1..=12.
+    DnaVariants {
+        deck: Deck,
+        #[serde(default = "default_variant_count")]
+        count: usize,
+    },
+    /// Set the deck's DNA seed to a variant picked from the strip.
+    SetDnaVariant {
+        deck: Deck,
+        seed: u64,
+    },
     /// Show or hide the DNA background graphics on one slide (Design tab).
     SetSlideHideGraphics {
         deck: Deck,
@@ -384,6 +397,10 @@ pub fn object_polygon(o: &Shape) -> Vec<(f64, f64)> {
     shapes::preset_polygon(&o.preset, o.w, o.h).into_iter().map(|(px, py)| (o.x + px, o.y + py)).collect()
 }
 
+fn default_variant_count() -> usize {
+    6
+}
+
 /// Deck DNA seed. wasm32-unknown-unknown has no wall clock — `SystemTime::now`
 /// panics there, which took down the Worker's `new_deck` — so on wasm a
 /// per-process sequence mixed with the title length keeps seeds unique within
@@ -553,6 +570,27 @@ pub fn execute(req: &str) -> Value {
             }
             deck.version += 1;
             json!({ "ok": true, "deck": deck })
+        }
+        Command::DnaVariants { deck, count } => {
+            let n = count.clamp(1, 12);
+            // Seeds stay within 53 bits: the app's JSON decoder keeps integers
+            // that size exact, and a full u64 would come back as a double.
+            let safe = |seed: u64| seed & ((1u64 << 53) - 1);
+            let mut dna = Dna { family: deck.dna.family, seed: safe(deck.dna.seed) };
+            let mut variants = Vec::with_capacity(n);
+            for i in 0..n {
+                if i > 0 {
+                    let next = next_variant(&dna);
+                    dna = Dna { family: next.family, seed: safe(next.seed) };
+                }
+                variants.push(json!({ "seed": dna.seed, "palette": resolve(&dna).palette }));
+            }
+            json!({ "ok": true, "family": deck.dna.family, "variants": variants })
+        }
+        Command::SetDnaVariant { mut deck, seed } => {
+            deck.dna.seed = seed & ((1u64 << 53) - 1);
+            deck.version += 1;
+            json!({ "ok": true, "deck": deck, "dna": resolve(&deck.dna) })
         }
         Command::SetSlideHideGraphics { mut deck, slide_id, hide } => {
             let Some(idx) = deck.slides.iter().position(|s| s.id == slide_id) else {
@@ -1024,6 +1062,31 @@ mod tests {
         let bad = r##"{"op":"set_slide_background","deck":__DECK__,"slide_id":"s1","color":"red"}"##
             .replace("__DECK__", &deck);
         assert_eq!(execute(&bad)["ok"], false);
+    }
+
+    #[test]
+    fn dna_variants_lists_a_strip_and_set_picks_one() {
+        let deck_json = serde_json::to_string(&deck_with_object()).unwrap();
+        let req = r#"{"op":"dna_variants","deck":__DECK__,"count":4}"#.replace("__DECK__", &deck_json);
+        let r = execute(&req);
+        assert_eq!(r["ok"], true);
+        let vs = r["variants"].as_array().unwrap();
+        assert_eq!(vs.len(), 4);
+        let current: Deck = serde_json::from_str(&deck_json).unwrap();
+        assert_eq!(vs[0]["seed"].as_u64(), Some(current.dna.seed & ((1u64 << 53) - 1)));
+        assert!(vs.iter().all(|v| v["seed"].as_u64().unwrap() < (1u64 << 53)));
+        let seeds: std::collections::HashSet<u64> = vs.iter().map(|v| v["seed"].as_u64().unwrap()).collect();
+        assert_eq!(seeds.len(), 4);
+        assert!(vs[0]["palette"]["bg"].is_string());
+        // Count is clamped: zero becomes one.
+        let one = r#"{"op":"dna_variants","deck":__DECK__,"count":0}"#.replace("__DECK__", &deck_json);
+        assert_eq!(execute(&one)["variants"].as_array().unwrap().len(), 1);
+        // Picking the third variant sets that seed.
+        let pick = vs[2]["seed"].as_u64().unwrap();
+        let set = format!(r#"{{"op":"set_dna_variant","deck":{},"seed":{}}}"#, deck_json, pick);
+        let r2 = execute(&set);
+        assert_eq!(r2["ok"], true);
+        assert_eq!(r2["deck"]["dna"]["seed"].as_u64(), Some(pick));
     }
 
     #[test]

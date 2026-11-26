@@ -103,7 +103,7 @@ Status is checked against the code on `main` (`e3a1cf2`). The Design row holds t
 | # | PowerPoint Design-tab feature | App status | Plan |
 |---|---|---|---|
 | 1 | Themes gallery | **Partial** — 3 families as chips (Swiss editorial, Cinematic, Magazine serif). Each sets palette, fonts and motif. Deck-wide only | Decide: more families, and per-slide apply |
-| 2 | Variants gallery (colour variants) | **Partial** — the shuffle button makes a new seed in the same family. No preview, no choice | Replace shuffle with a visible variant strip |
+| 2 | Variants gallery (colour variants) | **Done** — the shuffle button is replaced by a strip of 6 variants of the current family. Each shows its palette (background and accent); tap one to pick it. Core ops `dna_variants` and `set_dna_variant`; seeds limited to 53 bits so they survive the app's JSON | — |
 | 3 | Theme colours (pick or edit) | **Missing** — palette comes from the DNA. The user cannot choose or edit it | Decide: palette picker over the DNA set |
 | 4 | Theme fonts (pick) | **Missing** — fonts are fixed by the family (serif or sans roles) | Decide: font-pair picker |
 | 5 | Slide size (16:9, 16:10, 4:3, 1:1) | **Exists**, but in the Files drawer (Aspect sheet), not Design | Surface it from Design, or leave and link |
