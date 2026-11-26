@@ -288,10 +288,13 @@ class _SlideActionsSheet extends StatelessWidget {
 /// orchestrating method maps it onto the deck. Apply style stays disabled
 /// until a style has been picked up — the subtitle says what's missing.
 class _ObjectActionsSheet extends StatelessWidget {
-  const _ObjectActionsSheet({required this.canApplyStyle});
+  const _ObjectActionsSheet({required this.canApplyStyle, required this.linkText});
 
   /// Whether the style clipboard holds a pickup (Copy style ran first).
   final bool canApplyStyle;
+
+  /// The object's current link, one line (see linkDescription).
+  final String linkText;
 
   @override
   Widget build(BuildContext context) {
@@ -332,6 +335,12 @@ class _ObjectActionsSheet extends StatelessWidget {
                   : 'Copy a style first',
               style: const TextStyle(fontSize: 11.5)),
           onTap: () => Navigator.pop(context, 'applyStyle'),
+        ),
+        ListTile(
+          leading: const Icon(Icons.link),
+          title: const Text('Link'),
+          subtitle: Text(linkText, style: const TextStyle(fontSize: 11.5)),
+          onTap: () => Navigator.pop(context, 'link'),
         ),
         ListTile(
           leading: Icon(Icons.delete_outline,
