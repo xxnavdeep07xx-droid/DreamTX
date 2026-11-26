@@ -384,72 +384,9 @@ extension _EditorChrome on _EditorScreenState {
           onLassoClear: _clearLasso,
         );
       case _NavTab.design:
-        final current = ((_deck['dna'] ?? const {})['family'] ?? '').toString();
-        // A horizontal scroll: the band holds themes, variants, slide
-        // graphics and the background swatches, wider than a phone.
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-          children: [
-            const SizedBox(width: 8),
-            for (final (id, label) in _designFamilies)
-              Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: DreamChoiceChip(
-                    magenta: true,
-                    label: label,
-                    selected: id == current,
-                    onTap: () => _applyDesign(id)),
-              ),
-            // Variants of this family: pick one (each shows its palette).
-            for (final v in _variantStrip)
-              Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: _VariantSwatch(
-                  bg: hexToColor(v['palette']['bg'] as String),
-                  accent: hexToColor(v['palette']['accent'] as String),
-                  selected: (v['seed'] as num).toInt() == _deckSeed,
-                  onTap: () => _pickVariant((v['seed'] as num).toInt()),
-                ),
-              ),
-            Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: DreamChoiceChip(
-                  magenta: true,
-                  label: 'Hide graphics',
-                  selected: _slideHidesGraphics,
-                  onTap: _toggleSlideGraphics),
-            ),
-            // Background: the deck's own colors, for this slide only.
-            for (final c in _deckPalette.take(7))
-              Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: _BackgroundSwatch(
-                  color: c,
-                  selected: _slideBackground == colorToHex(c),
-                  onTap: () => _setSlideBackground(colorToHex(c)),
-                ),
-              ),
-            Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: DreamChoiceChip(
-                  magenta: true,
-                  label: 'Default bg',
-                  selected: _slideBackground == null,
-                  onTap: () => _setSlideBackground(null)),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: DreamChoiceChip(
-                  magenta: true,
-                  label: 'Apply to all',
-                  selected: false,
-                  onTap: () =>
-                      _setSlideBackground(_slideBackground, all: true)),
-            ),
-          ],
-          ),
-        );
+        // The Design tab's controls live in its drawer (DesignDrawer), not
+        // the band; the band skips this tab.
+        return const SizedBox.shrink();
       case _NavTab.transitions:
         return const SizedBox.shrink();
       case _NavTab.animations:

@@ -423,7 +423,7 @@ extension _EditorDeckFlow on _EditorScreenState {
   }
 
   bool _isSheetTab(_NavTab? tab) =>
-      tab == _NavTab.files || tab == _NavTab.insert;
+      tab == _NavTab.files || tab == _NavTab.insert || tab == _NavTab.design;
 
   /// The sheet layer's live height for the CURRENT state, for BOTH drawer
   /// surfaces (Files and Insert ride the SAME machinery verbatim — same
