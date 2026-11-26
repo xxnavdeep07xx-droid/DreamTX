@@ -22,6 +22,14 @@ extension _EditorSlideFlow on _EditorScreenState {
     }
   }
 
+  /// Slide furniture: store the settings and mutate once (one undo step).
+  /// The sync inside [_setDeck] rebuilds every slide's furniture objects.
+  void _setFurniture(Furniture f) {
+    final updated = _copy();
+    updated['furniture'] = f.toJson();
+    _mutate(updated);
+  }
+
   /// Outline view: rename a slide. Only the title key changes; the rest of
   /// the content and the archetype are kept, and the save is one undo step.
   Future<void> _editOutlineTitle(int i) async {
