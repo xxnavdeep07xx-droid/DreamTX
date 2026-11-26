@@ -82,7 +82,15 @@ class _FloatingIslandState extends State<FloatingIsland> {
       // The area's height is the Stack's; the island's own height is
       // measured on its body after layout (see [_h]).
       _areaH = constraints.maxHeight;
-      return Transform.translate(
+      // The island takes its natural height (the palette band grows it);
+      // only the width is the canvas's. Without this, a short canvas
+      // overflowed the column when the band opened.
+      return UnconstrainedBox(
+        constrainedAxis: Axis.horizontal,
+        alignment: widget.dock == IslandDock.top
+            ? Alignment.topCenter
+            : Alignment.bottomCenter,
+        child: Transform.translate(
         offset: Offset(0, _dy),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
@@ -112,6 +120,7 @@ class _FloatingIslandState extends State<FloatingIsland> {
             ),
           ),
         ),
+      ),
       );
     });
   }
