@@ -129,7 +129,10 @@ extension _EditorBuildFlow on _EditorScreenState {
             final insertOpen = _mode == _Mode.editing &&
                 _navTab == _NavTab.insert &&
                 !_typing;
-            final sheetOpen = filesOpen || insertOpen;
+            final designOpen = _mode == _Mode.editing &&
+                _navTab == _NavTab.design &&
+                !_typing;
+            final sheetOpen = filesOpen || insertOpen || designOpen;
             final sheetLive = sheetOpen || _sheetClosing;
             // The strip's flow footprint at its CURRENT state — what the
             // spacer hands back to on close, and the fallback for a missing
@@ -422,6 +425,7 @@ extension _EditorBuildFlow on _EditorScreenState {
                   _navTab != _NavTab.draw &&
                   _navTab != _NavTab.files &&
                   _navTab != _NavTab.insert &&
+                  _navTab != _NavTab.design &&
                   _navTab != _NavTab.transitions &&
                   _navTab != _NavTab.animations &&
                   _navTab != _NavTab.help)
@@ -633,7 +637,35 @@ extension _EditorBuildFlow on _EditorScreenState {
                                   onDragUpdate: _drawerDragUpdate,
                                   onDragSettle: _drawerDragSettle,
                                 )
-                              : FilesDrawer(
+                              : _lastSheetTab == _NavTab.design
+                                  ? DesignDrawer(
+                                      bottomInset:
+                                          _FilmstripDivider.regionHeight +
+                                              _EditorScreenState
+                                                  ._filmstripBandHeight,
+                                      families: _designFamilies,
+                                      currentFamily: ((_deck['dna'] ??
+                                              const {})['family'] ??
+                                          '')
+                                          .toString(),
+                                      onFamily: _applyDesign,
+                                      onShuffle: () =>
+                                          _applyDesign('next_variant'),
+                                      variants: _variantStrip,
+                                      currentSeed: _deckSeed,
+                                      onVariant: _pickVariant,
+                                      hideGraphics: _slideHidesGraphics,
+                                      onToggleGraphics: _toggleSlideGraphics,
+                                      palette: _deckPalette.toList(),
+                                      slideBackground: _slideBackground,
+                                      onBackground: (hex) =>
+                                          _setSlideBackground(hex),
+                                      onApplyAll: (hex) =>
+                                          _setSlideBackground(hex, all: true),
+                                      onDragUpdate: _drawerDragUpdate,
+                                      onDragSettle: _drawerDragSettle,
+                                    )
+                                  : FilesDrawer(
                                   aspect: _deckAspect,
                                   deckId: (_deck['id'] ?? '').toString(),
                                   onNew: _filesNewDeck,

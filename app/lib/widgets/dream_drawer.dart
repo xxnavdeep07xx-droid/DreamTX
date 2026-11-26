@@ -159,12 +159,17 @@ class DreamToolTile extends StatelessWidget {
     required this.label,
     required this.onTap,
     this.sub,
+    this.selected = false,
   });
 
   final IconData icon;
   final String label;
   final String? sub;
   final VoidCallback onTap;
+
+  /// Marks the card as the current choice (an accent border), e.g. the
+  /// Design drawer's active family.
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -176,7 +181,7 @@ class DreamToolTile extends StatelessWidget {
       color: kElevated,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(color: kHairline),
+        side: BorderSide(color: selected ? kAccent : kHairline),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(

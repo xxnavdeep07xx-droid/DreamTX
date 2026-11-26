@@ -153,4 +153,5 @@ Last updated: 2026-11-25 (Draw E in PR #27).
 - [x] Wave 3 item 1 (link)
 - [x] Wave 3 item 2 (chart, native PPTX)
 - [x] Design tab feature map (section 4b)
+- [x] Design drawer: Design tab opens a docked drawer like Insert and Files (families, shuffle, variants, slide graphics and background)
 - [ ] Wave 4 (ink→text/math, LIVE present)
