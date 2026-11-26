@@ -14,7 +14,8 @@ import '../theme.dart';
 /// ribbon or the filmstrip (the keep-outs).
 ///
 /// Only the grip starts a drag: the toolbar's own buttons keep their taps
-/// and long-presses (the pen presets remove on long-press).
+/// and long-presses (the pen presets remove on long-press). The one-time
+/// coach mark sits beside the island until dismissed or until it's lifted.
 class FloatingIsland extends StatefulWidget {
   const FloatingIsland({
     super.key,
@@ -48,6 +49,9 @@ class _FloatingIslandState extends State<FloatingIsland> {
       _dx = 0;
       _dy = 0;
     });
+    // Lifting teaches the same thing the coach mark does: retire it.
+    final p = widget.placement;
+    if (!p.coachSeen) widget.onPlace(p.copyWith(coachSeen: true));
   }
 
   void _follow(LongPressMoveUpdateDetails d) {
@@ -64,12 +68,10 @@ class _FloatingIslandState extends State<FloatingIsland> {
     final b = _body;
     final IslandPlacement next;
     if (p.compact) {
-      final c = islandSnapCorner(
-          p, _dx, _dy, _areaW, _areaH, b.width, b.height);
+      final c = islandSnapCorner(p, _dx, _dy, _areaW, _areaH, b.width, b.height);
       next = p.copyWith(dock: c.dock, side: c.side);
     } else {
-      next = p.copyWith(
-          dock: islandSnap(p.dock, _dy, _areaH, b.height));
+      next = p.copyWith(dock: islandSnap(p.dock, _dy, _areaH, b.height));
     }
     setState(() {
       _lifted = false;
@@ -78,6 +80,35 @@ class _FloatingIslandState extends State<FloatingIsland> {
     });
     widget.onPlace(next);
   }
+
+  void _dismissCoach() =>
+      widget.onPlace(widget.placement.copyWith(coachSeen: true));
+
+  Widget _coachMark() => Container(
+        key: const ValueKey('island_coach'),
+        margin: const EdgeInsets.only(top: 6, bottom: 6),
+        padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+        decoration: BoxDecoration(
+          color: kSurface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: kHairline),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Flexible(
+              child: Text(
+                'Hold the grip to move this toolbar',
+                style: TextStyle(color: kText2, fontSize: 12),
+              ),
+            ),
+            TextButton(
+              onPressed: _dismissCoach,
+              child: const Text('Got it'),
+            ),
+          ],
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -105,6 +136,41 @@ class _FloatingIslandState extends State<FloatingIsland> {
     return LayoutBuilder(builder: (context, constraints) {
       _areaW = constraints.maxWidth;
       _areaH = constraints.maxHeight;
+      final body = Transform.translate(
+        offset: Offset(_dx, _dy),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          decoration: BoxDecoration(
+            color: kSurface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: kHairline),
+            boxShadow: _lifted
+                ? const [
+                    BoxShadow(
+                        color: Color(0x88000000),
+                        blurRadius: 18,
+                        offset: Offset(0, 6)),
+                  ]
+                : const [],
+          ),
+          child: KeyedSubtree(
+            key: _bodyKey,
+            child: Row(
+              mainAxisSize: p.compact ? MainAxisSize.min : MainAxisSize.max,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                grip,
+                p.compact ? widget.child : Expanded(child: widget.child),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      // The coach mark rides the island's inner edge (toward the canvas
+      // centre), so it never leaves the canvas area.
+      final coach = p.coachSeen ? null : _coachMark();
+      final towardCanvas = p.dock == IslandDock.top;
       // The island takes its natural height (the palette band grows it).
       // Full mode is width-bound by the canvas; compact is natural width.
       return UnconstrainedBox(
@@ -112,35 +178,16 @@ class _FloatingIslandState extends State<FloatingIsland> {
         alignment: p.dock == IslandDock.top
             ? Alignment.topCenter
             : Alignment.bottomCenter,
-        child: Transform.translate(
-          offset: Offset(_dx, _dy),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            decoration: BoxDecoration(
-              color: kSurface,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: kHairline),
-              boxShadow: _lifted
-                  ? const [
-                      BoxShadow(
-                          color: Color(0x88000000),
-                          blurRadius: 18,
-                          offset: Offset(0, 6)),
-                    ]
-                  : const [],
-            ),
-            child: KeyedSubtree(
-              key: _bodyKey,
-              child: Row(
-                mainAxisSize: p.compact ? MainAxisSize.min : MainAxisSize.max,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  grip,
-                  p.compact ? widget.child : Expanded(child: widget.child),
-                ],
-              ),
-            ),
-          ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: p.compact && p.side == IslandSide.right
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
+          children: [
+            if (coach != null && towardCanvas) body,
+            if (coach != null) coach,
+            if (coach == null || !towardCanvas) body,
+          ],
         ),
       );
     });

@@ -81,5 +81,10 @@ void main() {
     expect(junk.compact, isFalse);
 
     expect(IslandPlacement.fromJson(null).dock, IslandDock.bottom);
+
+    // The coach mark is off until dismissed, and survives a round trip.
+    expect(IslandPlacement.fromJson(null).coachSeen, isFalse);
+    const seen = IslandPlacement(coachSeen: true);
+    expect(IslandPlacement.fromJson(seen.toJson()).coachSeen, isTrue);
   });
 }
