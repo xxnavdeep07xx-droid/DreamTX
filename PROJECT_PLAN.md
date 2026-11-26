@@ -46,7 +46,7 @@ See section 4 for the full PowerPoint Draw-tab map.
 - [x] A-1. Eraser sizes S/M/L + "Erase all ink on slide" (one undo step) — PR #22
 - [x] A-2. Pen presets (saved tool chips, cap 6) + pencil tip style — PR #23
 - [x] B. Lasso select — PR #24 (loop selects; move, recolor, delete as one undo step each; selection is editor-owned, not an engine group)
-- [ ] R. Ruler (non-persistent guide overlay; toggled from the Draw tab)
+- [x] R. Ruler — PR #25 (editor-only tick rulers on the top and left edges; toggled from the Draw row; never exported)
 - [ ] D. Ink → shape, locally (line / rect / ellipse / triangle / arrow; deterministic heuristics)
 - [ ] E. Ink replay (strokes animate in draw order)
 - [ ] C. Floating island (dock, 500 ms hold to lift, compact mode, persisted position, coach mark)
@@ -80,7 +80,7 @@ Status is checked against the code on `ad4b7d9` (before Draw A-1).
 | 8 | Pen presets / pen gallery | **Done** (A-2, PR #23) — session-scoped, cap 6, long-press removes | — |
 | 9 | Pencil / pen tip styles | **Done** (A-2, PR #23) — thin translucent pen tip (no texture: the model has no grain) | — |
 | 10 | Lasso select | **Done** (B, PR #24) — frame-center rule; move / recolor / delete as one batch | — |
-| 11 | Ruler | Missing | **R** |
+| 11 | Ruler | **Done** (R, PR #25) — editor-only overlay | — |
 | 12 | Ink replay | Missing | **E** |
 | 13 | Ink to shape | Missing | **D** |
 | 14 | Ink to text | Missing — needs handwriting recognition | **Wave 4** (AI/Worker) |
@@ -117,7 +117,7 @@ Last updated: 2026-11-25 (Draw A-1 merged via PR #22).
 - [x] A-1 Eraser sizes + Erase all ink (PR #22)
 - [x] A-2 Pen presets + pencil tip (PR #23)
 - [x] B Lasso select (PR #24)
-- [ ] R Ruler
+- [x] R Ruler (PR #25)
 - [ ] D Ink → shape
 - [ ] E Ink replay
 - [ ] C Floating island
