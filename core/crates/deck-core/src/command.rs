@@ -645,6 +645,7 @@ pub fn execute(req: &str) -> Value {
             };
             let result = Shape {
                 id: next_object_id(&deck),
+                link: None,
                 preset: "path".into(),
                 x: bx, y: by, w: bw, h: bh,
                 rotation: 0.0,
@@ -905,6 +906,7 @@ mod tests {
                 content: SlideContent::Blank,
                 objects: vec![Shape {
                     id: "o1".into(),
+                    link: None,
                     preset: "rect".into(),
                     x: 640.0,
                     y: 100.0,
@@ -1020,6 +1022,7 @@ mod tests {
         let mut slide = std::mem::take(&mut deck.slides[0].objects);
         let text_obj = Shape {
             id: "txt".into(),
+            link: None,
             preset: "rectangle".into(),
             x: 100.0, y: 100.0, w: 400.0, h: 120.0,
             rotation: 0.0, opacity: 1.0, locked: false,
@@ -1036,6 +1039,7 @@ mod tests {
         let png = crate::export::tests_support::tiny_png();
         let img_obj = Shape {
             id: "img".into(),
+            link: None,
             preset: "rectangle".into(),
             x: 600.0, y: 100.0, w: 200.0, h: 100.0,
             rotation: 0.0, opacity: 1.0, locked: false,

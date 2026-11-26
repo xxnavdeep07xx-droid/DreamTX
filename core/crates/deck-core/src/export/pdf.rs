@@ -11,7 +11,7 @@
 
 use crate::command::object_polygon;
 use crate::export::{ExportImage, doc_paragraphs, para_anchor_at, run_pieces, utf16_slice};
-use crate::model::{Deck, Fill, ObjectContent, Shape, TextDoc, SLIDE_H, SLIDE_W, deck_dims};
+use crate::model::{Deck, Fill, LinkKind, ObjectContent, Shape, TextDoc, SLIDE_H, SLIDE_W, deck_dims};
 use crate::layout::{layout_slide, Element};
 use crate::fonts;
 use std::collections::BTreeMap;
@@ -74,6 +74,14 @@ fn pdf_escape(s: &str) -> String {
         }
     }
     out
+}
+
+/// A resolved tap-action for a page's link annotation.
+enum PdfLink {
+    /// External web link.
+    Uri(String),
+    /// Jump to the page at this slide index.
+    Page(usize),
 }
 
 fn font_name(serif: bool, bold: bool) -> &'static str {
@@ -858,6 +866,7 @@ fn deflate(data: &[u8]) -> Vec<u8> {
 /// placeholders.
 pub fn to_pdf(deck: &Deck, images: &BTreeMap<String, ExportImage>) -> Vec<u8> {
     let mut pages_content: Vec<String> = Vec::new();
+    let mut pages_links: Vec<Vec<([f64; 4], PdfLink)>> = Vec::new();
     let mut alphas: Vec<(f64, String)> = Vec::new();
     // Page width follows the deck's aspect: the design→page scale is uniform
     // (KX == KY), so width-in-points is KY × design-width. Height stays PH.
@@ -933,6 +942,29 @@ pub fn to_pdf(deck: &Deck, images: &BTreeMap<String, ExportImage>) -> Vec<u8> {
                 }
             }
         }
+        // Tap-actions become /Link annotations over the object's box.
+        let mut links = Vec::new();
+        for obj in &slide.objects {
+            let Some(l) = &obj.link else { continue };
+            let act = match l.kind {
+                LinkKind::Url => l.safe_url().map(|u| PdfLink::Uri(u.to_string())),
+                LinkKind::Slide => deck.slides.iter().position(|s| s.id == l.target).map(PdfLink::Page),
+            };
+            let Some(act) = act else { continue };
+            let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+            for (px, py) in object_polygon(obj) {
+                let (x, y) = tf(px, py);
+                x0 = x0.min(x);
+                y0 = y0.min(y);
+                x1 = x1.max(x);
+                y1 = y1.max(y);
+            }
+            if x0 > x1 {
+                continue;
+            }
+            links.push(([x0, y0, x1, y1], act));
+        }
+        pages_links.push(links);
         pages_content.push(ops);
     }
 
@@ -1004,15 +1036,42 @@ endstream");
         format!("<< /Font << {font_refs} >> /ExtGState << {gs_refs} >> /XObject << {xobject_refs} >> >>")
     };
 
+    // Object numbers are fixed before writing: a page takes its page
+    // object, its content stream, then one object per link annotation. A
+    // GoTo action can point at a later page, so every page number is known
+    // up front.
+    let mut page_nums: Vec<usize> = Vec::with_capacity(pages_content.len());
+    let mut next_num = objs.len() + 1;
+    for links in &pages_links {
+        page_nums.push(next_num);
+        next_num += 2 + links.len();
+    }
     let mut kids = String::new();
-    for content in &pages_content {
-        let page_num = objs.len() + 1;
+    for (k, content) in pages_content.iter().enumerate() {
+        let page_num = page_nums[k];
         let content_num = page_num + 1;
+        let links = &pages_links[k];
+        let annots = if links.is_empty() {
+            String::new()
+        } else {
+            let refs: Vec<String> = (0..links.len()).map(|a| format!("{} 0 R", page_num + 2 + a)).collect();
+            format!(" /Annots [{}]", refs.join(" "))
+        };
         objs.push(format!(
-            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {pw:.0} {PH}] /Resources {} /Contents {content_num} 0 R >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {pw:.0} {PH}] /Resources {} /Contents {content_num} 0 R{annots} >>",
             resources
         ).into_bytes());
         objs.push(format!("<< /Length {} >>\nstream\n{}\nendstream", content.len(), content).into_bytes());
+        for (rect, act) in links {
+            let action = match act {
+                PdfLink::Uri(u) => format!("/A << /S /URI /URI ({}) >>", pdf_escape(u)),
+                PdfLink::Page(j) => format!("/A << /S /GoTo /D [{} 0 R /XYZ null null null] >>", page_nums[*j]),
+            };
+            objs.push(format!(
+                "<< /Type /Annot /Subtype /Link /Rect [{:.2} {:.2} {:.2} {:.2}] /Border [0 0 0] {} >>",
+                rect[0], rect[1], rect[2], rect[3], action
+            ).into_bytes());
+        }
         kids.push_str(&format!(" {} 0 R", page_num));
     }
 
@@ -1050,6 +1109,44 @@ endstream");
 mod tests {
     use super::*;
     use crate::model::*;
+
+    #[test]
+    fn links_become_annotations() {
+        use serde_json::json;
+        let obj = |id: &str, link: serde_json::Value| -> Shape {
+            serde_json::from_value(json!({"id": id, "preset": "rectangle", "x": 100, "y": 100, "w": 300, "h": 200, "link": link})).unwrap()
+        };
+        let slide = |id: &str, objects: Vec<Shape>| Slide {
+            id: id.into(),
+            archetype: Archetype::Cover,
+            content: SlideContent::Cover { kicker: None, title: "T".into(), subtitle: None },
+            objects,
+        };
+        let deck = Deck {
+            id: "d".into(),
+            title: "T".into(),
+            version: 1,
+            dna: Dna { family: DnaFamily::MagazineSerif, seed: 9 },
+            aspect: "16:9".into(),
+            slides: vec![
+                slide(
+                    "s1",
+                    vec![
+                        obj("a", json!({"kind": "slide", "target": "s2"})),
+                        obj("b", json!({"kind": "url", "target": "https://example.com/"})),
+                        obj("c", json!({"kind": "url", "target": "javascript:alert(1)"})),
+                    ],
+                ),
+                slide("s2", vec![]),
+            ],
+        };
+        let bytes = to_pdf(&deck, &BTreeMap::new());
+        let text = String::from_utf8_lossy(&bytes);
+        assert_eq!(text.matches("/Subtype /Link").count(), 2, "unsafe URL must not export");
+        assert!(text.contains("/S /GoTo /D ["));
+        assert!(text.contains("/S /URI /URI (https://example.com/)"));
+        assert!(text.contains("/Annots ["));
+    }
 
     #[test]
     fn produces_pdf_magic_and_pages() {
@@ -1121,6 +1218,7 @@ mod tests {
                 objects: vec![
                     Shape {
                         id: "o1".into(),
+                        link: None,
                         preset: "rectangle".into(),
                         x: 100.0, y: 100.0, w: 300.0, h: 200.0,
                         rotation: 0.0, opacity: 0.5, locked: false,
@@ -1133,6 +1231,7 @@ mod tests {
                     },
                     Shape {
                         id: "o2".into(),
+                        link: None,
                         preset: "line".into(),
                         x: 100.0, y: 500.0, w: 400.0, h: 0.0,
                         rotation: 0.0, opacity: 1.0, locked: false,
@@ -1235,6 +1334,7 @@ mod tests {
                 content: SlideContent::Cover { kicker: None, title: "Hi".into(), subtitle: None },
                 objects: vec![Shape {
                     id: "txt".into(),
+                    link: None,
                     preset: "rectangle".into(),
                     x: 100.0, y: 100.0, w: 400.0, h: 200.0,
                     rotation: 0.0, opacity: 1.0, locked: false,
