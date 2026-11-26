@@ -311,6 +311,34 @@ List<String> inkScribbleIds(List<Map<String, dynamic>> objects) {
 }
 
 // ---------------------------------------------------------------------------
+// Draw E: ink replay. Pure, so the timing rules are unit-tested.
+// ---------------------------------------------------------------------------
+
+/// Replay time budget per scribble (seconds), and the clamp on the total.
+const double kInkReplaySecondsPerStroke = 0.45;
+const double kInkReplayMinSeconds = 0.6;
+const double kInkReplayMaxSeconds = 6.0;
+
+/// The whole replay's length for [count] scribbles.
+Duration inkReplayDuration(int count) {
+  final secs = (count * kInkReplaySecondsPerStroke)
+      .clamp(kInkReplayMinSeconds, kInkReplayMaxSeconds)
+      .toDouble();
+  return Duration(milliseconds: (secs * 1000).round());
+}
+
+/// How far stroke [index] (of [count], in draw order) has been drawn at
+/// overall replay time [t] (0..1). Strokes play one after another, each
+/// in an equal slice of the timeline: 0 = not started, 1 = complete.
+double inkReplayProgress(int index, int count, double t) {
+  if (count <= 0 || index < 0 || index >= count) {
+    return index < 0 ? 0.0 : 1.0;
+  }
+  final double v = t.clamp(0.0, 1.0).toDouble() * count - index;
+  return v.clamp(0.0, 1.0).toDouble();
+}
+
+// ---------------------------------------------------------------------------
 // Draw A-2: pencil tip + pen presets. Pure, so the rules are unit-tested.
 // ---------------------------------------------------------------------------
 

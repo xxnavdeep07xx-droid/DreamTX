@@ -665,9 +665,14 @@ class ShapeObjectPaint extends StatelessWidget {
     super.key,
     required this.obj,
     required this.scale,
+    this.replayProgress,
   });
 
   final Map<String, dynamic> obj;
+
+  /// Draw E: how much of an ink scribble is drawn (0..1) while the replay
+  /// runs. Null = the whole object, as always.
+  final double? replayProgress;
 
   /// design-px -> screen-px scale of the enclosing canvas.
   final double scale;
@@ -679,7 +684,7 @@ class ShapeObjectPaint extends StatelessWidget {
     final rot = ((obj['rotation'] ?? 0) as num).toDouble();
     final painter = CustomPaint(
       size: Size(w, h),
-      painter: _SingleObjectPainter(obj: obj),
+      painter: _SingleObjectPainter(obj: obj, replayProgress: replayProgress),
     );
     return OverflowBox(
       alignment: Alignment.topLeft,
@@ -702,9 +707,10 @@ class ShapeObjectPaint extends StatelessWidget {
 }
 
 class _SingleObjectPainter extends CustomPainter {
-  _SingleObjectPainter({required this.obj});
+  _SingleObjectPainter({required this.obj, this.replayProgress});
 
   final Map<String, dynamic> obj;
+  final double? replayProgress;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -715,12 +721,59 @@ class _SingleObjectPainter extends CustomPainter {
       -((obj['x'] as num?) ?? 0).toDouble(),
       -((obj['y'] as num?) ?? 0).toDouble(),
     );
-    paintObject(canvas, obj);
+    final p = replayProgress;
+    if (p == null || p >= 1) {
+      paintObject(canvas, obj);
+    } else if (p > 0) {
+      paintInkReplay(canvas, obj, p);
+    }
     canvas.restore();
   }
 
   @override
-  bool shouldRepaint(_SingleObjectPainter old) => old.obj != obj;
+  bool shouldRepaint(_SingleObjectPainter old) =>
+      old.obj != obj || old.replayProgress != replayProgress;
+}
+
+/// Draw E: the first [progress] (0..1) of an ink scribble's length, drawn
+/// with the object's own stroke style (color, width, opacity, round caps).
+/// Zero progress paints nothing; the stroke grows along its own path.
+void paintInkReplay(Canvas canvas, Map obj, double progress) {
+  final path = objectPath(obj);
+  if (path == null) return;
+  final stroke = obj['stroke'];
+  if (stroke is! Map) return;
+  final width = ((stroke['width'] ?? 0) as num).toDouble();
+  if (width <= 0) return;
+  final opacity = ((obj['opacity'] ?? 1) as num).toDouble().clamp(0.0, 1.0);
+  final partial = inkPartialPath(path, progress);
+  if (partial == null) return;
+  canvas.drawPath(
+    partial,
+    Paint()
+      ..color = shapeColor((stroke['color'] ?? '17181A').toString(), opacity)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = width
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round,
+  );
+}
+
+/// The leading [fraction] (0..1) of every contour of [path], by arc length.
+/// Null when nothing is left to draw.
+Path? inkPartialPath(Path path, double fraction) {
+  final double f = fraction.clamp(0.0, 1.0).toDouble();
+  if (f <= 0) return null;
+  if (f >= 1) return path;
+  final out = Path();
+  var any = false;
+  for (final m in path.computeMetrics()) {
+    final double end = m.length * f;
+    if (end <= 0) continue;
+    out.addPath(m.extractPath(0, end), Offset.zero);
+    any = true;
+  }
+  return any ? out : null;
 }
 
 enum _GrabKind { move, resize, rotate }

@@ -290,6 +290,8 @@ extension _EditorBuildFlow on _EditorScreenState {
                                     // Draw R: the ruler shows on the Draw tab.
                                     showRuler: _navTab == _NavTab.draw &&
                                         _drawToolbox.ruler,
+                                    // Draw E: the ink replay clock.
+                                    inkReplay: _inkReplay,
                                     onLassoMove: _onLassoMoveEnd,
                                     onObjectLongPress: _objectActions,
                                     onCanvasLongPress: _pasteObjectAt,

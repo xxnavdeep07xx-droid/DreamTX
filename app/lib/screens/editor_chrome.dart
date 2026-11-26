@@ -359,6 +359,7 @@ extension _EditorChrome on _EditorScreenState {
           palette: _deckPalette,
           onChanged: _setDrawToolbox,
           onClearAll: _clearAllInk,
+          onReplayInk: _replayInk,
           onNotice: _toast,
           lassoCount: _liveLassoIds.length,
           onLassoColor: _restyleLasso,

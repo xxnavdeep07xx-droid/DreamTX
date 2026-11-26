@@ -77,9 +77,14 @@ class EditorScreen extends StatefulWidget {
 }
 
 class _EditorScreenState extends State<EditorScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   late Map<String, dynamic> _deck;
   int _index = 0;
+
+  /// Draw E: the ink replay clock. Idle at 1 (every scribble whole); a
+  /// replay runs it 0 → 1 (see [_replayInk]).
+  late final AnimationController _inkReplay =
+      AnimationController(vsync: this, value: 1.0);
   Map<String, dynamic>? _layout;
   List<String> _warnings = [];
   bool _busy = false;
@@ -294,6 +299,7 @@ class _EditorScreenState extends State<EditorScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _inkReplay.dispose();
     _removeTypingToolbar();
     _disposeTextSession();
     _objectCommitDebounce?.cancel();
