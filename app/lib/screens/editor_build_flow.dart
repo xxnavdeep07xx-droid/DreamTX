@@ -280,6 +280,14 @@ extension _EditorBuildFlow on _EditorScreenState {
                                     onStroke: _onStrokeDone,
                                     onEraseHits: _onEraseHits,
                                     eraserRadius: _drawToolbox.eraserRadius,
+                                    // Draw B: the lasso selection shows only
+                                    // while the lasso is armed.
+                                    lassoIds: _drawToolbox.armed &&
+                                            _drawToolbox.tool == InkTool.lasso
+                                        ? _liveLassoIds
+                                        : const {},
+                                    onLasso: _onLassoDone,
+                                    onLassoMove: _onLassoMoveEnd,
                                     onObjectLongPress: _objectActions,
                                     onCanvasLongPress: _pasteObjectAt,
                                     textController: _selectedObject != null &&

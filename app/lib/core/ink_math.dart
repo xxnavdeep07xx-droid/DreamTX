@@ -17,7 +17,7 @@ import 'dart:ui' show Offset;
 
 /// The Draw tab's tools. `null` in the layer APIs means "not drawing" —
 /// gestures fall through to selection / move / resize / rotate.
-enum InkTool { pen, highlighter, eraser }
+enum InkTool { pen, highlighter, eraser, lasso }
 
 /// The style a stroke is painted and committed with. Design-px width and
 /// RRGGBB hex — the same vocabulary the deck model's `Shape.stroke` and
@@ -393,3 +393,80 @@ List<InkPreset> inkRemovePresetAt(List<InkPreset> presets, int index) {
   if (index >= 0 && index < next.length) next.removeAt(index);
   return next;
 }
+
+// ---------------------------------------------------------------------------
+// Draw B: lasso select. Pure geometry — the editor applies the results.
+// ---------------------------------------------------------------------------
+
+/// Even-odd point-in-polygon (ray casting). A polygon under three points
+/// encloses nothing.
+bool inkPointInPolygon(Offset p, List<Offset> poly) {
+  if (poly.length < 3) return false;
+  var inside = false;
+  for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    final a = poly[i];
+    final b = poly[j];
+    final crosses = (a.dy > p.dy) != (b.dy > p.dy);
+    if (crosses &&
+        p.dx < (b.dx - a.dx) * (p.dy - a.dy) / (b.dy - a.dy) + a.dx) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/// The center of an object's frame (rotation-invariant: a rotated object
+/// keeps its center).
+Offset inkObjectCenter(Map<String, dynamic> obj) {
+  final x = ((obj['x'] ?? 0) as num).toDouble();
+  final y = ((obj['y'] ?? 0) as num).toDouble();
+  final w = ((obj['w'] ?? 0) as num).toDouble();
+  final h = ((obj['h'] ?? 0) as num).toDouble();
+  return Offset(x + w / 2, y + h / 2);
+}
+
+/// The objects a lasso selects: those whose frame center lies inside the
+/// loop. Locked objects are never selected (the same rule the eraser uses).
+/// Text, images, shapes, tables and scribbles all count — the lasso is the
+/// general selection, unlike the eraser's scribble-only sweep.
+List<String> inkLassoHits(
+  List<Map<String, dynamic>> objects,
+  List<Offset> lasso,
+) {
+  final ids = <String>[];
+  for (final obj in objects) {
+    if (obj['locked'] == true) continue;
+    final id = obj['id'];
+    if (id is! String) continue;
+    if (inkPointInPolygon(inkObjectCenter(obj), lasso)) ids.add(id);
+  }
+  return ids;
+}
+
+/// [obj] moved by ([dx], [dy]) design px. Returns a new map; the input is
+/// never mutated.
+Map<String, dynamic> inkTranslated(
+  Map<String, dynamic> obj,
+  double dx,
+  double dy,
+) {
+  final x = ((obj['x'] ?? 0) as num).toDouble();
+  final y = ((obj['y'] ?? 0) as num).toDouble();
+  return {...obj, 'x': x + dx, 'y': y + dy};
+}
+
+/// [obj] with its outline recolored to [colorHex]. Only objects that carry
+/// a visible outline (a stroke wider than zero) change — text boxes and
+/// fill-only shapes come back as the same instance, so the caller can skip
+/// them with an identity check.
+Map<String, dynamic> inkRestyled(Map<String, dynamic> obj, String colorHex) {
+  final stroke = obj['stroke'];
+  if (stroke is! Map) return obj;
+  final width = ((stroke['width'] ?? 0) as num).toDouble();
+  if (width <= 0) return obj;
+  return {
+    ...obj,
+    'stroke': {...stroke, 'color': colorHex},
+  };
+}
+

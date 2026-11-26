@@ -78,6 +78,10 @@ class _DrawToolboxState {
   /// Saved tool styles, session-scoped, capped at [kInkPresetCap].
   final List<InkPreset> presets;
 
+  /// The lasso's band is always open while it is armed (its controls ARE
+  /// the selection's face); the other tools open it by a chip tap.
+  bool get bandOpen => expanded || (armed && tool == InkTool.lasso);
+
   /// The S/M/L pen width chip and presets belong to the ballpoint only:
   /// the pencil's width is fixed by design, the highlighter's too.
   bool get penWidthsVisible => tool == InkTool.pen && !pencil;
@@ -107,6 +111,8 @@ class _DrawToolboxState {
         // The eraser never commits a stroke — its sweep deletes path
         // objects; this entry exists so the switch stays total.
         InkTool.eraser => const InkStyle(colorHex: 'D03028', width: 24.0),
+        // The lasso never commits a stroke either: its loop is a selection.
+        InkTool.lasso => const InkStyle(colorHex: 'D03028', width: 2.0),
       };
 
   /// The preset the current tool would save, or null for the eraser
@@ -125,7 +131,7 @@ class _DrawToolboxState {
             kind: InkPresetKind.highlighter,
             colorHex: hlColorHex,
           ),
-        InkTool.eraser => null,
+        InkTool.eraser || InkTool.lasso => null,
       };
 
   // ---- pure transitions: the row calls these, the editor applies -------
@@ -246,6 +252,10 @@ class _DrawToolboxRow extends StatelessWidget {
     required this.onChanged,
     this.onClearAll,
     this.onNotice,
+    this.lassoCount = 0,
+    this.onLassoColor,
+    this.onLassoDelete,
+    this.onLassoClear,
   });
 
   final _DrawToolboxState state;
@@ -266,6 +276,13 @@ class _DrawToolboxRow extends StatelessWidget {
   /// removed). Null drops the notices silently.
   final ValueChanged<String>? onNotice;
 
+  /// Draw B: how many objects the lasso selected, and the selection's
+  /// actions (recolor, delete, clear). Only read while the lasso is armed.
+  final int lassoCount;
+  final ValueChanged<String>? onLassoColor;
+  final VoidCallback? onLassoDelete;
+  final VoidCallback? onLassoClear;
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -283,7 +300,7 @@ class _DrawToolboxRow extends StatelessWidget {
               ? Duration.zero
               : const Duration(milliseconds: 200),
           sizeCurve: Curves.easeInOutCubic,
-          crossFadeState: state.expanded
+          crossFadeState: state.bandOpen
               ? CrossFadeState.showSecond
               : CrossFadeState.showFirst,
           firstChild: const SizedBox(height: 0, width: double.infinity),
@@ -326,14 +343,21 @@ class _DrawToolboxRow extends StatelessWidget {
               active: state.armed && state.tool == InkTool.eraser,
               onTap: () => onChanged(state.toolTapped(InkTool.eraser)),
             ),
-            // The hairline that separates tools from settings.
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 6),
-              width: 1,
-              height: 26,
-              color: kHairline,
+            _DrawToolButton(
+              icon: Icons.highlight_alt,
+              tooltip: 'Lasso select',
+              active: state.armed && state.tool == InkTool.lasso,
+              onTap: () => onChanged(state.toolTapped(InkTool.lasso)),
             ),
-            if (state.tool != InkTool.eraser)
+            // The hairline and the settings belong to the ink tools only.
+            if (state.tool != InkTool.lasso)
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 6),
+                width: 1,
+                height: 26,
+                color: kHairline,
+              ),
+            if (state.tool == InkTool.pen || state.tool == InkTool.highlighter)
               _ColorChipButton(
                 colorHex: state.colorHexFor(defaultPenHex: defaultPenHex),
                 tooltip: state.tool == InkTool.pen
@@ -376,11 +400,13 @@ class _DrawToolboxRow extends StatelessWidget {
           SizedBox(
             height: 46,
             width: double.infinity,
-            child: state.tool == InkTool.eraser
-                ? _eraserSizesRow()
-                : _colorAndWidthRow(),
+            child: switch (state.tool) {
+              InkTool.lasso => _lassoRow(),
+              InkTool.eraser => _eraserSizesRow(),
+              _ => _colorAndWidthRow(),
+            },
           ),
-          if (state.tool != InkTool.eraser)
+          if (state.tool == InkTool.pen || state.tool == InkTool.highlighter)
             SizedBox(
               height: 40,
               width: double.infinity,
@@ -433,6 +459,62 @@ class _DrawToolboxRow extends StatelessWidget {
               ),
         ],
       );
+
+  /// The lasso's band: the selection's face. Empty = the hint; otherwise
+  /// the count, a recolor palette (strokes and outlines), delete and clear.
+  Widget _lassoRow() => Row(
+        children: [
+          const SizedBox(width: 8),
+          ...(lassoCount == 0 ? _lassoHint() : _lassoControls()),
+        ],
+      );
+
+  List<Widget> _lassoHint() => const [
+        Expanded(
+          child: Text(
+            'Draw a loop around objects to select them',
+            style: TextStyle(fontSize: 12, color: kText2),
+          ),
+        ),
+      ];
+
+  List<Widget> _lassoControls() => [
+        Text(
+          '$lassoCount selected',
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: kText,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: DreamColorChips(
+            palette: palette,
+            selected: null,
+            onPick: (hex) {
+              if (hex != null) onLassoColor?.call(hex);
+            },
+            horizontal: true,
+            chipSize: 30,
+            hideNone: true,
+          ),
+        ),
+        if (onLassoDelete != null)
+          _DrawToolButton(
+            icon: Icons.delete_outline,
+            tooltip: 'Delete selection',
+            active: false,
+            onTap: onLassoDelete!,
+          ),
+        if (onLassoClear != null)
+          _DrawToolButton(
+            icon: Icons.close,
+            tooltip: 'Clear selection',
+            active: false,
+            onTap: onLassoClear!,
+          ),
+      ];
 
   /// The preset strip: "Save" first, then the saved styles. A tap applies
   /// one; a long-press removes it. The chip matching the current tool is
