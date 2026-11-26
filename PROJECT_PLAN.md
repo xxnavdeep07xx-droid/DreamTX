@@ -39,7 +39,7 @@ Core pieces:
 - [x] 4. Table depth (PR #15/#16)
 - [x] 5. Image depth (PR #17, v0.2.40)
 - [ ] 6. Slide furniture (slide number / date / footer) — needs an export-design decision first
-- [~] 7. Outline view (View tab) — in PR: every slide with title + body preview; tap to jump, pencil renames the title. Body text editing stays in the slide itself (not in the outline yet).
+- [x] 7. Outline view (View tab) — PR #31 (merged): every slide with title + body preview; tap to jump, pencil renames the title. Body text editing stays in the slide itself (not in the outline yet).
 
 ### Wave 2 — Draw v2 (the current focus)
 See section 4 for the full PowerPoint Draw-tab map.
