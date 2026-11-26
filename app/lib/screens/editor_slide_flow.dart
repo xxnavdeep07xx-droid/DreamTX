@@ -22,6 +22,24 @@ extension _EditorSlideFlow on _EditorScreenState {
     }
   }
 
+  /// Outline view: rename a slide. Only the title key changes; the rest of
+  /// the content and the archetype are kept, and the save is one undo step.
+  Future<void> _editOutlineTitle(int i) async {
+    if (i < 0 || i >= _slides.length) return;
+    final slide = _slides[i];
+    final content =
+        Map<String, dynamic>.from(slide['content'] as Map? ?? const {});
+    final text = await dreamInputDialog(
+      context,
+      title: 'Slide ${i + 1} title',
+      initial: (content['title'] ?? '').toString(),
+      confirmLabel: 'Save',
+    );
+    if (text == null) return;
+    content['title'] = text.trim();
+    _updateSlide(slide, (slide['archetype'] ?? 'slide').toString(), content);
+  }
+
   /// The **+** button: add a blank slide instantly — no picker, no template.
   /// The user gets an empty canvas (just the deck's background) to draw on
   /// or fill later; the curated layout list lives in the Slides tool row.
