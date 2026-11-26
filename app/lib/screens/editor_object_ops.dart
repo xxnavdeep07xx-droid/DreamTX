@@ -294,8 +294,10 @@ extension _EditorObjectOps on _EditorScreenState {
     }
     final action = await dreamSheet<String>(
       context,
-      builder: (context) =>
-          _ObjectActionsSheet(canApplyStyle: _styleClipboard != null),
+      builder: (context) => _ObjectActionsSheet(
+        canApplyStyle: _styleClipboard != null,
+        linkText: linkDescription(linkOf(obj), _slides, _slideTitle),
+      ),
     );
     switch (action) {
       case 'copy':
@@ -306,9 +308,39 @@ extension _EditorObjectOps on _EditorScreenState {
         _copyStyle(obj);
       case 'applyStyle':
         _applyStyle(obj);
+      case 'link':
+        _editLinkOf(id);
       case 'del':
         _deleteObject(id);
     }
+  }
+
+  /// Object actions → Link: pick none, a web address, or a slide, then
+  /// write it through the style path (one undo step).
+  void _editLinkOf(String id) {
+    Map<String, dynamic>? obj;
+    for (final o in _objects) {
+      if (o['id'] == id) obj = o;
+    }
+    if (obj == null) return;
+    final current = obj;
+    dreamSheet<LinkEdit>(
+      context,
+      builder: (context) => LinkSheet(
+        current: linkOf(current),
+        slides: _slides,
+        titleOf: _slideTitle,
+      ),
+    ).then((picked) {
+      if (picked == null) return;
+      final updated = Map<String, dynamic>.from(current);
+      if (picked.link == null) {
+        updated.remove('link');
+      } else {
+        updated['link'] = picked.link;
+      }
+      _styleChanged(updated);
+    });
   }
 
   /// Long-press on empty canvas: paste the clipboard with its top-left at
