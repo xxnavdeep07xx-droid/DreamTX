@@ -1008,20 +1008,20 @@ mod tests {
     #[test]
     fn set_slide_background_sets_clears_and_validates() {
         let deck = serde_json::to_string(&deck_with_object()).unwrap();
-        let set = r#"{"op":"set_slide_background","deck":__DECK__,"slide_id":"s1","color":"#1a2b3c"}"#
+        let set = r##"{"op":"set_slide_background","deck":__DECK__,"slide_id":"s1","color":"#1a2b3c"}"##
             .replace("__DECK__", &deck);
         let r = execute(&set);
         assert_eq!(r["ok"], true);
         let d: Deck = serde_json::from_value(r["deck"].clone()).unwrap();
         assert_eq!(d.slides[0].background.as_deref(), Some("1A2B3C"));
         // Clearing: no color means back to the DNA background.
-        let clear = r#"{"op":"set_slide_background","deck":__DECK__,"slide_id":"s1"}"#
+        let clear = r##"{"op":"set_slide_background","deck":__DECK__,"slide_id":"s1"}"##
             .replace("__DECK__", &serde_json::to_string(&d).unwrap());
         let r2 = execute(&clear);
         assert_eq!(r2["ok"], true);
         assert!(r2["deck"]["slides"][0].get("background").is_none());
         // Bad color is refused, not stored.
-        let bad = r#"{"op":"set_slide_background","deck":__DECK__,"slide_id":"s1","color":"red"}"#
+        let bad = r##"{"op":"set_slide_background","deck":__DECK__,"slide_id":"s1","color":"red"}"##
             .replace("__DECK__", &deck);
         assert_eq!(execute(&bad)["ok"], false);
     }
