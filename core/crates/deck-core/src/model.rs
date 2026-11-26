@@ -131,6 +131,44 @@ pub struct Shape {
     /// byte-stable).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content: Option<ObjectContent>,
+    /// Tap-action: opens a web link or jumps to another slide. Exported as
+    /// PPTX hyperlinks and PDF link annotations. Absent for plain objects.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<Link>,
+}
+
+/// What a tap-action does.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum LinkKind {
+    /// `target` is an absolute http(s) or mailto URL.
+    Url,
+    /// `target` is the id of a slide in this deck.
+    Slide,
+}
+
+/// A tap-action attached to an object (see `Shape.link`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Link {
+    pub kind: LinkKind,
+    pub target: String,
+}
+
+impl Link {
+    /// The target URL when this is a `Url` link that is safe to export.
+    /// Only http, https, and mailto are allowed, with no whitespace or
+    /// control characters, so `javascript:` and `file:` targets never ship.
+    pub fn safe_url(&self) -> Option<&str> {
+        if self.kind != LinkKind::Url {
+            return None;
+        }
+        let t = self.target.as_str();
+        let ok_scheme = ["https://", "http://", "mailto:"]
+            .iter()
+            .any(|p| t.len() > p.len() && t.get(..p.len()).is_some_and(|head| head.eq_ignore_ascii_case(p)));
+        let clean = t.chars().all(|c| !c.is_whitespace() && !c.is_control());
+        (ok_scheme && clean).then_some(t)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -583,5 +621,28 @@ impl DnaFamily {
             DnaFamily::Cinematic => "Cinematic",
             DnaFamily::MagazineSerif => "Magazine serif",
         }
+    }
+}
+
+#[cfg(test)]
+mod link_tests {
+    use super::*;
+
+    fn url(target: &str) -> Link {
+        Link { kind: LinkKind::Url, target: target.into() }
+    }
+
+    #[test]
+    fn safe_url_allows_web_and_mail_only() {
+        assert_eq!(url("https://example.com/a?x=1").safe_url(), Some("https://example.com/a?x=1"));
+        assert_eq!(url("HTTP://example.com").safe_url(), Some("HTTP://example.com"));
+        assert_eq!(url("mailto:hi@example.com").safe_url(), Some("mailto:hi@example.com"));
+        assert_eq!(url("javascript:alert(1)").safe_url(), None);
+        assert_eq!(url("file:///etc/passwd").safe_url(), None);
+        assert_eq!(url("https://exa mple.com").safe_url(), None);
+        assert_eq!(url("https://").safe_url(), None);
+        assert_eq!(url("").safe_url(), None);
+        let slide = Link { kind: LinkKind::Slide, target: "s2".into() };
+        assert_eq!(slide.safe_url(), None);
     }
 }

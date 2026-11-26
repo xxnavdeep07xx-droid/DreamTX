@@ -14,7 +14,7 @@ use crate::export::{ExportImage, doc_paragraphs, para_anchor_at, run_pieces, utf
 use crate::fonts;
 use crate::layout::{layout_slide, Element};
 use crate::model::{
-    ArrowHead, DashStyle, Deck, Fill, ObjectContent, Shape, TextDoc, SLIDE_H, deck_dims,
+    ArrowHead, DashStyle, Deck, Fill, LinkKind, ObjectContent, Shape, TextDoc, SLIDE_H, deck_dims,
 };
 use crate::shapes;
 use std::collections::BTreeMap;
@@ -35,6 +35,21 @@ fn esc(s: &str) -> String {
         }
     }
     out
+}
+
+/// Add a `<a:hlinkClick>` to a shape fragment's `<p:cNvPr …/>`, so the whole
+/// object becomes clickable. `action` is the PPTX `ppaction://` verb for
+/// slide jumps; web links pass `None`.
+fn with_link(frag: String, rid: &str, action: Option<&str>) -> String {
+    let Some(start) = frag.find("<p:cNvPr ") else { return frag };
+    let Some(rel) = frag[start..].find("/>") else { return frag };
+    let end = start + rel;
+    let attr = action.map(|a| format!(" action=\"{a}\"")).unwrap_or_default();
+    format!(
+        "{}><a:hlinkClick r:id=\"{rid}\"{attr}/></p:cNvPr>{}",
+        &frag[..end],
+        &frag[end + 2..]
+    )
 }
 
 fn pt(size_px: f64) -> i32 {
@@ -759,7 +774,10 @@ pub fn to_pptx(deck: &Deck, images: &BTreeMap<String, ExportImage>) -> Vec<u8> {
         // interleave exactly as `slide.objects` lists them (and Bring
         // Forward / Send Backward reordered them).
         let mut slide_image_rels = String::new();
+        let mut link_rels = String::new();
+        let mut link_n = 0usize;
         for obj in &slide.objects {
+            let before = shapes.len();
             match &obj.content {
                 Some(ObjectContent::Text { doc }) => {
                     shapes.push_str(&text_object_sp(obj, doc, &base_fg, id));
@@ -795,6 +813,40 @@ pub fn to_pptx(deck: &Deck, images: &BTreeMap<String, ExportImage>) -> Vec<u8> {
                     shapes.push_str(&shape_sp(obj, id));
                 }
             }
+            // Tap-action: wrap the object's own fragment in a hyperlink.
+            // Web links use an External relationship; slide jumps use a
+            // slide relationship plus the hlinksldjump action.
+            let link = match obj.link.as_ref() {
+                Some(l) => match l.kind {
+                    LinkKind::Url => l.safe_url().map(|u| {
+                        link_n += 1;
+                        let rid = format!("rIdK{link_n}");
+                        link_rels.push_str(&format!(
+                            r#"<Relationship Id="{rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="{}" TargetMode="External"/>"#,
+                            esc(u)
+                        ));
+                        (rid, None)
+                    }),
+                    LinkKind::Slide => deck
+                        .slides
+                        .iter()
+                        .position(|s| s.id == l.target)
+                        .map(|j| {
+                            link_n += 1;
+                            let rid = format!("rIdK{link_n}");
+                            link_rels.push_str(&format!(
+                                r#"<Relationship Id="{rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slide{}.xml"/>"#,
+                                j + 1
+                            ));
+                            (rid, Some("ppaction://hlinksldjump"))
+                        }),
+                },
+                None => None,
+            };
+            if let Some((rid, action)) = link {
+                let frag = shapes.split_off(before);
+                shapes.push_str(&with_link(frag, &rid, action));
+            }
             id += 1;
         }
         let xml = format!(
@@ -804,7 +856,7 @@ pub fn to_pptx(deck: &Deck, images: &BTreeMap<String, ExportImage>) -> Vec<u8> {
         put!(
             &format!("ppt/slides/_rels/slide{}.xml.rels", i + 1),
             format!(
-                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>{slide_image_rels}</Relationships>"#
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>{slide_image_rels}{link_rels}</Relationships>"#
             )
         );
     }
@@ -819,6 +871,15 @@ pub fn to_pptx(deck: &Deck, images: &BTreeMap<String, ExportImage>) -> Vec<u8> {
 pub(crate) mod tests {
     use super::*;
     use crate::model::*;
+
+    #[test]
+    fn with_link_wraps_cnvpr() {
+        let frag = r#"<p:sp><p:nvSpPr><p:cNvPr id="3" name="rect3"/><p:cNvSpPr/></p:nvSpPr></p:sp>"#.to_string();
+        let out = with_link(frag, "rIdK1", Some("ppaction://hlinksldjump"));
+        assert!(out.contains(
+            r#"<p:cNvPr id="3" name="rect3"><a:hlinkClick r:id="rIdK1" action="ppaction://hlinksldjump"/></p:cNvPr><p:cNvSpPr/>"#
+        ));
+    }
 
     /// The content-deck fixture, shared with the PDF export tests.
     pub(crate) fn content_deck_for_pdf() -> Deck {
@@ -838,6 +899,7 @@ pub(crate) mod tests {
                 content: SlideContent::Cover { kicker: None, title: "Hello".into(), subtitle: None },
                 objects: vec![Shape {
                     id: "o1".into(),
+                    link: None,
                     preset: "rectangle".into(),
                     x: 100.0,
                     y: 100.0,
@@ -894,6 +956,7 @@ pub(crate) mod tests {
         deck.slides[0].objects = vec![
             Shape {
                 id: "shape".into(),
+                link: None,
                 preset: "rectangle".into(),
                 x: 10.0, y: 10.0, w: 100.0, h: 60.0,
                 rotation: 0.0, opacity: 1.0, locked: false, group: None, component: None,
@@ -903,6 +966,7 @@ pub(crate) mod tests {
             },
             Shape {
                 id: "txt".into(),
+                link: None,
                 preset: "rectangle".into(),
                 x: 200.0, y: 100.0, w: 500.0, h: 200.0,
                 rotation: 0.0, opacity: 1.0, locked: false, group: None, component: None,
@@ -912,6 +976,7 @@ pub(crate) mod tests {
             },
             Shape {
                 id: "img".into(),
+                link: None,
                 preset: "rectangle".into(),
                 x: 700.0, y: 100.0, w: 300.0, h: 200.0,
                 rotation: 0.0, opacity: 1.0, locked: false, group: None, component: None,
@@ -923,6 +988,7 @@ pub(crate) mod tests {
             },
             Shape {
                 id: "tbl".into(),
+                link: None,
                 preset: "rectangle".into(),
                 x: 100.0, y: 400.0, w: 400.0, h: 150.0,
                 rotation: 0.0, opacity: 1.0, locked: false, group: None, component: None,
@@ -938,6 +1004,7 @@ pub(crate) mod tests {
             },
             Shape {
                 id: "ic".into(),
+                link: None,
                 preset: "rectangle".into(),
                 x: 550.0, y: 400.0, w: 80.0, h: 80.0,
                 rotation: 0.0, opacity: 1.0, locked: false, group: None, component: None,
@@ -948,6 +1015,7 @@ pub(crate) mod tests {
             },
             Shape {
                 id: "med".into(),
+                link: None,
                 preset: "rectangle".into(),
                 x: 650.0, y: 400.0, w: 200.0, h: 120.0,
                 rotation: 0.0, opacity: 1.0, locked: false, group: None, component: None,
