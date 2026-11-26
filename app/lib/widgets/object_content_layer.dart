@@ -989,7 +989,7 @@ class ChartPainter extends CustomPainter {
     double bandOf(double slot) => slot * 0.7 / math.max(1, series.length);
 
     if (style == 'bar') {
-      final pl = left + 70.0;
+      const pl = left + 70.0;
       double xOf(double v) => pl + (v - lo) / span * (right - pl);
       final zero = xOf(0);
       final gs = (bottom - top) / n;
