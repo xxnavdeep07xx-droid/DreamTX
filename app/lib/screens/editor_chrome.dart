@@ -315,10 +315,10 @@ extension _EditorChrome on _EditorScreenState {
     });
   }
 
-  /// Draw C: the island settled on an edge — remember it for this device.
-  void _setIslandDock(IslandDock dock) {
-    _setState(() => _islandDock = dock);
-    saveIslandDock(dock);
+  /// Draw C: the island settled (or changed mode) — remember it per device.
+  void _setIsland(IslandPlacement placement) {
+    _setState(() => _island = placement);
+    saveIslandPlacement(placement);
   }
 
   void _onNavSelect(_NavTab tab) {
@@ -359,6 +359,16 @@ extension _EditorChrome on _EditorScreenState {
         // The toolbox: pen / highlighter with per-tool colors, the pen's
         // widths, the expandable palette band (the row lives in the
         // editor_draw_tools part file; the editor owns the ONE state).
+        // Draw C-2: the compact island shows the narrow column instead.
+        if (_island.compact) {
+          return _DrawToolboxCompact(
+            state: _drawToolbox,
+            defaultPenHex: _dnaAccentHex,
+            palette: _deckPalette,
+            onChanged: _setDrawToolbox,
+            onExpand: () => _setIsland(_island.copyWith(compact: false)),
+          );
+        }
         return _DrawToolboxRow(
           state: _drawToolbox,
           defaultPenHex: _dnaAccentHex,
@@ -366,6 +376,7 @@ extension _EditorChrome on _EditorScreenState {
           onChanged: _setDrawToolbox,
           onClearAll: _clearAllInk,
           onReplayInk: _replayInk,
+          onCompact: () => _setIsland(_island.copyWith(compact: true)),
           onNotice: _toast,
           lassoCount: _liveLassoIds.length,
           onLassoColor: _restyleLasso,
