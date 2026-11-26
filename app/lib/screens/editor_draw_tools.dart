@@ -52,6 +52,7 @@ class _DrawToolboxState {
     this.expanded = false,
     this.presets = const [],
     this.ruler = false,
+    this.inkToShape = false,
   });
 
   final bool armed;
@@ -81,6 +82,10 @@ class _DrawToolboxState {
 
   /// Draw R: the ruler overlay on the slide (editor-only, never exported).
   final bool ruler;
+
+  /// Draw D: when on, a pen stroke that reads as a line, rectangle,
+  /// ellipse or triangle commits as that shape instead of a freehand path.
+  final bool inkToShape;
 
   /// The lasso's band is always open while it is armed (its controls ARE
   /// the selection's face); the other tools open it by a chip tap.
@@ -211,6 +216,9 @@ class _DrawToolboxState {
   /// The ruler toggle: never disarms — the ruler is a view aid, not a tool.
   _DrawToolboxState rulerToggled() => _copy(ruler: !ruler);
 
+  /// The ink→shape toggle: a setting, not a tool — it never disarms.
+  _DrawToolboxState inkToShapeToggled() => _copy(inkToShape: !inkToShape);
+
   /// The compact row's color/width chip tap: toggle the band.
   _DrawToolboxState bandToggled() => _copy(expanded: !expanded);
 
@@ -232,6 +240,7 @@ class _DrawToolboxState {
     bool? expanded,
     List<InkPreset>? presets,
     bool? ruler,
+    bool? inkToShape,
   }) =>
       _DrawToolboxState(
         armed: armed ?? this.armed,
@@ -244,6 +253,7 @@ class _DrawToolboxState {
         expanded: expanded ?? this.expanded,
         presets: presets ?? this.presets,
         ruler: ruler ?? this.ruler,
+        inkToShape: inkToShape ?? this.inkToShape,
       );
 }
 
@@ -385,6 +395,15 @@ class _DrawToolboxRow extends StatelessWidget {
                 label: inkPenSizeLabel(state.penWidth),
                 tooltip: 'Pen width',
                 onTap: () => onChanged(state.bandToggled()),
+              ),
+            // Ink → shape: the pen's setting (the pencil's strokes recognize
+            // too — both are the pen family).
+            if (state.tool == InkTool.pen)
+              _DrawToolButton(
+                icon: Icons.auto_fix_high,
+                tooltip: 'Ink to shape',
+                active: state.inkToShape,
+                onTap: () => onChanged(state.inkToShapeToggled()),
               ),
             // The eraser's settings: its reach and the clear-all button.
             if (state.tool == InkTool.eraser) ...[

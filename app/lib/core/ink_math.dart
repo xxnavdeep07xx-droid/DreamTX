@@ -487,3 +487,102 @@ List<({double pos, int kind})> rulerTicks(double length, {int step = 10}) {
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Draw D: ink → shape. Deterministic, offline heuristics over the same
+// captured polyline the stroke commits with. Anything that fits no shape
+// stays a freehand path — recognition never guesses.
+// ---------------------------------------------------------------------------
+
+/// What a stroke was recognized as. [none] keeps the freehand path.
+enum InkShapeKind { none, line, rect, ellipse, triangle }
+
+/// Recognize a finished stroke. Checks run in order, each strict enough
+/// that a scribble falls through to [InkShapeKind.none]:
+///
+/// 1. **line** — every point within a few px of the chord (start → end).
+/// 2. Only a *closed* loop (end back near the start) can be a shape; an
+///    open squiggle is never one.
+/// 3. **rect** — nearly every point hugs the frame's boundary.
+/// 4. **ellipse** — the points sit on the inscribed ellipse.
+/// 5. **triangle** — three corners after simplification.
+InkShapeKind inkRecognizeShape(List<Offset> pts) {
+  if (pts.length < 4) return InkShapeKind.none;
+  var minx = pts.first.dx;
+  var miny = pts.first.dy;
+  var maxx = minx;
+  var maxy = miny;
+  for (final p in pts) {
+    minx = math.min(minx, p.dx);
+    miny = math.min(miny, p.dy);
+    maxx = math.max(maxx, p.dx);
+    maxy = math.max(maxy, p.dy);
+  }
+  final w = maxx - minx;
+  final h = maxy - miny;
+  final diag = math.sqrt(w * w + h * h);
+  // Too small to classify reliably — a dot, a tick, a flick.
+  if (diag < 30) return InkShapeKind.none;
+
+  final s = pts.first;
+  final e = pts.last;
+
+  // 1. Line: every point near the segment s→e.
+  final tolLine = math.max(4.0, 0.04 * diag);
+  var dmax = 0.0;
+  for (final p in pts) {
+    dmax = math.max(dmax, _segmentDistance(p, s, e));
+  }
+  if (dmax <= tolLine) return InkShapeKind.line;
+
+  // 2. Only a closed loop can be a shape.
+  if ((e - s).distance > 0.25 * diag) return InkShapeKind.none;
+
+  // Rect and ellipse need a frame with some body to fit.
+  if (w >= 20 && h >= 20) {
+    // 3. Rect: the points hug the frame's four edges.
+    final tolR = math.max(6.0, 0.08 * math.min(w, h));
+    final corners = [
+      Offset(minx, miny),
+      Offset(maxx, miny),
+      Offset(maxx, maxy),
+      Offset(minx, maxy),
+    ];
+    var near = 0;
+    for (final p in pts) {
+      var best = double.infinity;
+      for (var i = 0; i < 4; i++) {
+        best = math.min(
+          best,
+          _segmentDistance(p, corners[i], corners[(i + 1) % 4]),
+        );
+      }
+      if (best <= tolR) near++;
+    }
+    if (near >= 0.9 * pts.length) return InkShapeKind.rect;
+
+    // 4. Ellipse: the points sit on the ellipse inscribed in the frame.
+    final cx = (minx + maxx) / 2;
+    final cy = (miny + maxy) / 2;
+    final a = w / 2;
+    final b = h / 2;
+    var sum = 0.0;
+    var good = 0;
+    for (final p in pts) {
+      final dx = (p.dx - cx) / a;
+      final dy = (p.dy - cy) / b;
+      final err = ((math.sqrt(dx * dx + dy * dy)) - 1).abs();
+      sum += err;
+      if (err <= 0.2) good++;
+    }
+    if (sum / pts.length <= 0.12 && good >= 0.9 * pts.length) {
+      return InkShapeKind.ellipse;
+    }
+  }
+
+  // 5. Triangle: three corners (a closed polyline simplifies to 4 points —
+  // three vertices plus the closing one).
+  final simplified = _simplify(pts, math.max(6.0, 0.05 * diag));
+  if (simplified.length == 4) return InkShapeKind.triangle;
+  return InkShapeKind.none;
+}

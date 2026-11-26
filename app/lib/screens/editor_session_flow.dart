@@ -119,6 +119,82 @@ extension _EditorSessionFlow on _EditorScreenState {
     });
   }
 
+  /// Ink → shape (Draw D): the recognized shape as an object, styled exactly
+  /// like the stroke it replaces. Null = keep the freehand path. A line
+  /// becomes a two-point path (the editor's own path model), so it exports
+  /// and erases like any scribble.
+  Map<String, dynamic>? _recognizedShapeFor(
+    InkShapeKind kind,
+    List<Offset> pts,
+    InkStyle style,
+  ) {
+    if (kind == InkShapeKind.none || pts.length < 2) return null;
+    var minx = pts.first.dx;
+    var miny = pts.first.dy;
+    var maxx = minx;
+    var maxy = miny;
+    for (final p in pts) {
+      minx = math.min(minx, p.dx);
+      miny = math.min(miny, p.dy);
+      maxx = math.max(maxx, p.dx);
+      maxy = math.max(maxy, p.dy);
+    }
+    final w = math.max(maxx - minx, 1.0);
+    final h = math.max(maxy - miny, 1.0);
+    final stroke = <String, dynamic>{
+      'color': style.colorHex,
+      'width': style.width,
+      'dash': 'solid',
+      'start_arrow': 'none',
+      'end_arrow': 'none',
+    };
+    if (kind == InkShapeKind.line) {
+      final ends = [pts.first, pts.last];
+      return <String, dynamic>{
+        'id': _newObjectId(),
+        'preset': 'path',
+        'x': minx,
+        'y': miny,
+        'w': w,
+        'h': h,
+        'rotation': 0.0,
+        'opacity': style.opacity,
+        'locked': false,
+        'fill': {'type': 'none'},
+        'stroke': stroke,
+        'effects': {},
+        'points': [
+          for (final p in ends)
+            {
+              'x': ((p.dx - minx) / w).clamp(0.0, 1.0).toDouble(),
+              'y': ((p.dy - miny) / h).clamp(0.0, 1.0).toDouble(),
+            },
+        ],
+        'closed': false,
+      };
+    }
+    final preset = switch (kind) {
+      InkShapeKind.rect => 'rect',
+      InkShapeKind.ellipse => 'ellipse',
+      _ => 'triangle',
+    };
+    return <String, dynamic>{
+      'id': _newObjectId(),
+      'preset': preset,
+      'x': minx,
+      'y': miny,
+      'w': w,
+      'h': h,
+      'rotation': 0.0,
+      'opacity': style.opacity,
+      'locked': false,
+      'fill': {'type': 'none'},
+      'stroke': stroke,
+      'effects': {},
+      'closed': true,
+    };
+  }
+
   /// A stroke finished: the capture pipeline's smoothed design-space
   /// polyline ([inkCapture] — the same list the live preview painted its
   /// last frame with) lands as a plain `path` object in the deck's model,
@@ -149,7 +225,16 @@ extension _EditorSessionFlow on _EditorScreenState {
           'y': ((p.dy - miny) / h).clamp(0.0, 1.0).toDouble()
         },
     ];
-    final shape = <String, dynamic>{
+    // Ink → shape: when the toggle is on and the stroke reads as a shape,
+    // that shape replaces the freehand path — one add, one undo step.
+    final shape = _recognizedShapeFor(
+          _drawToolbox.inkToShape && _drawToolbox.tool == InkTool.pen
+              ? inkRecognizeShape(pts)
+              : InkShapeKind.none,
+          pts,
+          style,
+        ) ??
+        <String, dynamic>{
       'id': _newObjectId(),
       'preset': 'path',
       'x': minx,
