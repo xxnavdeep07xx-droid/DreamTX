@@ -1139,6 +1139,7 @@ mod tests {
                 ),
                 slide("s2", vec![]),
             ],
+            components: Vec::new(),
         };
         let bytes = to_pdf(&deck, &BTreeMap::new());
         let text = String::from_utf8_lossy(&bytes);
