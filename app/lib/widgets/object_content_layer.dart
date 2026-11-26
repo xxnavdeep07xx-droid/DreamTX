@@ -35,7 +35,12 @@ class ObjectContentLayer extends StatelessWidget {
     this.singleObject = false,
     this.tableMeta,
     this.imageMeta,
+    this.chartPalette = kChartPalette,
   });
+
+  /// The deck's chart palette (DNA-derived) for charts without their own
+  /// series colors.
+  final List<String> chartPalette;
 
   final List<Map<String, dynamic>> objects;
 
@@ -139,7 +144,8 @@ class ObjectContentLayer extends StatelessWidget {
       case kContentMedia:
         return _MediaView(obj: obj, resolve: resolveResourcePath);
       case kContentChart:
-        return _ChartView(obj: obj, baseColor: baseColor);
+        return _ChartView(
+            obj: obj, baseColor: baseColor, palette: chartPalette);
       case kContentTable:
         return _TableView(
           obj: obj,
@@ -862,10 +868,12 @@ class _MediaView extends StatelessWidget {
 /// A native chart, drawn in the object's design space (same geometry as the
 /// PDF export, so the canvas and the export agree).
 class _ChartView extends StatelessWidget {
-  const _ChartView({required this.obj, required this.baseColor});
+  const _ChartView(
+      {required this.obj, required this.baseColor, required this.palette});
 
   final Map<String, dynamic> obj;
   final Color baseColor;
+  final List<String> palette;
 
   @override
   Widget build(BuildContext context) {
@@ -883,7 +891,8 @@ class _ChartView extends StatelessWidget {
           opacity: _opacityOf(obj),
           child: CustomPaint(
             size: Size(w, h),
-            painter: ChartPainter(data: data, textColor: baseColor),
+            painter: ChartPainter(
+                data: data, textColor: baseColor, palette: palette),
           ),
         ),
       );
@@ -893,10 +902,14 @@ class _ChartView extends StatelessWidget {
 
 /// Paints a chart into a design-space canvas (origin top-left, y down).
 class ChartPainter extends CustomPainter {
-  ChartPainter({required this.data, required this.textColor});
+  ChartPainter(
+      {required this.data,
+      required this.textColor,
+      this.palette = kChartPalette});
 
   final ChartData data;
   final Color textColor;
+  final List<String> palette;
 
   Color _hex(String hex) => hexToColor(hex);
 
@@ -944,11 +957,11 @@ class ChartPainter extends CustomPainter {
         for (var i = 0; i < labels.length; i++)
           (
             labels[i],
-            series.isEmpty ? '9E9EA6' : chartColorAt(series.first, i)
+            series.isEmpty ? '9E9EA6' : chartColorAt(series.first, i, palette: palette)
           )
       else
         for (var i = 0; i < series.length; i++)
-          (series[i].name, chartColorAt(series[i], i)),
+          (series[i].name, chartColorAt(series[i], i, palette: palette)),
     ];
     if (legend.length > 1) {
       var lx = left;
@@ -973,7 +986,7 @@ class ChartPainter extends CustomPainter {
           if (vals[i] <= 0) continue;
           final sweep = vals[i] / total * 2 * math.pi;
           canvas.drawArc(rect, a, sweep, true,
-              Paint()..color = _hex(chartColorAt(series.first, i)));
+              Paint()..color = _hex(chartColorAt(series.first, i, palette: palette)));
           a += sweep;
         }
       }
@@ -1007,7 +1020,7 @@ class ChartPainter extends CustomPainter {
           canvas.drawRect(
             Rect.fromLTRB(math.min(zero, xOf(v)), y0,
                 math.max(zero, xOf(v)), y0 + band),
-            Paint()..color = _hex(chartColorAt(series[si], si)),
+            Paint()..color = _hex(chartColorAt(series[si], si, palette: palette)),
           );
         }
       }
@@ -1038,7 +1051,7 @@ class ChartPainter extends CustomPainter {
           final x0 = gx + gw * 0.15 + si * band;
           canvas.drawRect(
             Rect.fromLTRB(x0, yOf(series[si].values[g]), x0 + band, zeroY),
-            Paint()..color = _hex(chartColorAt(series[si], si)),
+            Paint()..color = _hex(chartColorAt(series[si], si, palette: palette)),
           );
         }
       }
@@ -1049,7 +1062,7 @@ class ChartPainter extends CustomPainter {
             Offset(left + g * gw + gw / 2, yOf(series[si].values[g])),
         ];
         if (pts.length < 2) continue;
-        final color = _hex(chartColorAt(series[si], si));
+        final color = _hex(chartColorAt(series[si], si, palette: palette));
         final path = Path()..moveTo(pts.first.dx, pts.first.dy);
         for (final p in pts.skip(1)) {
           path.lineTo(p.dx, p.dy);

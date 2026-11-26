@@ -19,6 +19,7 @@ import '../core/ink_math.dart';
 import '../core/island_math.dart';
 import '../core/island_store.dart';
 import '../core/link_math.dart';
+import '../core/link_open.dart';
 import '../core/media_pickers.dart';
 import '../core/media_playback.dart';
 import '../core/object_content.dart';
@@ -145,6 +146,8 @@ class _EditorScreenState extends State<EditorScreen>
   /// The deck's resolved DNA accent (RRGGBB) — the Draw pen's default
   /// color, refreshed with the palette so ink matches the deck identity.
   String _dnaAccentHex = 'D03028';
+  /// The deck's DNA chart palette: colors for charts with no series color.
+  List<String> _dnaChartPalette = kChartPalette;
 
   /// The resolved DNA palette in RRGGBB hex ('bg', 'surface', 'fg',
   /// 'muted', 'accent') — the table style chips resolve their colors from

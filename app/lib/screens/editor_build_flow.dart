@@ -260,6 +260,10 @@ extension _EditorBuildFlow on _EditorScreenState {
                                         ?.cast<String, dynamic>(),
                                     selectedId: _selectedObjectId,
                                     interactive: _mode == _Mode.editing,
+                                    // Edit mode only: linked objects show
+                                    // a link mark (never when presenting).
+                                    showLinkBadges: _mode == _Mode.editing,
+                                    chartPalette: _dnaChartPalette,
                                     // The Draw toolbox: the armed tool
                                     // and its style (the row under the
                                     // canvas owns the state; the preview

@@ -55,7 +55,13 @@ fn with_link(frag: String, rid: &str, action: Option<&str>) -> String {
 
 /// The chart part (DrawingML chart) for a native chart: literal categories
 /// and values, so it opens without an embedded workbook.
-fn chart_xml(style: ChartStyle, title: Option<&str>, labels: &[String], series: &[ChartSeries]) -> String {
+fn chart_xml(
+    style: ChartStyle,
+    title: Option<&str>,
+    labels: &[String],
+    series: &[ChartSeries],
+    palette: &[String],
+) -> String {
     let n = labels.len();
     let cat: String = {
         let pts: String = labels
@@ -83,7 +89,7 @@ fn chart_xml(style: ChartStyle, title: Option<&str>, labels: &[String], series: 
                 s.values.len()
             );
             let tx = format!(r#"<c:tx><c:v>{}</c:v></c:tx>"#, esc(&s.name));
-            let color = s.color_at(si);
+            let color = s.color_at(si, palette);
             let (sp, dpts, tail) = match style {
                 ChartStyle::Line => (
                     format!(
@@ -98,7 +104,7 @@ fn chart_xml(style: ChartStyle, title: Option<&str>, labels: &[String], series: 
                         .map(|i| {
                             format!(
                                 r#"<c:dPt><c:idx val="{i}"/><c:bubble3D val="0"/><c:spPr><a:solidFill><a:srgbClr val="{}"/></a:solidFill></c:spPr></c:dPt>"#,
-                                s.color_at(i)
+                                s.color_at(i, palette)
                             )
                         })
                         .collect(),
@@ -943,7 +949,7 @@ pub fn to_pptx(deck: &Deck, images: &BTreeMap<String, ExportImage>) -> Vec<u8> {
                 Some(ObjectContent::Chart { style, title, labels, series }) => {
                     chart_count += 1;
                     let n = chart_count;
-                    put!(&format!("ppt/charts/chart{n}.xml"), chart_xml(*style, title.as_deref(), labels, series));
+                    put!(&format!("ppt/charts/chart{n}.xml"), chart_xml(*style, title.as_deref(), labels, series, &r.chart_palette));
                     let rid = format!("rIdC{n}");
                     chart_rels.push_str(&format!(
                         r#"<Relationship Id="{rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart{n}.xml"/>"#

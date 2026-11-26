@@ -19,6 +19,9 @@ class _PresenterScreenState extends State<_PresenterScreen> {
   late final List<Map<String, dynamic>?> _layouts;
   int _page = 0;
 
+  /// The deck's DNA chart palette, for charts with no series color of their own.
+  List<String> _chartPalette = kChartPalette;
+
   /// The image-resource paths both scopes resolve to, so image objects
   /// present their real assets (loaded once on mount; the deck does not
   /// mutate while presenting).
@@ -36,6 +39,11 @@ class _PresenterScreenState extends State<_PresenterScreen> {
     _slides = ((widget.deck['slides'] as List?) ?? const [])
         .whereType<Map<String, dynamic>>()
         .toList();
+    final dnaReply = Bridge.command({'op': 'resolve_dna', 'deck': widget.deck});
+    if (dnaReply['ok'] == true && dnaReply['dna'] is Map) {
+      _chartPalette =
+          chartPaletteFrom((dnaReply['dna'] as Map)['chart_palette']);
+    }
     _layouts = [for (var i = 0; i < _slides.length; i++) _layoutAt(i)];
     var first = widget.first;
     if (first < 0) first = 0;
@@ -114,6 +122,45 @@ class _PresenterScreenState extends State<_PresenterScreen> {
         : null;
   }
 
+  /// A tap on a linked object follows its link (a URL opens outside the
+  /// deck; a slide link jumps there). Any other tap uses the tap zones:
+  /// left of centre goes back, right of centre advances, and the 90 px
+  /// centre gap does nothing. A link tap never also turns the page.
+  void _onTap(Offset at, Size screen) {
+    final design = designPointOf(
+        at, screen, Size(_designDims.$1, _designDims.$2));
+    if (design != null) {
+      final obj = linkObjectAt(_objectsOf(_page), design);
+      final link = obj == null ? null : linkOf(obj);
+      if (link != null) {
+        _followLink(link);
+        return;
+      }
+    }
+    if (at.dx < (screen.width - 90) / 2) {
+      _go(-1);
+    } else if (at.dx > (screen.width + 90) / 2) {
+      _go(1);
+    }
+  }
+
+  Future<void> _followLink(Map<String, dynamic> link) async {
+    if (link['kind'] == 'slide') {
+      final i = _slides.indexWhere((sl) => sl['id'] == link['target']);
+      if (i >= 0 && i != _page) {
+        _pages.animateToPage(i,
+            duration: const Duration(milliseconds: 260),
+            curve: Curves.easeOutCubic);
+      }
+      return;
+    }
+    final ok = await LinkOpen.openUrl(link['target'] as String);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('This link could not be opened')));
+    }
+  }
+
   void _go(int delta) {
     var target = _page + delta;
     if (target < 0) target = 0;
@@ -169,26 +216,22 @@ class _PresenterScreenState extends State<_PresenterScreen> {
                           // as edited.
                           imageMeta: (widget.deck['imageMeta'] as Map?)
                               ?.cast<String, dynamic>(),
+                          chartPalette: _chartPalette,
                           // Read-only: no selection, no gestures.
                         ),
                 ),
               );
             },
           ),
-          // Tap zones: right side advances, left side goes back — swipes still
-          // work because tap recognizers never claim drags.
-          Row(
-            children: [
-              Expanded(
-                  child: GestureDetector(
-                      onTap: () => _go(-1),
-                      behavior: HitTestBehavior.translucent)),
-              const SizedBox(width: 90),
-              Expanded(
-                  child: GestureDetector(
-                      onTap: () => _go(1),
-                      behavior: HitTestBehavior.translucent)),
-            ],
+          // Tap layer: link taps first, then the tap zones (right advances,
+          // left goes back). Swipes still work — tap recognizers never claim
+          // drags.
+          LayoutBuilder(
+            builder: (context, c) => GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTapUp: (d) => _onTap(d.localPosition, c.biggest),
+              child: const SizedBox.expand(),
+            ),
           ),
           Positioned(
             top: 24,

@@ -75,6 +75,14 @@ class MainActivity : FlutterActivity() {
                             result.success(openMedia(path, mime))
                         }
                     }
+                    "openUrl" -> {
+                        val url = call.arguments as? String
+                        if (url == null) {
+                            result.error("media", "url required", null)
+                        } else {
+                            result.success(openUrl(url))
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             } catch (e: Exception) {
@@ -180,6 +188,20 @@ class MainActivity : FlutterActivity() {
      * shared; any previous staging file is deleted first so one preview
      * at a time ever occupies the cache.
      */
+    /// Opens a web link (http, https) or mailto in the system's handler.
+    /// Any other scheme is refused here as well as in the core.
+    private fun openUrl(url: String): Boolean {
+        val uri = Uri.parse(url)
+        val scheme = uri.scheme?.lowercase() ?: return false
+        if (scheme != "https" && scheme != "http" && scheme != "mailto") return false
+        val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        if (intent.resolveActivity(packageManager) == null) return false
+        startActivity(intent)
+        return true
+    }
+
     private fun openMedia(path: String, mime: String): Boolean {
         val file = File(path)
         if (!file.exists() || !file.canRead()) return false

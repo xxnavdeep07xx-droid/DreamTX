@@ -639,6 +639,7 @@ fn chart_object_pdf(
     title: Option<&str>,
     labels: &[String],
     series: &[ChartSeries],
+    palette: &[String],
 ) -> String {
     let mut ops = String::new();
     let mut top = o.y + 8.0;
@@ -657,12 +658,12 @@ fn chart_object_pdf(
             .iter()
             .enumerate()
             .map(|(i, l)| {
-                let c = series.first().map(|s| s.color_at(i)).unwrap_or_else(|| "9E9EA6".to_string());
+                let c = series.first().map(|s| s.color_at(i, palette)).unwrap_or_else(|| "9E9EA6".to_string());
                 (l.clone(), c)
             })
             .collect()
     } else {
-        series.iter().enumerate().map(|(i, s)| (s.name.clone(), s.color_at(i))).collect()
+        series.iter().enumerate().map(|(i, s)| (s.name.clone(), s.color_at(i, palette))).collect()
     };
     if legend.len() > 1 {
         let mut lx = left;
@@ -691,7 +692,7 @@ fn chart_object_pdf(
                     let t = a + sweep * k as f64 / steps as f64;
                     pts.push((cx + r * t.cos(), cy + r * t.sin()));
                 }
-                let color = series.first().map(|s| s.color_at(i)).unwrap_or_else(|| "9E9EA6".to_string());
+                let color = series.first().map(|s| s.color_at(i, palette)).unwrap_or_else(|| "9E9EA6".to_string());
                 ops.push_str(&format!("\n{}{} f", set_fill(&color), path_ops(&pts, true)));
                 a += sweep;
             }
@@ -720,7 +721,7 @@ fn chart_object_pdf(
             for (si, s) in series.iter().enumerate() {
                 if let Some(&v) = s.values.get(g) {
                     let y0 = gy + gs * 0.15 + si as f64 * band;
-                    ops.push_str(&chart_rect(zero.min(x_of(v)), y0, zero.max(x_of(v)), y0 + band, &s.color_at(si)));
+                    ops.push_str(&chart_rect(zero.min(x_of(v)), y0, zero.max(x_of(v)), y0 + band, &s.color_at(si, palette)));
                 }
             }
         }
@@ -745,7 +746,7 @@ fn chart_object_pdf(
             for (si, s) in series.iter().enumerate() {
                 if let Some(&v) = s.values.get(g) {
                     let x0 = gx + gw * 0.15 + si as f64 * band;
-                    ops.push_str(&chart_rect(x0, y_of(v), x0 + band, zero, &s.color_at(si)));
+                    ops.push_str(&chart_rect(x0, y_of(v), x0 + band, zero, &s.color_at(si, palette)));
                 }
             }
         }
@@ -755,7 +756,7 @@ fn chart_object_pdf(
                 .filter_map(|g| s.values.get(g).map(|&v| (left + g as f64 * gw + gw / 2.0, y_of(v))))
                 .collect();
             if pts.len() >= 2 {
-                ops.push_str(&format!("\n{} 2.00 w{} S", set_stroke(&s.color_at(si)), path_ops(&pts, false)));
+                ops.push_str(&format!("\n{} 2.00 w{} S", set_stroke(&s.color_at(si, palette)), path_ops(&pts, false)));
             }
         }
     }
@@ -1035,6 +1036,7 @@ pub fn to_pdf(deck: &Deck, images: &BTreeMap<String, ExportImage>) -> Vec<u8> {
     };
 
     let base_fg = crate::dna::resolve(&deck.dna).palette.fg.clone();
+    let chart_pal = crate::dna::resolve(&deck.dna).chart_palette;
 
     for slide in &deck.slides {
         let layout = layout_slide(&deck, slide);
@@ -1084,7 +1086,7 @@ pub fn to_pdf(deck: &Deck, images: &BTreeMap<String, ExportImage>) -> Vec<u8> {
                     ops.push_str(&icon_object_pdf(obj, name));
                 }
                 Some(ObjectContent::Chart { style, title, labels, series }) => {
-                    ops.push_str(&chart_object_pdf(obj, *style, title.as_deref(), labels, series));
+                    ops.push_str(&chart_object_pdf(obj, *style, title.as_deref(), labels, series, &chart_pal));
                 }
                 Some(ObjectContent::Media { name, media_kind, .. }) => {
                     ops.push_str(&media_object_pdf(obj, name.as_deref().unwrap_or("media"), media_kind.as_deref()));
@@ -1274,12 +1276,12 @@ mod tests {
         .unwrap();
         let labels: Vec<String> = vec!["Q1".into(), "Q2".into()];
         let series: Vec<ChartSeries> = serde_json::from_value(json!([{"name": "a", "values": [3, 5]}])).unwrap();
-        let col = chart_object_pdf(&shape, ChartStyle::Column, Some("Sales"), &labels, &series);
+        let col = chart_object_pdf(&shape, ChartStyle::Column, Some("Sales"), &labels, &series, &[]);
         assert!(col.contains("(Q1) Tj") && col.contains("(Q2) Tj"), "category labels");
         assert!(col.contains("(Sales) Tj"), "title");
         assert_eq!(col.matches(" h f").count(), 2, "one bar per label");
         let pie_series: Vec<ChartSeries> = serde_json::from_value(json!([{"name": "a", "values": [1, 1]}])).unwrap();
-        let pie = chart_object_pdf(&shape, ChartStyle::Pie, None, &labels, &pie_series);
+        let pie = chart_object_pdf(&shape, ChartStyle::Pie, None, &labels, &pie_series, &[]);
         // Two wedges plus two legend swatches (the legend names the slices).
         assert_eq!(pie.matches(" h f").count(), 4, "wedges and legend swatches");
     }
