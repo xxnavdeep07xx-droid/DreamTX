@@ -24,8 +24,9 @@ void main() {
     });
 
     test('a tick lands exactly on the far edge when the length is a multiple', () {
-      final t = rulerTicks(1280);
-      expect(t.last.pos, 1280.0);
+      // 1200 is a multiple of 100: the far edge gets a major tick.
+      final t = rulerTicks(1200);
+      expect(t.last.pos, 1200.0);
       expect(t.last.kind, 2);
     });
 
