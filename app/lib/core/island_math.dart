@@ -44,23 +44,35 @@ class IslandPlacement {
     this.dock = IslandDock.bottom,
     this.side = IslandSide.right,
     this.compact = false,
+    this.coachSeen = false,
   });
 
   final IslandDock dock;
   final IslandSide side;
   final bool compact;
 
-  IslandPlacement copyWith({IslandDock? dock, IslandSide? side, bool? compact}) =>
+  /// Draw C-3: the one-time coach mark has been dismissed (or the island
+  /// was lifted once, which teaches the same thing).
+  final bool coachSeen;
+
+  IslandPlacement copyWith({
+    IslandDock? dock,
+    IslandSide? side,
+    bool? compact,
+    bool? coachSeen,
+  }) =>
       IslandPlacement(
         dock: dock ?? this.dock,
         side: side ?? this.side,
         compact: compact ?? this.compact,
+        coachSeen: coachSeen ?? this.coachSeen,
       );
 
   Map<String, Object> toJson() => {
         'dock': islandDockName(dock),
         'side': side.name,
         'compact': compact,
+        'coachSeen': coachSeen,
       };
 
   /// Anything missing or unknown falls back to the default field by field.
@@ -70,6 +82,7 @@ class IslandPlacement {
       dock: islandDockFromName(j['dock'] as String?),
       side: j['side'] == 'left' ? IslandSide.left : IslandSide.right,
       compact: j['compact'] == true,
+      coachSeen: j['coachSeen'] == true,
     );
   }
 }

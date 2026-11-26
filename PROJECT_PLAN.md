@@ -51,8 +51,8 @@ See section 4 for the full PowerPoint Draw-tab map.
 - [x] E. Ink replay (strokes animate in draw order; Draw-row button; display only, never exported) — PR #27
 - [ ] C. Floating island (dock, 500 ms hold to lift, compact mode, persisted position, coach mark)
   - [x] C-1 (PR #28, merged): the Draw toolbox is a floating island over the canvas, docked top/bottom, 500 ms hold on the grip lifts it (haptic + shadow), drag follows the finger, release snaps to the nearer edge, dock saved per device (`island.json`). Pure rules in `core/island_math.dart`, tests in `test/island_test.dart`.
-  - [~] C-2 (in PR, this branch): compact mode — a narrow column (Pen, Highlighter, Eraser, Lasso, colour dot) that docks to any corner; the colour dot opens the palette in a bottom sheet (the popover); toggles with the full toolbar's compact button and the column's expand button. Keep-outs: the island stays in the canvas area, so it never covers the ribbon or filmstrip.
-  - [ ] C-3: one-time coach mark.
+  - [x] C-2 (PR #29, merged): compact mode — a narrow column (Pen, Highlighter, Eraser, Lasso, colour dot) that docks to any corner; the colour dot opens the palette in a bottom sheet (the popover); toggles with the full toolbar's compact button and the column's expand button. Keep-outs: the island stays in the canvas area, so it never covers the ribbon or filmstrip.
+  - [~] C-3 (in PR, this branch): one-time coach mark beside the island ("Hold the grip to move this toolbar", Got it); retired by dismissal or the first lift; saved in island.json.
 
 ### Wave 3 — Insert Tier 2 (core/protocol changes)
 - [ ] 1. Link / tap-action (`link {kind: url|slide, target}`; PPTX hyperlinks + PDF link annotations)
@@ -123,7 +123,7 @@ Last updated: 2026-11-25 (Draw E in PR #27).
 - [x] R Ruler (PR #25)
 - [x] D Ink → shape (PR #26)
 - [x] E Ink replay (PR #27)
-- [~] C Floating island (C-1 merged PR #28; C-2 compact mode, C-3 coach mark open)
+- [~] C Floating island (C-1 PR #28 and C-2 PR #29 merged; C-3 coach mark in PR)
 - [ ] Wave 1 items 6–7
 - [ ] Wave 3 items 1–2
 - [ ] Wave 4 (ink→text/math, LIVE present)
