@@ -486,7 +486,8 @@ pub fn execute(req: &str) -> Value {
             };
             let old_objects = deck.slides[idx].objects.clone();
             let old_hide = deck.slides[idx].hide_graphics;
-            deck.slides[idx] = Slide { id: slide_id, archetype: a, content, objects: old_objects, hide_graphics: old_hide };
+            let old_bg = deck.slides[idx].background.clone();
+            deck.slides[idx] = Slide { id: slide_id, archetype: a, content, objects: old_objects, hide_graphics: old_hide, background: old_bg };
             deck.version += 1;
             json!({ "ok": true, "deck": deck })
         }
