@@ -74,16 +74,6 @@ pub enum Command {
         /// One of [ASPECTS]: "16:9" | "16:10" | "4:3" | "1:1".
         aspect: String,
     },
-    /// Set or clear one slide's solid background (Design tab). `color` is six
-    /// hex digits; omitted clears it. `apply_all` sets it on every slide.
-    SetSlideBackground {
-        deck: Deck,
-        slide_id: String,
-        #[serde(default)]
-        color: Option<String>,
-        #[serde(default)]
-        apply_all: bool,
-    },
     /// Show or hide the DNA background graphics on one slide (Design tab).
     SetSlideHideGraphics {
         deck: Deck,
@@ -529,30 +519,6 @@ pub fn execute(req: &str) -> Value {
         // muted/accent the layouts render with.
         Command::ResolveDna { deck } => {
             json!({ "ok": true, "dna": resolve(&deck.dna) })
-        }
-        Command::SetSlideBackground { mut deck, slide_id, color, apply_all } => {
-            let color = match color {
-                Some(c) => {
-                    let h = c.trim().trim_start_matches('#').to_ascii_uppercase();
-                    if h.len() != 6 || !h.chars().all(|ch| ch.is_ascii_hexdigit()) {
-                        return json!({ "ok": false, "error": format!("bad color '{c}' — use 6 hex digits") });
-                    }
-                    Some(h)
-                }
-                None => None,
-            };
-            let Some(idx) = deck.slides.iter().position(|s| s.id == slide_id) else {
-                return json!({ "ok": false, "error": "slide not found" });
-            };
-            if apply_all {
-                for s in deck.slides.iter_mut() {
-                    s.background = color.clone();
-                }
-            } else {
-                deck.slides[idx].background = color;
-            }
-            deck.version += 1;
-            json!({ "ok": true, "deck": deck })
         }
         Command::SetSlideHideGraphics { mut deck, slide_id, hide } => {
             let Some(idx) = deck.slides.iter().position(|s| s.id == slide_id) else {
