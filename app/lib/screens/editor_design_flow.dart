@@ -15,6 +15,29 @@ extension _EditorDesignFlow on _EditorScreenState {
     if (r['ok'] == true && r['deck'] is Map) _mutate(r['deck'] as Map);
   }
 
+  /// Design tab: whether the current slide hides the DNA background graphics.
+  bool get _slideHidesGraphics =>
+      _slides.isNotEmpty && _slides[_index]['hide_graphics'] == true;
+
+  /// Design tab: show or hide the DNA background graphics on the current
+  /// slide only. One undo step; the engine owns the flag, so exports and the
+  /// presenter follow it.
+  void _toggleSlideGraphics() {
+    final id = _slideId;
+    if (id == null) return;
+    final r = Bridge.command({
+      'op': 'set_slide_hide_graphics',
+      'deck': _deck,
+      'slide_id': id,
+      'hide': !_slideHidesGraphics,
+    });
+    if (r['ok'] == true && r['deck'] is Map) {
+      _mutate(r['deck'] as Map);
+    } else {
+      _toast('Could not change the background graphics');
+    }
+  }
+
   // ---- the Files drawer's deck-level tools --------------------------------------
 
   /// The deck's declared frame aspect ("16:9" for every deck that predates

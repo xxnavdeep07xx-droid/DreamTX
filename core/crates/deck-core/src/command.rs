@@ -74,6 +74,12 @@ pub enum Command {
         /// One of [ASPECTS]: "16:9" | "16:10" | "4:3" | "1:1".
         aspect: String,
     },
+    /// Show or hide the DNA background graphics on one slide (Design tab).
+    SetSlideHideGraphics {
+        deck: Deck,
+        slide_id: String,
+        hide: bool,
+    },
     // ---- vector overlay layer (manual studio tools) ----------------------
     AddObject {
         deck: Deck,
@@ -429,6 +435,7 @@ pub fn execute(req: &str) -> Value {
                 return json!({ "ok": true, "deck": deck });
             }
             let cover = Slide {
+                hide_graphics: false,
                 id: next_slide_id(&deck),
                 archetype: Archetype::Cover,
                 content: default_content(Archetype::Cover, &deck),
@@ -442,7 +449,7 @@ pub fn execute(req: &str) -> Value {
                 Some(a) => a,
                 None => return json!({ "ok": false, "error": format!("unknown archetype '{archetype}'") }),
             };
-            let mut slide = Slide { id: next_slide_id(&deck), archetype: a, content: default_content(a, &deck), objects: Vec::new() };
+            let mut slide = Slide { hide_graphics: false, id: next_slide_id(&deck), archetype: a, content: default_content(a, &deck), objects: Vec::new() };
             if let Some(c) = content {
                 slide.content = match serde_json::from_value(c) {
                     Ok(c) => c,
@@ -467,7 +474,8 @@ pub fn execute(req: &str) -> Value {
                 Err(e) => return json!({ "ok": false, "error": format!("content mismatch: {e}") }),
             };
             let old_objects = deck.slides[idx].objects.clone();
-            deck.slides[idx] = Slide { id: slide_id, archetype: a, content, objects: old_objects };
+            let old_hide = deck.slides[idx].hide_graphics;
+            deck.slides[idx] = Slide { id: slide_id, archetype: a, content, objects: old_objects, hide_graphics: old_hide };
             deck.version += 1;
             json!({ "ok": true, "deck": deck })
         }
@@ -509,6 +517,14 @@ pub fn execute(req: &str) -> Value {
         // muted/accent the layouts render with.
         Command::ResolveDna { deck } => {
             json!({ "ok": true, "dna": resolve(&deck.dna) })
+        }
+        Command::SetSlideHideGraphics { mut deck, slide_id, hide } => {
+            let Some(idx) = deck.slides.iter().position(|s| s.id == slide_id) else {
+                return json!({ "ok": false, "error": "slide not found" });
+            };
+            deck.slides[idx].hide_graphics = hide;
+            deck.version += 1;
+            json!({ "ok": true, "deck": deck })
         }
         Command::SetAspect { mut deck, aspect } => {
             let Some((w, _)) = aspect_dims(&aspect) else {
@@ -901,6 +917,7 @@ mod tests {
             dna: Dna { family: DnaFamily::SwissEditorial, seed: 11 },
             aspect: "16:9".into(),
             slides: vec![Slide {
+                hide_graphics: false,
                 id: "s1".into(),
                 archetype: Archetype::Blank,
                 content: SlideContent::Blank,
@@ -949,6 +966,28 @@ mod tests {
         assert_eq!(r["ok"], true);
         assert_eq!(r["deck"]["slides"].as_array().map(Vec::len), Some(1));
         assert_eq!(r["deck"]["slides"][0]["archetype"], "cover");
+    }
+
+    #[test]
+    fn set_slide_hide_graphics_toggles_one_slide() {
+        let deck = serde_json::to_string(&deck_with_object()).unwrap();
+        let req = r#"{"op":"set_slide_hide_graphics","deck":__DECK__,"slide_id":"s1","hide":true}"#
+            .replace("__DECK__", &deck);
+        let r = execute(&req);
+        assert_eq!(r["ok"], true);
+        let hidden: Deck = serde_json::from_value(r["deck"].clone()).unwrap();
+        assert!(hidden.slides[0].hide_graphics);
+        assert_eq!(hidden.version, 4);
+        // Off is the default, so the flag is left out of the saved JSON.
+        let back = r#"{"op":"set_slide_hide_graphics","deck":__DECK__,"slide_id":"s1","hide":false}"#
+            .replace("__DECK__", &serde_json::to_string(&hidden).unwrap());
+        let r2 = execute(&back);
+        assert_eq!(r2["ok"], true);
+        assert!(r2["deck"]["slides"][0].get("hide_graphics").is_none());
+        // Unknown slide is refused.
+        let missing = r#"{"op":"set_slide_hide_graphics","deck":__DECK__,"slide_id":"nope","hide":true}"#
+            .replace("__DECK__", &deck);
+        assert_eq!(execute(&missing)["ok"], false);
     }
 
     #[test]

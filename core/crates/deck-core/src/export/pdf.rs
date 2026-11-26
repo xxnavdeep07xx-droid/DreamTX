@@ -1293,6 +1293,7 @@ mod tests {
             serde_json::from_value(json!({"id": id, "preset": "rectangle", "x": 100, "y": 100, "w": 300, "h": 200, "link": link})).unwrap()
         };
         let slide = |id: &str, objects: Vec<Shape>| Slide {
+            hide_graphics: false,
             id: id.into(),
             archetype: Archetype::Cover,
             content: SlideContent::Cover { kicker: None, title: "T".into(), subtitle: None },
@@ -1335,12 +1336,14 @@ mod tests {
             aspect: "16:9".into(),
             slides: vec![
                 Slide {
+                    hide_graphics: false,
                     id: "s1".into(),
                     archetype: Archetype::Cover,
                     content: SlideContent::Cover { kicker: None, title: "Bonjour".into(), subtitle: None },
                     objects: Vec::new(),
                 },
                 Slide {
+                    hide_graphics: false,
                     id: "s2".into(),
                     archetype: Archetype::Statement,
                     content: SlideContent::Statement { text: "Ship it".into(), attribution: None },
@@ -1368,6 +1371,7 @@ mod tests {
             dna: Dna { family: DnaFamily::SwissEditorial, seed: 5 },
             aspect: "4:3".into(),
             slides: vec![Slide {
+                hide_graphics: false,
                 id: "s1".into(),
                 archetype: Archetype::Cover,
                 content: SlideContent::Cover { kicker: None, title: "Square-ish".into(), subtitle: None },
@@ -1389,6 +1393,7 @@ mod tests {
             dna: Dna { family: DnaFamily::SwissEditorial, seed: 3 },
             aspect: "16:9".into(),
             slides: vec![Slide {
+                hide_graphics: false,
                 id: "s1".into(),
                 archetype: Archetype::Cover,
                 content: SlideContent::Cover { kicker: None, title: "Hi".into(), subtitle: None },
@@ -1506,6 +1511,7 @@ mod tests {
             dna: Dna { family: DnaFamily::SwissEditorial, seed: 3 },
             aspect: "16:9".into(),
             slides: vec![Slide {
+                hide_graphics: false,
                 id: "s1".into(),
                 archetype: Archetype::Cover,
                 content: SlideContent::Cover { kicker: None, title: "Hi".into(), subtitle: None },

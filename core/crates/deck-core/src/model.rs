@@ -42,6 +42,10 @@ fn is_default_aspect(a: &str) -> bool {
     a == "16:9"
 }
 
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Deck {
     pub id: String,
@@ -73,6 +77,10 @@ pub struct Slide {
     /// exists (but the ops are exposed, so it can drive it too).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub objects: Vec<Shape>,
+    /// Hide the DNA's background graphics (the motif stamp / edge bar / rule)
+    /// on this slide. Off by default; set with `set_slide_hide_graphics`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub hide_graphics: bool,
 }
 
 // ---------------------------------------------------------------------------
