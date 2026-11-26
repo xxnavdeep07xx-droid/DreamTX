@@ -11,7 +11,10 @@
 
 use crate::command::object_polygon;
 use crate::export::{ExportImage, doc_paragraphs, para_anchor_at, run_pieces, utf16_slice};
-use crate::model::{Deck, Fill, LinkKind, ObjectContent, Shape, TextDoc, SLIDE_H, SLIDE_W, deck_dims};
+use crate::model::{
+    chart_range, ChartSeries, ChartStyle, Deck, Fill, LinkKind, ObjectContent, Shape, TextDoc, SLIDE_H,
+    SLIDE_W, deck_dims,
+};
 use crate::layout::{layout_slide, Element};
 use crate::fonts;
 use std::collections::BTreeMap;
@@ -610,6 +613,155 @@ fn font_name_for_run(d: &TextDraw) -> &'static str {
 }
 
 /// Table object → grid lines + cell text (the app painter's geometry).
+/// One line of chart text (ink color), baseline at design point (x, y).
+fn chart_text(font: &str, x: f64, y: f64, size: f64, s: &str) -> String {
+    let (px, py) = tf(x, y);
+    format!("\n{} BT {font} {size:.2} Tf {px:.2} {py:.2} Td ({}) Tj ET", set_fill("1C1C22"), pdf_escape(s))
+}
+
+/// A filled axis-aligned rectangle between two design-space corners.
+fn chart_rect(x0: f64, y0: f64, x1: f64, y1: f64, color: &str) -> String {
+    let pts = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)];
+    format!("\n{}{} f", set_fill(color), path_ops(&pts, true))
+}
+
+/// A thin grey stroke through the given design-space points.
+fn chart_axis(pts: &[(f64, f64)]) -> String {
+    format!("\n{} 0.50 w{} S", set_stroke("9E9EA6"), path_ops(pts, false))
+}
+
+/// A native chart drawn as vectors: bars, lines, or a pie, with its title,
+/// category labels, and a legend. Data scale and colors match the PPTX
+/// chart (`chart_range`, `ChartSeries::color_at`).
+fn chart_object_pdf(
+    o: &Shape,
+    style: ChartStyle,
+    title: Option<&str>,
+    labels: &[String],
+    series: &[ChartSeries],
+) -> String {
+    let mut ops = String::new();
+    let mut top = o.y + 8.0;
+    if let Some(t) = title {
+        ops.push_str(&chart_text("/F1b", o.x + 8.0, o.y + 20.0, 14.0, t));
+        top = o.y + 30.0;
+    }
+    let left = o.x + 8.0;
+    let right = o.x + o.w - 8.0;
+    let bottom = o.y + o.h - 34.0;
+    let legend_y = o.y + o.h - 6.0;
+
+    // Legend: pie slices are named by label, other charts by series.
+    let legend: Vec<(String, String)> = if style == ChartStyle::Pie {
+        labels
+            .iter()
+            .enumerate()
+            .map(|(i, l)| {
+                let c = series.first().map(|s| s.color_at(i)).unwrap_or_else(|| "9E9EA6".to_string());
+                (l.clone(), c)
+            })
+            .collect()
+    } else {
+        series.iter().enumerate().map(|(i, s)| (s.name.clone(), s.color_at(i))).collect()
+    };
+    if legend.len() > 1 {
+        let mut lx = left;
+        for (name, color) in &legend {
+            ops.push_str(&chart_rect(lx, legend_y - 8.0, lx + 8.0, legend_y, color));
+            ops.push_str(&chart_text("/F1", lx + 12.0, legend_y, 9.0, name));
+            lx += 12.0 + name.chars().count() as f64 * 5.5 + 14.0;
+        }
+    }
+
+    if style == ChartStyle::Pie {
+        let vals: &[f64] = series.first().map(|s| s.values.as_slice()).unwrap_or(&[]);
+        let total: f64 = vals.iter().filter(|v| v.is_finite() && **v > 0.0).sum();
+        if total > 0.0 {
+            let (cx, cy) = ((left + right) / 2.0, (top + bottom) / 2.0);
+            let r = ((right - left).min(bottom - top) / 2.0).max(1.0);
+            let mut a = -std::f64::consts::FRAC_PI_2;
+            for (i, v) in vals.iter().enumerate() {
+                if !(v.is_finite() && *v > 0.0) {
+                    continue;
+                }
+                let sweep = v / total * std::f64::consts::TAU;
+                let steps = ((sweep.to_degrees() / 3.0).ceil() as usize).clamp(2, 240);
+                let mut pts = vec![(cx, cy)];
+                for k in 0..=steps {
+                    let t = a + sweep * k as f64 / steps as f64;
+                    pts.push((cx + r * t.cos(), cy + r * t.sin()));
+                }
+                let color = series.first().map(|s| s.color_at(i)).unwrap_or_else(|| "9E9EA6".to_string());
+                ops.push_str(&format!("\n{}{} f", set_fill(&color), path_ops(&pts, true)));
+                a += sweep;
+            }
+        }
+        return ops;
+    }
+
+    let n = labels.len().max(series.iter().map(|s| s.values.len()).max().unwrap_or(0)).max(1);
+    let (lo, hi) = chart_range(series);
+    let span = hi - lo;
+    let band_of = |slot: f64| slot * 0.7 / series.len().max(1) as f64;
+
+    if style == ChartStyle::Bar {
+        // Horizontal bars: category labels sit in a left gutter.
+        let pl = left + 70.0;
+        let x_of = |v: f64| pl + (v - lo) / span * (right - pl);
+        let zero = x_of(0.0);
+        let gs = (bottom - top) / n as f64;
+        let band = band_of(gs);
+        ops.push_str(&chart_axis(&[(zero, top), (zero, bottom)]));
+        for g in 0..n {
+            let gy = top + g as f64 * gs;
+            if let Some(label) = labels.get(g) {
+                ops.push_str(&chart_text("/F1", left, gy + gs / 2.0 + 3.0, 9.0, label));
+            }
+            for (si, s) in series.iter().enumerate() {
+                if let Some(&v) = s.values.get(g) {
+                    let y0 = gy + gs * 0.15 + si as f64 * band;
+                    ops.push_str(&chart_rect(zero.min(x_of(v)), y0, zero.max(x_of(v)), y0 + band, &s.color_at(si)));
+                }
+            }
+        }
+        return ops;
+    }
+
+    // Column and line: one group per label along the bottom.
+    let gw = (right - left) / n as f64;
+    let y_of = |v: f64| top + (hi - v) / span * (bottom - top);
+    let zero = y_of(0.0);
+    ops.push_str(&chart_axis(&[(left, zero), (right, zero)]));
+    for g in 0..n {
+        if let Some(label) = labels.get(g) {
+            let cx = left + g as f64 * gw + gw / 2.0;
+            ops.push_str(&chart_text("/F1", cx - label.chars().count() as f64 * 2.6, bottom + 14.0, 9.0, label));
+        }
+    }
+    if style == ChartStyle::Column {
+        let band = band_of(gw);
+        for g in 0..n {
+            let gx = left + g as f64 * gw;
+            for (si, s) in series.iter().enumerate() {
+                if let Some(&v) = s.values.get(g) {
+                    let x0 = gx + gw * 0.15 + si as f64 * band;
+                    ops.push_str(&chart_rect(x0, y_of(v), x0 + band, zero, &s.color_at(si)));
+                }
+            }
+        }
+    } else {
+        for (si, s) in series.iter().enumerate() {
+            let pts: Vec<(f64, f64)> = (0..n)
+                .filter_map(|g| s.values.get(g).map(|&v| (left + g as f64 * gw + gw / 2.0, y_of(v))))
+                .collect();
+            if pts.len() >= 2 {
+                ops.push_str(&format!("\n{} 2.00 w{} S", set_stroke(&s.color_at(si)), path_ops(&pts, false)));
+            }
+        }
+    }
+    ops
+}
+
 fn table_object_pdf(o: &Shape, rows: u32, cols: u32, cells: &[String]) -> String {
     let mut ops = String::new();
     let rows = rows.max(1);
@@ -931,6 +1083,9 @@ pub fn to_pdf(deck: &Deck, images: &BTreeMap<String, ExportImage>) -> Vec<u8> {
                 Some(ObjectContent::Icon { name }) => {
                     ops.push_str(&icon_object_pdf(obj, name));
                 }
+                Some(ObjectContent::Chart { style, title, labels, series }) => {
+                    ops.push_str(&chart_object_pdf(obj, *style, title.as_deref(), labels, series));
+                }
                 Some(ObjectContent::Media { name, media_kind, .. }) => {
                     ops.push_str(&media_object_pdf(obj, name.as_deref().unwrap_or("media"), media_kind.as_deref()));
                 }
@@ -1109,6 +1264,25 @@ endstream");
 mod tests {
     use super::*;
     use crate::model::*;
+
+    #[test]
+    fn charts_draw_labels_and_fills() {
+        use serde_json::json;
+        let shape: Shape = serde_json::from_value(json!({
+            "id": "c", "preset": "rectangle", "x": 100, "y": 100, "w": 400, "h": 300
+        }))
+        .unwrap();
+        let labels: Vec<String> = vec!["Q1".into(), "Q2".into()];
+        let series: Vec<ChartSeries> = serde_json::from_value(json!([{"name": "a", "values": [3, 5]}])).unwrap();
+        let col = chart_object_pdf(&shape, ChartStyle::Column, Some("Sales"), &labels, &series);
+        assert!(col.contains("(Q1) Tj") && col.contains("(Q2) Tj"), "category labels");
+        assert!(col.contains("(Sales) Tj"), "title");
+        assert_eq!(col.matches(" h f").count(), 2, "one bar per label");
+        let pie_series: Vec<ChartSeries> = serde_json::from_value(json!([{"name": "a", "values": [1, 1]}])).unwrap();
+        let pie = chart_object_pdf(&shape, ChartStyle::Pie, None, &labels, &pie_series);
+        // Two wedges plus two legend swatches (the legend names the slices).
+        assert_eq!(pie.matches(" h f").count(), 4, "wedges and legend swatches");
+    }
 
     #[test]
     fn links_become_annotations() {

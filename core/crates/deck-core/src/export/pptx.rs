@@ -14,7 +14,8 @@ use crate::export::{ExportImage, doc_paragraphs, para_anchor_at, run_pieces, utf
 use crate::fonts;
 use crate::layout::{layout_slide, Element};
 use crate::model::{
-    ArrowHead, DashStyle, Deck, Fill, LinkKind, ObjectContent, Shape, TextDoc, SLIDE_H, deck_dims,
+    ArrowHead, ChartSeries, ChartStyle, DashStyle, Deck, Fill, LinkKind, ObjectContent, Shape, TextDoc,
+    SLIDE_H, deck_dims,
 };
 use crate::shapes;
 use std::collections::BTreeMap;
@@ -49,6 +50,125 @@ fn with_link(frag: String, rid: &str, action: Option<&str>) -> String {
         "{}><a:hlinkClick r:id=\"{rid}\"{attr}/></p:cNvPr>{}",
         &frag[..end],
         &frag[end + 2..]
+    )
+}
+
+/// The chart part (DrawingML chart) for a native chart: literal categories
+/// and values, so it opens without an embedded workbook.
+fn chart_xml(style: ChartStyle, title: Option<&str>, labels: &[String], series: &[ChartSeries]) -> String {
+    let n = labels.len();
+    let cat: String = {
+        let pts: String = labels
+            .iter()
+            .enumerate()
+            .map(|(i, l)| format!(r#"<c:pt idx="{i}"><c:v>{}</c:v></c:pt>"#, esc(l)))
+            .collect();
+        format!(r#"<c:cat><c:strLit><c:ptCount val="{n}"/>{pts}</c:strLit></c:cat>"#)
+    };
+    // A pie shows only its first series, one colored slice per label.
+    let used: &[ChartSeries] = if style == ChartStyle::Pie { &series[..series.len().min(1)] } else { series };
+    let sers: String = used
+        .iter()
+        .enumerate()
+        .map(|(si, s)| {
+            let vals: String = s
+                .values
+                .iter()
+                .enumerate()
+                .filter(|(_, v)| v.is_finite())
+                .map(|(i, v)| format!(r#"<c:pt idx="{i}"><c:v>{v}</c:v></c:pt>"#))
+                .collect();
+            let val = format!(
+                r#"<c:val><c:numLit><c:formatCode>General</c:formatCode><c:ptCount val="{}"/>{vals}</c:numLit></c:val>"#,
+                s.values.len()
+            );
+            let tx = format!(r#"<c:tx><c:v>{}</c:v></c:tx>"#, esc(&s.name));
+            let color = s.color_at(si);
+            let (sp, dpts, tail) = match style {
+                ChartStyle::Line => (
+                    format!(
+                        r#"<c:spPr><a:ln w="28575"><a:solidFill><a:srgbClr val="{color}"/></a:solidFill></a:ln></c:spPr><c:marker><c:symbol val="circle"/><c:size val="6"/></c:marker>"#
+                    ),
+                    String::new(),
+                    r#"<c:smooth val="0"/>"#,
+                ),
+                ChartStyle::Pie => (
+                    String::new(),
+                    (0..n)
+                        .map(|i| {
+                            format!(
+                                r#"<c:dPt><c:idx val="{i}"/><c:bubble3D val="0"/><c:spPr><a:solidFill><a:srgbClr val="{}"/></a:solidFill></c:spPr></c:dPt>"#,
+                                s.color_at(i)
+                            )
+                        })
+                        .collect(),
+                    "",
+                ),
+                _ => (
+                    format!(
+                        r#"<c:spPr><a:solidFill><a:srgbClr val="{color}"/></a:solidFill></c:spPr><c:invertIfNegative val="0"/>"#
+                    ),
+                    String::new(),
+                    "",
+                ),
+            };
+            format!(
+                r#"<c:ser><c:idx val="{si}"/><c:order val="{si}"/>{tx}{sp}{dpts}{cat}{val}{tail}</c:ser>"#
+            )
+        })
+        .collect();
+    let axis_ids = r#"<c:axId val="1001"/><c:axId val="1002"/>"#;
+    let (plot, axes) = match style {
+        ChartStyle::Column | ChartStyle::Bar => {
+            let dir = if style == ChartStyle::Bar { "bar" } else { "col" };
+            let (cat_pos, val_pos) = if style == ChartStyle::Bar { ("l", "b") } else { ("b", "l") };
+            (
+                format!(
+                    r#"<c:barChart><c:barDir val="{dir}"/><c:grouping val="clustered"/><c:varyColors val="0"/>{sers}<c:gapWidth val="150"/>{axis_ids}</c:barChart>"#
+                ),
+                format!(
+                    r#"<c:catAx><c:axId val="1001"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="{cat_pos}"/><c:numFmt formatCode="General" sourceLinked="0"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="low"/><c:crossAx val="1002"/><c:crosses val="autoZero"/><c:auto val="1"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/><c:noMultiLvlLbl val="0"/></c:catAx><c:valAx><c:axId val="1002"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="{val_pos}"/><c:majorGridlines/><c:numFmt formatCode="General" sourceLinked="1"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:crossAx val="1001"/><c:crosses val="autoZero"/><c:crossBetween val="between"/></c:valAx>"#
+                ),
+            )
+        }
+        ChartStyle::Line => (
+            format!(
+                r#"<c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>{sers}<c:marker val="1"/>{axis_ids}</c:lineChart>"#
+            ),
+            format!(
+                r#"<c:catAx><c:axId val="1001"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="b"/><c:numFmt formatCode="General" sourceLinked="0"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="low"/><c:crossAx val="1002"/><c:crosses val="autoZero"/><c:auto val="1"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/><c:noMultiLvlLbl val="0"/></c:catAx><c:valAx><c:axId val="1002"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="l"/><c:majorGridlines/><c:numFmt formatCode="General" sourceLinked="1"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:crossAx val="1001"/><c:crosses val="autoZero"/><c:crossBetween val="between"/></c:valAx>"#
+            ),
+        ),
+        ChartStyle::Pie => (
+            format!(r#"<c:pieChart><c:varyColors val="1"/>{sers}<c:firstSliceAng val="0"/></c:pieChart>"#),
+            String::new(),
+        ),
+    };
+    let title_xml = match title.filter(|t| !t.is_empty()) {
+        Some(t) => format!(
+            r#"<c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>{}</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title><c:autoTitleDeleted val="0"/>"#,
+            esc(t)
+        ),
+        None => r#"<c:autoTitleDeleted val="1"/>"#.to_string(),
+    };
+    let legend = if series.len() > 1 || style == ChartStyle::Pie {
+        r#"<c:legend><c:legendPos val="b"/><c:overlay val="0"/></c:legend>"#
+    } else {
+        ""
+    };
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><c:roundedCorners val="0"/><c:chart>{title_xml}<c:plotArea><c:layout/>{plot}{axes}</c:plotArea>{legend}<c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/></c:chart></c:chartSpace>"#
+    )
+}
+
+/// The slide's graphic frame that holds a chart part (relationship `rid`).
+fn chart_frame_sp(o: &Shape, rid: &str, id: u32) -> String {
+    let x_emu = (o.x * EMU).round() as i64;
+    let y_emu = (o.y * EMU).round() as i64;
+    let cx_emu = (o.w * EMU).round() as i64;
+    let cy_emu = (o.h * EMU).round() as i64;
+    format!(
+        r#"<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="{id}" name="chart{id}"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="{x_emu}" y="{y_emu}"/><a:ext cx="{cx_emu}" cy="{cy_emu}"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" r:id="{rid}"/></a:graphicData></a:graphic></p:graphicFrame>"#
     )
 }
 
@@ -697,6 +817,15 @@ pub fn to_pptx(deck: &Deck, images: &BTreeMap<String, ExportImage>) -> Vec<u8> {
     for i in 1..=n {
         ct.push_str(&format!(r#"<Override PartName="/ppt/slides/slide{i}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>"#));
     }
+    let n_charts = deck
+        .slides
+        .iter()
+        .flat_map(|s| s.objects.iter())
+        .filter(|o| matches!(o.content, Some(ObjectContent::Chart { .. })))
+        .count();
+    for i in 1..=n_charts {
+        ct.push_str(&format!(r#"<Override PartName="/ppt/charts/chart{i}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>"#));
+    }
     ct.push_str(r#"></Types>"#);
     put!("[Content_Types].xml", ct);
 
@@ -755,6 +884,7 @@ pub fn to_pptx(deck: &Deck, images: &BTreeMap<String, ExportImage>) -> Vec<u8> {
     );
     put!("ppt/theme/theme1.xml", theme);
 
+    let mut chart_count = 0usize;
     for (i, slide) in deck.slides.iter().enumerate() {
         let layout = layout_slide(&deck, slide);
         let mut shapes = String::new();
@@ -776,6 +906,7 @@ pub fn to_pptx(deck: &Deck, images: &BTreeMap<String, ExportImage>) -> Vec<u8> {
         let mut slide_image_rels = String::new();
         let mut link_rels = String::new();
         let mut link_n = 0usize;
+        let mut chart_rels = String::new();
         for obj in &slide.objects {
             let before = shapes.len();
             match &obj.content {
@@ -808,6 +939,16 @@ pub fn to_pptx(deck: &Deck, images: &BTreeMap<String, ExportImage>) -> Vec<u8> {
                             shapes.push_str(&image_sp(obj, name.as_deref(), None, id));
                         }
                     }
+                }
+                Some(ObjectContent::Chart { style, title, labels, series }) => {
+                    chart_count += 1;
+                    let n = chart_count;
+                    put!(&format!("ppt/charts/chart{n}.xml"), chart_xml(*style, title.as_deref(), labels, series));
+                    let rid = format!("rIdC{n}");
+                    chart_rels.push_str(&format!(
+                        r#"<Relationship Id="{rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart{n}.xml"/>"#
+                    ));
+                    shapes.push_str(&chart_frame_sp(obj, &rid, id));
                 }
                 None => {
                     shapes.push_str(&shape_sp(obj, id));
@@ -856,7 +997,7 @@ pub fn to_pptx(deck: &Deck, images: &BTreeMap<String, ExportImage>) -> Vec<u8> {
         put!(
             &format!("ppt/slides/_rels/slide{}.xml.rels", i + 1),
             format!(
-                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>{slide_image_rels}{link_rels}</Relationships>"#
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>{slide_image_rels}{link_rels}{chart_rels}</Relationships>"#
             )
         );
     }
@@ -871,6 +1012,36 @@ pub fn to_pptx(deck: &Deck, images: &BTreeMap<String, ExportImage>) -> Vec<u8> {
 pub(crate) mod tests {
     use super::*;
     use crate::model::*;
+
+    #[test]
+    fn chart_objects_export_as_native_charts() {
+        use std::io::Read;
+        let chart: Shape = serde_json::from_value(serde_json::json!({
+            "id": "c1", "preset": "rectangle", "x": 100, "y": 100, "w": 400, "h": 300,
+            "content": {"kind": "chart", "style": "column", "title": "Sales",
+                        "labels": ["Q1", "Q2"],
+                        "series": [{"name": "2025", "values": [3, 5.5]}]}
+        }))
+        .unwrap();
+        let mut d = deck();
+        d.slides[0].objects.push(chart);
+        let bytes = to_pptx(&d, &BTreeMap::new());
+        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("zip readable");
+        let mut part = String::new();
+        zip.by_name("ppt/charts/chart1.xml").expect("chart part").read_to_string(&mut part).unwrap();
+        assert!(part.contains("<c:barChart>") && part.contains("<c:barDir val=\"col\"/>"));
+        assert!(part.contains("<c:v>Q2</c:v>") && part.contains("<c:v>5.5</c:v>"));
+        assert!(part.contains("<c:v>Sales</c:v>") || part.contains("<a:t>Sales</a:t>"));
+        let mut ct = String::new();
+        zip.by_name("[Content_Types].xml").expect("ct").read_to_string(&mut ct).unwrap();
+        assert!(ct.contains("/ppt/charts/chart1.xml"), "chart content type missing");
+        let mut rels = String::new();
+        zip.by_name("ppt/slides/_rels/slide1.xml.rels").expect("rels").read_to_string(&mut rels).unwrap();
+        assert!(rels.contains(r#"Id="rIdC1""#) && rels.contains(r#"Target="../charts/chart1.xml""#));
+        let mut slide = String::new();
+        zip.by_name("ppt/slides/slide1.xml").expect("slide").read_to_string(&mut slide).unwrap();
+        assert!(slide.contains(r#"r:id="rIdC1""#), "chart frame missing from slide");
+    }
 
     #[test]
     fn with_link_wraps_cnvpr() {
