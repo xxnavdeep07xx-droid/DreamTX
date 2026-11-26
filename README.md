@@ -72,7 +72,7 @@ and land as first-class path objects — movable, restylable, z-ordered,
 (text boxes, images, shapes are immune by signature), dims its targets
 live, and commits the whole sweep as one undo step. Eraser sizes S/M/L
 (reach 12 / 24 / 40 px), and "Erase all ink on this slide" clears every
-scribble on the slide in one undo step. A pencil tip (thin, slightly
+scribble on the slide in one undo step. A lasso (drag a loop) selects every object it encloses, which then move, recolor, or delete together, one undo step each. A pencil tip (thin, slightly
 translucent pen) sits beside the pen, and saved presets (up to 6, per
 session) hold a tool's color and width as one-tap chips.
 
