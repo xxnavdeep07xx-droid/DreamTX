@@ -14,7 +14,8 @@ void main() {
 
   test('a drag is clamped to the area, one way per dock', () {
     expect(islandDyClamp(IslandDock.top, -50, areaH, h), 0);
-    expect(islandDyClamp(IslandDock.top, 300, areaH, h), 552);
+    expect(islandDyClamp(IslandDock.top, 300, areaH, h), 300);
+    expect(islandDyClamp(IslandDock.top, 900, areaH, h), 552);
     expect(islandDyClamp(IslandDock.bottom, 50, areaH, h), 0);
     expect(islandDyClamp(IslandDock.bottom, -900, areaH, h), -552);
   });
