@@ -36,6 +36,7 @@ part 'presenter_screen.dart';
 part 'editor_sheets.dart';
 part 'editor_sheet_builders.dart';
 part 'editor_draw_tools.dart';
+part 'editor_lasso_flow.dart';
 part 'editor_deck_flow.dart';
 part 'editor_session_flow.dart';
 part 'editor_insert_flow.dart';
@@ -93,6 +94,10 @@ class _EditorScreenState extends State<EditorScreen>
   /// the row widget in editor_draw_tools.dart owns the surface, this class
   /// owns only the field and the state machine around it.
   _DrawToolboxState _drawToolbox = const _DrawToolboxState();
+
+  /// Draw B: the lasso selection (object ids). Read through
+  /// [_liveLassoIds], which drops ids that no longer exist.
+  Set<String> _lassoIds = {};
   String? _selectedObjectId;
   List<Map<String, dynamic>> _objectPresets = const [];
   int _oidSeq = 0;

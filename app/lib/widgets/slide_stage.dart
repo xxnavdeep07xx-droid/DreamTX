@@ -53,6 +53,9 @@ class SlideStage extends StatelessWidget {
     this.onStroke,
     this.onEraseHits,
     this.eraserRadius = kInkEraserRadius,
+    this.lassoIds = const {},
+    this.onLasso,
+    this.onLassoMove,
     this.onObjectLongPress,
     this.onCanvasLongPress,
     this.textController,
@@ -110,6 +113,12 @@ class SlideStage extends StatelessWidget {
 
   /// The eraser's reach (design px) — forwarded to the ink layer.
   final double eraserRadius;
+
+  /// Draw B: the lasso selection and its loop / move callbacks (forwarded
+  /// to the ink layer).
+  final Set<String> lassoIds;
+  final void Function(List<Offset>)? onLasso;
+  final void Function(Offset)? onLassoMove;
 
   /// Long-press wiring (editing only; the presenter passes nothing —
   /// read-only stages never build the recognizers): an object long-press
@@ -203,6 +212,9 @@ class SlideStage extends StatelessWidget {
             onStroke: onStroke,
             onEraseHits: onEraseHits,
             eraserRadius: eraserRadius,
+            lassoIds: lassoIds,
+            onLasso: onLasso,
+            onLassoMove: onLassoMove,
             onObjectLongPress: onObjectLongPress,
             onCanvasLongPress: onCanvasLongPress,
             // This layer rides OPAQUE above the archetype canvas, so it

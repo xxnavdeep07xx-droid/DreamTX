@@ -360,6 +360,10 @@ extension _EditorChrome on _EditorScreenState {
           onChanged: _setDrawToolbox,
           onClearAll: _clearAllInk,
           onNotice: _toast,
+          lassoCount: _liveLassoIds.length,
+          onLassoColor: _restyleLasso,
+          onLassoDelete: _deleteLasso,
+          onLassoClear: _clearLasso,
         );
       case _NavTab.design:
         final current = ((_deck['dna'] ?? const {})['family'] ?? '').toString();

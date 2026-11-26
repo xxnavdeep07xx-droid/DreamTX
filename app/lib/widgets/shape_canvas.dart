@@ -32,6 +32,9 @@ class ShapesLayer extends StatefulWidget {
     this.onStroke,
     this.onEraseHits,
     this.eraserRadius = kInkEraserRadius,
+    this.lassoIds = const {},
+    this.onLasso,
+    this.onLassoMove,
     this.onObjectLongPress,
     this.onCanvasLongPress,
     this.onBackgroundTap,
@@ -94,6 +97,18 @@ class ShapesLayer extends StatefulWidget {
   /// exactly what erases.
   final double eraserRadius;
 
+  /// Draw B: the lasso selection's ids (the editor filters them to the live
+  /// slide). Drawn as dashed outlines; a drag that starts inside them moves
+  /// them instead of drawing a new loop.
+  final Set<String> lassoIds;
+
+  /// A lasso loop closed: the design-px polygon. The editor selects the
+  /// enclosed objects; an EMPTY list (a tap) clears the selection.
+  final void Function(List<Offset>)? onLasso;
+
+  /// A selection drag released: the total design-px delta.
+  final void Function(Offset)? onLassoMove;
+
   /// long-press over an OBJECT (edit mode, no armed tool) — the editor
   /// opens the object's actions sheet (copy / duplicate / format painter /
   /// delete). The editor owns the selection itself, deliberately NOT
@@ -125,6 +140,12 @@ class _ShapesLayerState extends State<ShapesLayer> {
   /// Set per accumulation — the painter's identity-based repaint check
   /// depends on it) and the finger's design-space position for the disc.
   Set<String> _eraseHits = {};
+
+  // Lasso (Draw B): the loop being drawn, or a selection drag in progress.
+  List<Offset> _lassoPts = const [];
+  bool _lassoMoving = false;
+  Offset? _lassoStart;
+  Offset _lassoDelta = Offset.zero;
   Offset? _erasePos;
 
   /// The eraser's raw pointer-down position (pre-slop). The drag
@@ -185,6 +206,9 @@ class _ShapesLayerState extends State<ShapesLayer> {
                 eraseHitIds: _eraseHits,
                 erasePos: _erasePos,
                 eraserRadius: widget.eraserRadius,
+                lassoIds: widget.lassoIds,
+                lassoPath: _lassoPts,
+                lassoDelta: _lassoDelta,
                 overlayOnly: widget.overlayOnly,
                 designW: widget.designW,
                 designH: widget.designH,
@@ -287,6 +311,11 @@ class _ShapesLayerState extends State<ShapesLayer> {
       if (hits.isNotEmpty) widget.onEraseHits?.call(hits);
       return;
     }
+    // The lasso taps clear its selection (a tap is not a loop).
+    if (widget.inkTool == InkTool.lasso) {
+      widget.onLasso?.call(const []);
+      return;
+    }
     // An armed ink tool consumes the canvas — no selection while drawing.
     if (widget.inkTool != null) return;
     final design = _toDesign(d.localPosition);
@@ -343,6 +372,19 @@ class _ShapesLayerState extends State<ShapesLayer> {
       });
       return;
     }
+    if (widget.inkTool == InkTool.lasso) {
+      // Down inside the current selection = drag it; anywhere else = a new
+      // loop (the old selection is replaced when the loop closes).
+      final under = _objectAt(design);
+      final moving = under != null && widget.lassoIds.contains(under['id']);
+      setState(() {
+        _lassoMoving = moving;
+        _lassoStart = design;
+        _lassoDelta = Offset.zero;
+        _lassoPts = [design];
+      });
+      return;
+    }
     if (widget.inkTool != null) {
       setState(() {
         _rawPts = [design];
@@ -392,6 +434,16 @@ class _ShapesLayerState extends State<ShapesLayer> {
       setState(() {
         _erasePos = design;
         if (fresh.isNotEmpty) _eraseHits = {..._eraseHits, ...fresh};
+      });
+      return;
+    }
+    if (widget.inkTool == InkTool.lasso) {
+      setState(() {
+        if (_lassoMoving) {
+          _lassoDelta = design - (_lassoStart ?? design);
+        } else {
+          _lassoPts = [..._lassoPts, design];
+        }
       });
       return;
     }
@@ -474,6 +526,23 @@ class _ShapesLayerState extends State<ShapesLayer> {
   }
 
   void _onPanEnd(DragEndDetails d) {
+    if (widget.inkTool == InkTool.lasso) {
+      final wasMoving = _lassoMoving;
+      final delta = _lassoDelta;
+      final loop = _lassoPts;
+      setState(() {
+        _lassoPts = const [];
+        _lassoMoving = false;
+        _lassoStart = null;
+        _lassoDelta = Offset.zero;
+      });
+      if (wasMoving) {
+        if (delta != Offset.zero) widget.onLassoMove?.call(delta);
+      } else if (loop.length >= 3) {
+        widget.onLasso?.call(loop);
+      }
+      return;
+    }
     if (widget.inkTool == InkTool.eraser) {
       // Pointer-up is the commit: the whole sweep is one batch of ids.
       final hits = _eraseHits;
@@ -510,6 +579,10 @@ class _ShapesLayerState extends State<ShapesLayer> {
 
   void _onPanCancel() {
     setState(() {
+      _lassoPts = const [];
+      _lassoMoving = false;
+      _lassoStart = null;
+      _lassoDelta = Offset.zero;
       _grab = null;
       _guides = [];
       _rawPts = [];
@@ -682,6 +755,9 @@ class _ShapesPainter extends CustomPainter {
     required this.eraseHitIds,
     required this.erasePos,
     this.eraserRadius = kInkEraserRadius,
+    this.lassoIds = const {},
+    this.lassoPath = const [],
+    this.lassoDelta = Offset.zero,
     this.overlayOnly = false,
     this.designW = 1280,
     this.designH = 720,
@@ -705,6 +781,12 @@ class _ShapesPainter extends CustomPainter {
 
   /// The eraser's reach (design px) — the disc's radius.
   final double eraserRadius;
+
+  /// Draw B: the lasso selection's ids, the loop being drawn, and the
+  /// drag offset applied to the selection's outlines while it moves.
+  final Set<String> lassoIds;
+  final List<Offset> lassoPath;
+  final Offset lassoDelta;
   final bool overlayOnly;
 
   /// The deck's design frame — the smart guide lines run to the frame's
@@ -769,6 +851,27 @@ class _ShapesPainter extends CustomPainter {
           ..strokeWidth = 1.5,
       );
     }
+    // Draw B: the loop being drawn, and the dashed outlines of the lasso
+    // selection (they follow the drag delta while a selection moves).
+    if (lassoPath.length >= 2) {
+      final loop = Path()..moveTo(lassoPath.first.dx, lassoPath.first.dy);
+      for (final pt in lassoPath.skip(1)) {
+        loop.lineTo(pt.dx, pt.dy);
+      }
+      canvas.drawPath(
+        loop,
+        Paint()
+          ..color = const Color(0xCCFFFFFF)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5,
+      );
+    }
+    if (lassoIds.isNotEmpty) {
+      for (final obj in objects) {
+        if (!lassoIds.contains(obj['id'])) continue;
+        _paintLassoOutline(canvas, obj, lassoDelta);
+      }
+    }
     // selection overlay
     if (selectedId != null) {
       for (final o in objects) {
@@ -801,9 +904,37 @@ class _ShapesPainter extends CustomPainter {
       oldDelegate.eraseHitIds != eraseHitIds ||
       oldDelegate.erasePos != erasePos ||
       oldDelegate.eraserRadius != eraserRadius ||
+      !identical(oldDelegate.lassoIds, lassoIds) ||
+      !identical(oldDelegate.lassoPath, lassoPath) ||
+      oldDelegate.lassoDelta != lassoDelta ||
       oldDelegate.overlayOnly != overlayOnly ||
       oldDelegate.designW != designW ||
       oldDelegate.designH != designH;
+}
+
+/// A dashed frame around one lasso-selected object, rotated with it and
+/// shifted by [delta] (the live drag offset).
+void _paintLassoOutline(Canvas canvas, Map obj, Offset delta) {
+  final rot = ((obj['rotation'] ?? 0) as num).toDouble();
+  final rect = Rect.fromLTWH(
+    ((obj['x'] ?? 0) as num).toDouble() + delta.dx,
+    ((obj['y'] ?? 0) as num).toDouble() + delta.dy,
+    ((obj['w'] ?? 0) as num).toDouble(),
+    ((obj['h'] ?? 0) as num).toDouble(),
+  );
+  final c = rect.center;
+  canvas.save();
+  canvas.translate(c.dx, c.dy);
+  canvas.rotate(rot * math.pi / 180);
+  canvas.translate(-c.dx, -c.dy);
+  canvas.drawPath(
+    dashPath(Path()..addRect(rect), dashPattern('dash', 2)),
+    Paint()
+      ..color = const Color(0xB3FFFFFF)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5,
+  );
+  canvas.restore();
 }
 
 void _paintSelection(Canvas canvas, Map obj) {

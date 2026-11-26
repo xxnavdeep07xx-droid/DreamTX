@@ -114,6 +114,8 @@ extension _EditorSessionFlow on _EditorScreenState {
       final nowArmed = next.armed && !_drawToolbox.armed;
       _drawToolbox = next;
       if (nowArmed) _selectedObjectId = null;
+      // Leaving the lasso (or Draw) ends its selection.
+      if (!next.armed || next.tool != InkTool.lasso) _lassoIds = {};
     });
   }
 
