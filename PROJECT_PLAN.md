@@ -38,7 +38,7 @@ Core pieces:
 - [x] 3. WordArt (PR #14)
 - [x] 4. Table depth (PR #15/#16)
 - [x] 5. Image depth (PR #17, v0.2.40)
-- [ ] 6. Slide furniture (slide number / date / footer) — needs an export-design decision first
+- [x] 6. Slide furniture (slide number / date / footer) — PR #32 (decision: rendered objects; exported through the text path, no exporter changes)
 - [x] 7. Outline view (View tab) — PR #31 (merged): every slide with title + body preview; tap to jump, pencil renames the title. Body text editing stays in the slide itself (not in the outline yet).
 
 ### Wave 2 — Draw v2 (the current focus)
@@ -124,6 +124,6 @@ Last updated: 2026-11-25 (Draw E in PR #27).
 - [x] D Ink → shape (PR #26)
 - [x] E Ink replay (PR #27)
 - [x] C Floating island (PR #28 C-1, PR #29 C-2, PR #30 C-3)
-- [ ] Wave 1 items 6–7
+- [x] Wave 1 items 6–7 (PR #31 outline, PR #32 furniture)
 - [ ] Wave 3 items 1–2
 - [ ] Wave 4 (ink→text/math, LIVE present)
