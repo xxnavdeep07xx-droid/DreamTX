@@ -165,7 +165,7 @@ impl Link {
         let t = self.target.as_str();
         let ok_scheme = ["https://", "http://", "mailto:"]
             .iter()
-            .any(|p| t.get(..p.len()).is_some_and(|head| head.eq_ignore_ascii_case(p)));
+            .any(|p| t.len() > p.len() && t.get(..p.len()).is_some_and(|head| head.eq_ignore_ascii_case(p)));
         let clean = t.chars().all(|c| !c.is_whitespace() && !c.is_control());
         (ok_scheme && clean).then_some(t)
     }
