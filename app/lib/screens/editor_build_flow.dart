@@ -379,6 +379,23 @@ extension _EditorBuildFlow on _EditorScreenState {
                               ),
                             ),
                           ],
+                          // Draw C: the Draw toolbox is a floating island over
+                          // the canvas — docked to the top or bottom edge, lifted
+                          // by a 500 ms hold on its grip.
+                          if (_mode == _Mode.editing &&
+                              _navTab == _NavTab.draw)
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              top: _islandDock == IslandDock.top ? 0 : null,
+                              bottom:
+                                  _islandDock == IslandDock.bottom ? 0 : null,
+                              child: FloatingIsland(
+                                dock: _islandDock,
+                                onDock: _setIslandDock,
+                                child: _contextualRow(),
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -389,7 +406,9 @@ extension _EditorBuildFlow on _EditorScreenState {
               // skip the band entirely; Files and Insert live in their docked
               // drawers instead of a contextual row — the canvas keeps the
               // space until their toolboxes get spec'd.
+              // Draw is an island over the canvas now (see above).
               if (_navTab != null &&
+                  _navTab != _NavTab.draw &&
                   _navTab != _NavTab.files &&
                   _navTab != _NavTab.insert &&
                   _navTab != _NavTab.transitions &&

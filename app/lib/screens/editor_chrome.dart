@@ -315,6 +315,12 @@ extension _EditorChrome on _EditorScreenState {
     });
   }
 
+  /// Draw C: the island settled on an edge — remember it for this device.
+  void _setIslandDock(IslandDock dock) {
+    _setState(() => _islandDock = dock);
+    saveIslandDock(dock);
+  }
+
   void _onNavSelect(_NavTab tab) {
     _setNavTab(
         _navTab == tab ? null : tab); // tap the active tab again to collapse

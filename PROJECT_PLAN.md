@@ -50,6 +50,9 @@ See section 4 for the full PowerPoint Draw-tab map.
 - [x] D. Ink → shape, locally (line / rect / ellipse / triangle; deterministic heuristics; arrow not built) — PR #26
 - [x] E. Ink replay (strokes animate in draw order; Draw-row button; display only, never exported) — PR #27
 - [ ] C. Floating island (dock, 500 ms hold to lift, compact mode, persisted position, coach mark)
+  - [~] C-1 (in PR, this branch): the Draw toolbox is a floating island over the canvas, docked top/bottom, 500 ms hold on the grip lifts it (haptic + shadow), drag follows the finger, release snaps to the nearer edge, dock saved per device (`island.json`). Pure rules in `core/island_math.dart`, tests in `test/island_test.dart`.
+  - [ ] C-2: compact mode (icons + colour dot, palette popover) and keep-outs over the ribbon/filmstrip; left/right docking once the island can be narrower than the canvas.
+  - [ ] C-3: one-time coach mark.
 
 ### Wave 3 — Insert Tier 2 (core/protocol changes)
 - [ ] 1. Link / tap-action (`link {kind: url|slide, target}`; PPTX hyperlinks + PDF link annotations)
@@ -120,7 +123,7 @@ Last updated: 2026-11-25 (Draw E in PR #27).
 - [x] R Ruler (PR #25)
 - [x] D Ink → shape (PR #26)
 - [x] E Ink replay (PR #27)
-- [ ] C Floating island
+- [~] C Floating island (C-1 in PR; C-2 compact mode, C-3 coach mark open)
 - [ ] Wave 1 items 6–7
 - [ ] Wave 3 items 1–2
 - [ ] Wave 4 (ink→text/math, LIVE present)

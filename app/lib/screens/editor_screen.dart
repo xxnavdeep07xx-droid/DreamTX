@@ -14,6 +14,8 @@ import '../core/aspects.dart';
 import '../core/bridge.dart';
 import '../core/color_utils.dart';
 import '../core/ink_math.dart';
+import '../core/island_math.dart';
+import '../core/island_store.dart';
 import '../core/media_pickers.dart';
 import '../core/media_playback.dart';
 import '../core/object_content.dart';
@@ -23,6 +25,7 @@ import '../theme.dart';
 import '../widgets/content_editor.dart';
 import '../widgets/controls.dart';
 import '../widgets/design_sheets.dart';
+import '../widgets/floating_island.dart';
 import '../widgets/rich_doc.dart';
 import '../widgets/slide_stage.dart';
 import '../widgets/typing_toolbar.dart';
@@ -85,6 +88,9 @@ class _EditorScreenState extends State<EditorScreen>
   /// replay runs it 0 → 1 (see [_replayInk]).
   late final AnimationController _inkReplay =
       AnimationController(vsync: this, value: 1.0);
+
+  /// Draw C: where the Draw island is docked (remembered per device).
+  IslandDock _islandDock = IslandDock.bottom;
   Map<String, dynamic>? _layout;
   List<String> _warnings = [];
   bool _busy = false;
@@ -287,6 +293,9 @@ class _EditorScreenState extends State<EditorScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _deck = Map<String, dynamic>.from(widget.deck);
+    loadIslandDock().then((dock) {
+      if (mounted) setState(() => _islandDock = dock);
+    });
     final meta = Bridge.command({'op': 'meta'});
     _objectPresets = ((meta['object_presets'] as List?) ?? const [])
         .whereType<Map>()
