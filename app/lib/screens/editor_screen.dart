@@ -28,6 +28,7 @@ import '../widgets/design_sheets.dart';
 import '../widgets/floating_island.dart';
 import '../widgets/rich_doc.dart';
 import '../widgets/slide_stage.dart';
+import '../widgets/outline_sheet.dart';
 import '../widgets/typing_toolbar.dart';
 import 'files_drawer.dart';
 import 'insert_sheet.dart';

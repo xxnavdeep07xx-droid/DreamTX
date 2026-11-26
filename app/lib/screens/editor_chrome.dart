@@ -445,11 +445,37 @@ extension _EditorChrome on _EditorScreenState {
                 label: const Text('Reading view'),
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: FilledButton.tonalIcon(
+                onPressed: _showOutline,
+                icon: const Icon(Icons.format_list_numbered, size: 18),
+                label: const Text('Outline'),
+              ),
+            ),
           ],
         );
       case _NavTab.help:
         return const SizedBox.shrink();
     }
+  }
+
+  /// Outline view: every slide with its title and body preview. A row
+  /// jumps to that slide; the pencil edits the title.
+  void _showOutline() {
+    dreamSheet<void>(
+      context,
+      builder: (sheetContext) => OutlineSheet(
+        slidesOf: () => _slides,
+        currentIndex: _index,
+        titleOf: _slideTitle,
+        onOpen: (i) {
+          Navigator.of(sheetContext).pop();
+          _gotoSlide(i);
+        },
+        onEditTitle: _editOutlineTitle,
+      ),
+    );
   }
 
   String _slideTitle(Map slide) {
