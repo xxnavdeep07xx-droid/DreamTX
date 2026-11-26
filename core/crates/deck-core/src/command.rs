@@ -435,7 +435,6 @@ pub fn execute(req: &str) -> Value {
                 return json!({ "ok": true, "deck": deck });
             }
             let cover = Slide {
-                background: None,
                 hide_graphics: false,
                 id: next_slide_id(&deck),
                 archetype: Archetype::Cover,
@@ -450,7 +449,7 @@ pub fn execute(req: &str) -> Value {
                 Some(a) => a,
                 None => return json!({ "ok": false, "error": format!("unknown archetype '{archetype}'") }),
             };
-            let mut slide = Slide { background: None, hide_graphics: false, id: next_slide_id(&deck), archetype: a, content: default_content(a, &deck), objects: Vec::new() };
+            let mut slide = Slide { hide_graphics: false, id: next_slide_id(&deck), archetype: a, content: default_content(a, &deck), objects: Vec::new() };
             if let Some(c) = content {
                 slide.content = match serde_json::from_value(c) {
                     Ok(c) => c,
@@ -476,8 +475,7 @@ pub fn execute(req: &str) -> Value {
             };
             let old_objects = deck.slides[idx].objects.clone();
             let old_hide = deck.slides[idx].hide_graphics;
-            let old_bg = deck.slides[idx].background.clone();
-            deck.slides[idx] = Slide { id: slide_id, archetype: a, content, objects: old_objects, hide_graphics: old_hide, background: old_bg };
+            deck.slides[idx] = Slide { id: slide_id, archetype: a, content, objects: old_objects, hide_graphics: old_hide };
             deck.version += 1;
             json!({ "ok": true, "deck": deck })
         }
@@ -919,7 +917,6 @@ mod tests {
             dna: Dna { family: DnaFamily::SwissEditorial, seed: 11 },
             aspect: "16:9".into(),
             slides: vec![Slide {
-                background: None,
                 hide_graphics: false,
                 id: "s1".into(),
                 archetype: Archetype::Blank,
@@ -969,27 +966,6 @@ mod tests {
         assert_eq!(r["ok"], true);
         assert_eq!(r["deck"]["slides"].as_array().map(Vec::len), Some(1));
         assert_eq!(r["deck"]["slides"][0]["archetype"], "cover");
-    }
-
-    #[test]
-    fn set_slide_background_sets_clears_and_validates() {
-        let deck = serde_json::to_string(&deck_with_object()).unwrap();
-        let set = r#"{"op":"set_slide_background","deck":__DECK__,"slide_id":"s1","color":"#1a2b3c"}"#
-            .replace("__DECK__", &deck);
-        let r = execute(&set);
-        assert_eq!(r["ok"], true);
-        let d: Deck = serde_json::from_value(r["deck"].clone()).unwrap();
-        assert_eq!(d.slides[0].background.as_deref(), Some("1A2B3C"));
-        // Clearing: no color means back to the DNA background.
-        let clear = r#"{"op":"set_slide_background","deck":__DECK__,"slide_id":"s1"}"#
-            .replace("__DECK__", &serde_json::to_string(&d).unwrap());
-        let r2 = execute(&clear);
-        assert_eq!(r2["ok"], true);
-        assert!(r2["deck"]["slides"][0].get("background").is_none());
-        // Bad color is refused, not stored.
-        let bad = r#"{"op":"set_slide_background","deck":__DECK__,"slide_id":"s1","color":"red"}"#
-            .replace("__DECK__", &deck);
-        assert_eq!(execute(&bad)["ok"], false);
     }
 
     #[test]

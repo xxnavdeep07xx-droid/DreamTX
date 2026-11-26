@@ -81,10 +81,6 @@ pub struct Slide {
     /// on this slide. Off by default; set with `set_slide_hide_graphics`.
     #[serde(default, skip_serializing_if = "is_false")]
     pub hide_graphics: bool,
-    /// Solid background color for this slide (6 hex digits, no `#`). None
-    /// uses the DNA background. Text switches to a readable ink on it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub background: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
