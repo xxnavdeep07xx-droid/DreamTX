@@ -84,8 +84,9 @@ void main() {
     expect(find.text('Table'), findsOneWidget);
     expect(find.text('Icons / Stickers'), findsOneWidget);
     expect(find.text('Media'), findsOneWidget);
-    // No placeholder buttons for the later tools.
-    expect(find.text('Chart'), findsNothing);
+    // Chart is a real insert tool now. Link is set from the object menu,
+    // so it is not an insert tile.
+    expect(find.text('Chart'), findsOneWidget);
     expect(find.text('Link'), findsNothing);
     expect(tester.takeException(), isNull);
   });
