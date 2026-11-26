@@ -102,7 +102,7 @@ fn luminance(hex: &str) -> f64 {
 }
 
 /// Contrast ratio between two hex colors (1..21). We keep text/background >= 4.5.
-fn contrast(a: &str, b: &str) -> f64 {
+pub fn contrast(a: &str, b: &str) -> f64 {
     let (la, lb) = (luminance(a), luminance(b));
     let (hi, lo) = if la > lb { (la, lb) } else { (lb, la) };
     (hi + 0.05) / (lo + 0.05)

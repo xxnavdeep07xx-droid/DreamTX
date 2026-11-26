@@ -108,7 +108,7 @@ Status is checked against the code on `main` (`e3a1cf2`). The Design row holds t
 | 4 | Theme fonts (pick) | **Missing** — fonts are fixed by the family (serif or sans roles) | Decide: font-pair picker |
 | 5 | Slide size (16:9, 16:10, 4:3, 1:1) | **Exists**, but in the Files drawer (Aspect sheet), not Design | Surface it from Design, or leave and link |
 | 6 | Custom slide size | **Missing** — presets only (`ASPECTS`) | Low priority |
-| 7 | Format Background (solid, gradient, picture; apply to all) | **Missing** — `Slide` and `Deck` have no background field. Background is the DNA `bg` only | Core change needed (protocol); high value |
+| 7 | Format Background (solid, gradient, picture; apply to all) | **Partial** (this PR) — solid colour per slide from the deck palette, "Default bg", and "Apply to all". Text switches to a readable ink on a custom background. Gradient and picture not built | Gradient and picture: follow-up PRs |
 | 8 | Hide background graphics | **Done** (this PR) — per-slide `hide_graphics` flag in the core; the DNA motif is skipped on that slide, and exports and the presenter follow it. Design row chip: "Hide graphics". MCP tool not added yet | — |
 | 9 | Design Ideas / Designer | **Not planned** — needs AI layout generation; the MCP server is the AI path | Out of scope for now |
 | 10 | Slide furniture (slide number, date, footer) | **Exists** (Wave 1 item 6, PR #32), in the View row | — |

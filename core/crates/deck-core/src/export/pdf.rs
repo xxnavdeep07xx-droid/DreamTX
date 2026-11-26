@@ -1293,6 +1293,7 @@ mod tests {
             serde_json::from_value(json!({"id": id, "preset": "rectangle", "x": 100, "y": 100, "w": 300, "h": 200, "link": link})).unwrap()
         };
         let slide = |id: &str, objects: Vec<Shape>| Slide {
+            background: None,
             hide_graphics: false,
             id: id.into(),
             archetype: Archetype::Cover,
@@ -1336,6 +1337,7 @@ mod tests {
             aspect: "16:9".into(),
             slides: vec![
                 Slide {
+                    background: None,
                     hide_graphics: false,
                     id: "s1".into(),
                     archetype: Archetype::Cover,
@@ -1343,6 +1345,7 @@ mod tests {
                     objects: Vec::new(),
                 },
                 Slide {
+                    background: None,
                     hide_graphics: false,
                     id: "s2".into(),
                     archetype: Archetype::Statement,
@@ -1371,6 +1374,7 @@ mod tests {
             dna: Dna { family: DnaFamily::SwissEditorial, seed: 5 },
             aspect: "4:3".into(),
             slides: vec![Slide {
+                background: None,
                 hide_graphics: false,
                 id: "s1".into(),
                 archetype: Archetype::Cover,
@@ -1393,6 +1397,7 @@ mod tests {
             dna: Dna { family: DnaFamily::SwissEditorial, seed: 3 },
             aspect: "16:9".into(),
             slides: vec![Slide {
+                background: None,
                 hide_graphics: false,
                 id: "s1".into(),
                 archetype: Archetype::Cover,
@@ -1511,6 +1516,7 @@ mod tests {
             dna: Dna { family: DnaFamily::SwissEditorial, seed: 3 },
             aspect: "16:9".into(),
             slides: vec![Slide {
+                background: None,
                 hide_graphics: false,
                 id: "s1".into(),
                 archetype: Archetype::Cover,

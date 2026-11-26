@@ -1071,6 +1071,7 @@ pub(crate) mod tests {
             dna: Dna { family: DnaFamily::SwissEditorial, seed: 3 },
             aspect: "16:9".into(),
             slides: vec![Slide {
+                background: None,
                 hide_graphics: false,
                 id: "s1".into(),
                 archetype: Archetype::Cover,
