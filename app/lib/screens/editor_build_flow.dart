@@ -287,6 +287,9 @@ extension _EditorBuildFlow on _EditorScreenState {
                                         ? _liveLassoIds
                                         : const {},
                                     onLasso: _onLassoDone,
+                                    // Draw R: the ruler shows on the Draw tab.
+                                    showRuler: _navTab == _NavTab.draw &&
+                                        _drawToolbox.ruler,
                                     onLassoMove: _onLassoMoveEnd,
                                     onObjectLongPress: _objectActions,
                                     onCanvasLongPress: _pasteObjectAt,

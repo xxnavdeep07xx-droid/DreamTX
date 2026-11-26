@@ -51,6 +51,7 @@ class _DrawToolboxState {
     this.eraserRadius = kInkEraserRadius,
     this.expanded = false,
     this.presets = const [],
+    this.ruler = false,
   });
 
   final bool armed;
@@ -77,6 +78,9 @@ class _DrawToolboxState {
 
   /// Saved tool styles, session-scoped, capped at [kInkPresetCap].
   final List<InkPreset> presets;
+
+  /// Draw R: the ruler overlay on the slide (editor-only, never exported).
+  final bool ruler;
 
   /// The lasso's band is always open while it is armed (its controls ARE
   /// the selection's face); the other tools open it by a chip tap.
@@ -204,6 +208,9 @@ class _DrawToolboxState {
   _DrawToolboxState withPresets(List<InkPreset> next) =>
       _copy(presets: next);
 
+  /// The ruler toggle: never disarms — the ruler is a view aid, not a tool.
+  _DrawToolboxState rulerToggled() => _copy(ruler: !ruler);
+
   /// The compact row's color/width chip tap: toggle the band.
   _DrawToolboxState bandToggled() => _copy(expanded: !expanded);
 
@@ -224,6 +231,7 @@ class _DrawToolboxState {
     double? eraserRadius,
     bool? expanded,
     List<InkPreset>? presets,
+    bool? ruler,
   }) =>
       _DrawToolboxState(
         armed: armed ?? this.armed,
@@ -235,6 +243,7 @@ class _DrawToolboxState {
         eraserRadius: eraserRadius ?? this.eraserRadius,
         expanded: expanded ?? this.expanded,
         presets: presets ?? this.presets,
+        ruler: ruler ?? this.ruler,
       );
 }
 
@@ -314,7 +323,11 @@ class _DrawToolboxRow extends StatelessWidget {
 
   Widget _toolRow() => SizedBox(
         height: 48,
-        child: Row(
+        // Horizontally scrollable: the row gained the lasso and the ruler, and
+        // must still fit a 360dp phone without clipping.
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
           children: [
             const SizedBox(width: 8),
             _DrawToolButton(
@@ -388,8 +401,15 @@ class _DrawToolboxRow extends StatelessWidget {
                   onTap: onClearAll!,
                 ),
             ],
+            _DrawToolButton(
+              icon: Icons.straighten,
+              tooltip: 'Ruler',
+              active: state.ruler,
+              onTap: () => onChanged(state.rulerToggled()),
+            ),
           ],
         ),
+          ),
       );
 
   // ---- the expanded band ----------------------------------------------------

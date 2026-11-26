@@ -35,6 +35,7 @@ class ShapesLayer extends StatefulWidget {
     this.lassoIds = const {},
     this.onLasso,
     this.onLassoMove,
+    this.showRuler = false,
     this.onObjectLongPress,
     this.onCanvasLongPress,
     this.onBackgroundTap,
@@ -108,6 +109,10 @@ class ShapesLayer extends StatefulWidget {
 
   /// A selection drag released: the total design-px delta.
   final void Function(Offset)? onLassoMove;
+
+  /// Draw R: the editor's ruler overlay (tick marks along the top and
+  /// left edges). Paint-only; never exported, never in the presenter.
+  final bool showRuler;
 
   /// long-press over an OBJECT (edit mode, no armed tool) — the editor
   /// opens the object's actions sheet (copy / duplicate / format painter /
@@ -209,6 +214,7 @@ class _ShapesLayerState extends State<ShapesLayer> {
                 lassoIds: widget.lassoIds,
                 lassoPath: _lassoPts,
                 lassoDelta: _lassoDelta,
+                showRuler: widget.showRuler,
                 overlayOnly: widget.overlayOnly,
                 designW: widget.designW,
                 designH: widget.designH,
@@ -758,6 +764,7 @@ class _ShapesPainter extends CustomPainter {
     this.lassoIds = const {},
     this.lassoPath = const [],
     this.lassoDelta = Offset.zero,
+    this.showRuler = false,
     this.overlayOnly = false,
     this.designW = 1280,
     this.designH = 720,
@@ -787,6 +794,9 @@ class _ShapesPainter extends CustomPainter {
   final Set<String> lassoIds;
   final List<Offset> lassoPath;
   final Offset lassoDelta;
+
+  /// Draw R: paint the ruler overlay on top of the slide.
+  final bool showRuler;
   final bool overlayOnly;
 
   /// The deck's design frame — the smart guide lines run to the frame's
@@ -872,6 +882,7 @@ class _ShapesPainter extends CustomPainter {
         _paintLassoOutline(canvas, obj, lassoDelta);
       }
     }
+    if (showRuler) _paintRuler(canvas, designW, designH);
     // selection overlay
     if (selectedId != null) {
       for (final o in objects) {
@@ -906,10 +917,42 @@ class _ShapesPainter extends CustomPainter {
       oldDelegate.eraserRadius != eraserRadius ||
       !identical(oldDelegate.lassoIds, lassoIds) ||
       !identical(oldDelegate.lassoPath, lassoPath) ||
+      oldDelegate.showRuler != showRuler ||
       oldDelegate.lassoDelta != lassoDelta ||
       oldDelegate.overlayOnly != overlayOnly ||
       oldDelegate.designW != designW ||
       oldDelegate.designH != designH;
+}
+
+/// The ruler: a translucent strip along the top and left edges, ticks from
+/// [rulerTicks], major ticks labelled in design px. Drawn in design space,
+/// so it scales with the slide like everything else.
+void _paintRuler(Canvas canvas, double w, double h) {
+  const thick = 22.0;
+  final bg = Paint()..color = const Color(0xB0000000);
+  canvas.drawRect(Rect.fromLTWH(0, 0, w, thick), bg);
+  canvas.drawRect(Rect.fromLTWH(0, 0, thick, h), bg);
+  final tick = Paint()
+    ..color = const Color(0xB3FFFFFF)
+    ..strokeWidth = 1;
+  for (final t in rulerTicks(w)) {
+    final len = t.kind == 2 ? thick : (t.kind == 1 ? thick * 0.6 : thick * 0.3);
+    canvas.drawLine(Offset(t.pos, thick - len), Offset(t.pos, thick), tick);
+    if (t.kind == 2) {
+      final label = TextPainter(
+        text: TextSpan(
+          text: '${t.pos.round()}',
+          style: const TextStyle(fontSize: 11, color: Color(0xDDFFFFFF)),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      label.paint(canvas, Offset(t.pos + 2, 2));
+    }
+  }
+  for (final t in rulerTicks(h)) {
+    final len = t.kind == 2 ? thick : (t.kind == 1 ? thick * 0.6 : thick * 0.3);
+    canvas.drawLine(Offset(thick - len, t.pos), Offset(thick, t.pos), tick);
+  }
 }
 
 /// A dashed frame around one lasso-selected object, rotated with it and

@@ -470,3 +470,20 @@ Map<String, dynamic> inkRestyled(Map<String, dynamic> obj, String colorHex) {
   };
 }
 
+
+// ---------------------------------------------------------------------------
+// Draw R: the ruler. Pure tick math — the overlay paints what this returns.
+// ---------------------------------------------------------------------------
+
+/// The ruler's tick marks along [length] design px: one every [step] px
+/// (default 10). `kind` 2 = major (every 100 px, labelled), 1 = middle
+/// (every 50 px), 0 = minor. Ticks start after the origin (0 is the edge).
+List<({double pos, int kind})> rulerTicks(double length, {int step = 10}) {
+  final out = <({double pos, int kind})>[];
+  if (step <= 0 || length <= 0) return out;
+  for (var v = step; v <= length; v += step) {
+    final kind = v % 100 == 0 ? 2 : (v % 50 == 0 ? 1 : 0);
+    out.add((pos: v.toDouble(), kind: kind));
+  }
+  return out;
+}
