@@ -102,7 +102,7 @@ Status is checked against the code on `main` (`e3a1cf2`). The Design row holds t
 
 | # | PowerPoint Design-tab feature | App status | Plan |
 |---|---|---|---|
-| 1 | Themes gallery | **Partial** — 3 families as chips (Swiss editorial, Cinematic, Magazine serif). Each sets palette, fonts and motif. Deck-wide only | Decide: more families, and per-slide apply |
+| 1 | Themes gallery | **Done** — 5 families as chips (Swiss editorial, Cinematic, Magazine serif, Bold, Pastel). Each sets palette, fonts, corner and motif. Family changes apply to the whole deck; a slide's own background override is kept (row 11) | — |
 | 2 | Variants gallery (colour variants) | **Done** — the shuffle button is replaced by a strip of 6 variants of the current family. Each shows its palette (background and accent); tap one to pick it. Core ops `dna_variants` and `set_dna_variant`; seeds limited to 53 bits so they survive the app's JSON | — |
 | 3 | Theme colours (pick or edit) | **Missing** — palette comes from the DNA. The user cannot choose or edit it | Decide: palette picker over the DNA set |
 | 4 | Theme fonts (pick) | **Missing** — fonts are fixed by the family (serif or sans roles) | Decide: font-pair picker |
@@ -112,7 +112,7 @@ Status is checked against the code on `main` (`e3a1cf2`). The Design row holds t
 | 8 | Hide background graphics | **Done** (this PR) — per-slide `hide_graphics` flag in the core; the DNA motif is skipped on that slide, and exports and the presenter follow it. Design row chip: "Hide graphics". MCP tool not added yet | — |
 | 9 | Design Ideas / Designer | **Not planned** — needs AI layout generation; the MCP server is the AI path | Out of scope for now |
 | 10 | Slide furniture (slide number, date, footer) | **Exists** (Wave 1 item 6, PR #32), in the View row | — |
-| 11 | Apply theme to selected slides only | **Missing** — `apply_dna` changes the whole deck | Decide with row 1 |
+| 11 | Apply theme to selected slides only | **Decided: whole deck, with per-slide override** — a family applies to the whole deck; a slide's background (row 7) is an override and survives the change. Test `family_change_keeps_a_slide_background_override` | — |
 | 12 | Motif choice | **Missing** — motif is set by the DNA, not picked | Decide with row 3 |
 
 Proposed order (for the user to confirm): 8 (hide background graphics), then 7 (format background, the core change), then 2 (variant strip), then 1 and 11 (theme scope), then 3, 4, 12 (customisation), then 5 and 6 (size).

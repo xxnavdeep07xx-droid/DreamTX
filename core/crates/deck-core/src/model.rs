@@ -700,6 +700,8 @@ pub enum DnaFamily {
     SwissEditorial,
     Cinematic,
     MagazineSerif,
+    Bold,
+    Pastel,
 }
 
 impl DnaFamily {
@@ -708,6 +710,8 @@ impl DnaFamily {
             DnaFamily::SwissEditorial => "Swiss editorial",
             DnaFamily::Cinematic => "Cinematic",
             DnaFamily::MagazineSerif => "Magazine serif",
+            DnaFamily::Bold => "Bold",
+            DnaFamily::Pastel => "Pastel",
         }
     }
 }

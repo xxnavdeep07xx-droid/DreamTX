@@ -236,6 +236,8 @@ fn parse_family(s: &str) -> Option<DnaFamily> {
         "swiss_editorial" | "swiss" => Some(DnaFamily::SwissEditorial),
         "cinematic" | "cinema" => Some(DnaFamily::Cinematic),
         "magazine_serif" | "magazine" => Some(DnaFamily::MagazineSerif),
+        "bold" => Some(DnaFamily::Bold),
+        "pastel" => Some(DnaFamily::Pastel),
         _ => None,
     }
 }
@@ -434,7 +436,7 @@ pub fn execute(req: &str) -> Value {
         Command::Meta => json!({
             "ok": true,
             "archetypes": Archetype::all().iter().map(|a| a.label()).collect::<Vec<_>>(),
-            "families": ["swiss_editorial", "cinematic", "magazine_serif"],
+            "families": ["swiss_editorial", "cinematic", "magazine_serif", "bold", "pastel"],
             "aspects": ASPECTS,
             "object_presets": shapes::presets().iter().map(|p| json!({
                 "name": p.name,
@@ -1087,6 +1089,21 @@ mod tests {
         let r2 = execute(&set);
         assert_eq!(r2["ok"], true);
         assert_eq!(r2["deck"]["dna"]["seed"].as_u64(), Some(pick));
+    }
+
+    #[test]
+    fn family_change_keeps_a_slide_background_override() {
+        // Row 11: applying a family restyles the whole deck; a slide's own
+        // background is an override and survives the change.
+        let deck = serde_json::to_string(&deck_with_object()).unwrap();
+        let set = r##"{"op":"set_slide_background","deck":__DECK__,"slide_id":"s1","color":"102030"}"##
+            .replace("__DECK__", &deck);
+        let d1 = execute(&set)["deck"].clone();
+        let req = format!(r#"{{"op":"apply_dna","deck":{},"change":"bold"}}"#, d1);
+        let r = execute(&req);
+        assert_eq!(r["ok"], true);
+        assert_eq!(r["deck"]["dna"]["family"], "bold");
+        assert_eq!(r["deck"]["slides"][0]["background"], "102030");
     }
 
     #[test]

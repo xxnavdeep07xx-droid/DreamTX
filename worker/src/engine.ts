@@ -136,7 +136,7 @@ function tsFallback(cmd: Record<string, Json>): EngineResult {
         ok: true,
         data: {
           archetypes: [...ARCHETYPES],
-          families: ["swiss_editorial", "cinematic", "magazine_serif"],
+          families: ["swiss_editorial", "cinematic", "magazine_serif", "bold", "pastel"],
         },
       };
     case "new_deck": {

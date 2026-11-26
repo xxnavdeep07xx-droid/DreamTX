@@ -256,6 +256,8 @@ const List<(String, String)> _designFamilies = [
   ('swiss_editorial', 'Swiss editorial'),
   ('cinematic', 'Cinematic'),
   ('magazine_serif', 'Magazine serif'),
+  ('bold', 'Bold'),
+  ('pastel', 'Pastel'),
 ];
 
 const TextStyle _rowHint = TextStyle(fontSize: 10.5, color: kText3);

@@ -86,6 +86,8 @@ fn rng(seed: u64) -> impl FnMut() -> u64 {
 const SWISS_ACCENTS: [&str; 6] = ["D03028", "1A4FBF", "0F7B5A", "C25E00", "5B3EA8", "B0006E"];
 const CINE_ACCENTS: [&str; 5] = ["F5A623", "E85D42", "4ECDC4", "C2356B", "A8DADC"];
 const MAG_ACCENTS: [&str; 5] = ["7A1E2E", "27536B", "5C4406", "1F4D3F", "3D2C5E"];
+const BOLD_ACCENTS: [&str; 4] = ["E63946", "1D3557", "2A9D8F", "6A00F4"];
+const PASTEL_ACCENTS: [&str; 4] = ["7B5EA7", "2A7F74", "B5486A", "3F6FA8"];
 
 fn pick<'a>(r: &mut impl FnMut() -> u64, items: &[&'a str]) -> &'a str {
     items[(r() % items.len() as u64) as usize]
@@ -139,6 +141,24 @@ pub fn resolve(dna: &Dna) -> ResolvedDna {
             &[Motif::RuleLine, Motif::EdgeBar][..],
             1.0,
         ),
+        DnaFamily::Bold => (
+            ["FFE14D", "FFFFFF", "FFF3B0"],
+            &BOLD_ACCENTS[..],
+            FontRole::Sans,
+            FontRole::Sans,
+            0.0,
+            &[Motif::EdgeBar, Motif::NumberStamp][..],
+            1.12,
+        ),
+        DnaFamily::Pastel => (
+            ["F3E9F7", "EAF4F1", "FDF0E7"],
+            &PASTEL_ACCENTS[..],
+            FontRole::Serif,
+            FontRole::Sans,
+            14.0,
+            &[Motif::RuleLine, Motif::NumberStamp][..],
+            1.0,
+        ),
     };
 
     let bg = bg_pool[(r() % bg_pool.len() as u64) as usize];
@@ -186,12 +206,14 @@ pub fn next_variant(dna: &Dna) -> Dna {
     Dna { family: dna.family, seed: s }
 }
 
-/// Flip to the next curated family (cycles the trio).
+/// Flip to the next curated family (cycles all five).
 pub fn cycle_family(dna: &Dna) -> Dna {
     let family = match dna.family {
         DnaFamily::SwissEditorial => DnaFamily::Cinematic,
         DnaFamily::Cinematic => DnaFamily::MagazineSerif,
-        DnaFamily::MagazineSerif => DnaFamily::SwissEditorial,
+        DnaFamily::MagazineSerif => DnaFamily::Bold,
+        DnaFamily::Bold => DnaFamily::Pastel,
+        DnaFamily::Pastel => DnaFamily::SwissEditorial,
     };
     Dna { family, seed: dna.seed }
 }
@@ -230,7 +252,13 @@ mod tests {
 
     #[test]
     fn text_contrast_holds() {
-        for family in [DnaFamily::SwissEditorial, DnaFamily::Cinematic, DnaFamily::MagazineSerif] {
+        for family in [
+            DnaFamily::SwissEditorial,
+            DnaFamily::Cinematic,
+            DnaFamily::MagazineSerif,
+            DnaFamily::Bold,
+            DnaFamily::Pastel,
+        ] {
             for seed in 0..30 {
                 let d = Dna { family, seed };
                 let r = resolve(&d);

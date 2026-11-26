@@ -34,7 +34,7 @@ export const TOOLS: ToolDef[] = [
       type: "object",
       properties: {
         title: { type: "string" },
-        family: { type: "string", enum: ["swiss_editorial", "cinematic", "magazine_serif"], description: "Design family. Default swiss_editorial." },
+        family: { type: "string", enum: ["swiss_editorial", "cinematic", "magazine_serif", "bold", "pastel"], description: "Design family. Default swiss_editorial." },
       },
       required: ["title"],
     },
