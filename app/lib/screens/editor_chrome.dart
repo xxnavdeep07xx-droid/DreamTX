@@ -435,7 +435,9 @@ extension _EditorChrome on _EditorScreenState {
           ],
         );
       case _NavTab.view:
-        return Row(
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
           children: [
             Padding(
               padding: const EdgeInsets.only(left: 10),
@@ -453,11 +455,31 @@ extension _EditorChrome on _EditorScreenState {
                 label: const Text('Outline'),
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.only(left: 8, right: 10),
+              child: FilledButton.tonalIcon(
+                onPressed: _showFurniture,
+                icon: const Icon(Icons.view_headline, size: 18),
+                label: const Text('Slide furniture'),
+              ),
+            ),
           ],
+          ),
         );
       case _NavTab.help:
         return const SizedBox.shrink();
     }
+  }
+
+  /// Slide furniture: slide number, date and footer on every slide.
+  void _showFurniture() {
+    dreamSheet<void>(
+      context,
+      builder: (_) => FurnitureSheet(
+        initial: Furniture.fromJson(_deck['furniture']),
+        onChanged: _setFurniture,
+      ),
+    );
   }
 
   /// Outline view: every slide with its title and body preview. A row

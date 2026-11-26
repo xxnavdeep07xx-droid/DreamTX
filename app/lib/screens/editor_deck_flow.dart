@@ -201,7 +201,19 @@ extension _EditorDeckFlow on _EditorScreenState {
         deck['imageMeta'] = liveMeta;
       }
     }
-    _deck = deck;
+    // Slide furniture: carry the settings forward (the core drops the key),
+    // then rebuild every slide's furniture objects from them, so the slide
+    // numbers follow the order on every change.
+    if (!deck.containsKey('furniture')) {
+      final carried = _deck['furniture'];
+      if (carried is Map) {
+        deck['furniture'] = Map<String, dynamic>.from(carried);
+      }
+    }
+    _deck = syncFurnitureInDeck(
+      deck,
+      dateText: furnitureDateText(DateTime.now()),
+    );
     unawaited(_persist());
     _refreshLayout();
     _refreshPalette();
