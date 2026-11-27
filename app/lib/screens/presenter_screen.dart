@@ -3,6 +3,18 @@ part of 'editor_screen.dart';
 /// Presenting mode — a fullscreen, chrome-free pass over the deck: each
 /// slide rendered on black, swipe or tap the side zones to advance, a counter
 /// at the bottom and a close button up top.
+///
+/// Presentation-time motion (the Transitions and Animations tabs):
+///  * **Transitions** — how a slide ARRIVES when navigation is programmatic
+///    (tap zones / slide links): the default push stays the finger-follow
+///    slide-along it always was; fade / zoom / rise land the slide through
+///    their own short entrance; cut jumps instantly. A swipe still follows
+///    the finger — a transition kind never fights the gesture that revealed
+///    the slide by hand.
+///  * **Entrances** — objects with an entrance kind (deck['animations'])
+///    arrive staggered in z-order whenever their slide is shown, the same
+///    timeline the editor's Preview button runs (motion_math owns the math,
+///    one implementation).
 class _PresenterScreen extends StatefulWidget {
   const _PresenterScreen({required this.deck, required this.first});
 
@@ -13,7 +25,8 @@ class _PresenterScreen extends StatefulWidget {
   State<_PresenterScreen> createState() => _PresenterScreenState();
 }
 
-class _PresenterScreenState extends State<_PresenterScreen> {
+class _PresenterScreenState extends State<_PresenterScreen>
+    with TickerProviderStateMixin {
   late final PageController _pages;
   late final List<Map<String, dynamic>> _slides;
   late final List<Map<String, dynamic>?> _layouts;
@@ -32,6 +45,22 @@ class _PresenterScreenState extends State<_PresenterScreen> {
       deckDimsOf(widget.deck['aspect']?.toString());
   Color _baseTextColor = const Color(0xFF17181A);
   String? _baseTextFamily;
+
+  /// The object-entrance clock — one per slide landing, the editor Preview
+  /// timeline's twin. Idle at 1 (every object whole).
+  late final AnimationController _entranceClock =
+      AnimationController(vsync: this, value: 1.0);
+
+  /// The page-enter effect clock (fade / zoom / rise landings). Idle at 1
+  /// (no effect); a programmatic landing runs it 0 → 1 over 240ms.
+  late final AnimationController _enterClock =
+      AnimationController(vsync: this, value: 1.0);
+
+  /// The kind of the transition a programmatic navigation is about to land
+  /// on (set by [_navTo] just before the jump, consumed by onPageChanged —
+  /// the page the effect belongs to is the one that just became current).
+  String? _pendingEnter;
+  int _pendingEnterPage = -1;
 
   @override
   void initState() {
@@ -52,6 +81,19 @@ class _PresenterScreenState extends State<_PresenterScreen> {
     _page = first;
     _loadResourceIndex();
     _resolvePalette();
+    // The opening slide's objects arrive too — the deck opens already
+    // mid-story, exactly like PowerPoint starting on an animated slide.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _playEntrances(first);
+    });
+  }
+
+  @override
+  void dispose() {
+    _pages.dispose();
+    _entranceClock.dispose();
+    _enterClock.dispose();
+    super.dispose();
   }
 
   Future<void> _loadResourceIndex() async {
@@ -108,11 +150,8 @@ class _PresenterScreenState extends State<_PresenterScreen> {
         .toList();
   }
 
-  @override
-  void dispose() {
-    _pages.dispose();
-    super.dispose();
-  }
+  Map<String, String> get _entranceKinds =>
+      (widget.deck['animations'] as Map?)?.cast<String, String>() ?? const {};
 
   Map<String, dynamic>? _layoutAt(int i) {
     final r = Bridge.command(
@@ -138,9 +177,9 @@ class _PresenterScreenState extends State<_PresenterScreen> {
       }
     }
     if (at.dx < (screen.width - 90) / 2) {
-      _go(-1);
+      _navTo(_page - 1);
     } else if (at.dx > (screen.width + 90) / 2) {
-      _go(1);
+      _navTo(_page + 1);
     }
   }
 
@@ -148,9 +187,7 @@ class _PresenterScreenState extends State<_PresenterScreen> {
     if (link['kind'] == 'slide') {
       final i = _slides.indexWhere((sl) => sl['id'] == link['target']);
       if (i >= 0 && i != _page) {
-        _pages.animateToPage(i,
-            duration: const Duration(milliseconds: 260),
-            curve: Curves.easeOutCubic);
+        _navTo(i);
       }
       return;
     }
@@ -161,14 +198,105 @@ class _PresenterScreenState extends State<_PresenterScreen> {
     }
   }
 
-  void _go(int delta) {
-    var target = _page + delta;
+  // ---- navigation: the target slide's transition owns the arrival -------
+
+  /// Move to [target] the way that slide asks to be arrived at. Push keeps
+  /// the classic slide-along (also the no-entry default, so decks that never
+  /// touch the Transitions tab behave exactly as they always have); fade /
+  /// zoom / rise jump and play their entrance; cut jumps silently.
+  void _navTo(int target) {
     if (target < 0) target = 0;
     if (target >= _slides.length) target = _slides.length - 1;
     if (target == _page) return;
-    _pages.animateToPage(target,
-        duration: const Duration(milliseconds: 260),
-        curve: Curves.easeOutCubic);
+    final kind = transitionOf(widget.deck,
+        _slides.isEmpty ? null : _slides[target]['id']);
+    switch (kind) {
+      case kTransitionPush:
+        _pages.animateToPage(target,
+            duration: const Duration(milliseconds: 260),
+            curve: Curves.easeOutCubic);
+      case kTransitionCut:
+        _pages.jumpToPage(target);
+      default:
+        // fade / zoom / rise: land instantly, then the effect carries the
+        // arrival (a fade lands through black — a real transition, not a
+        // jump followed by decoration).
+        _pendingEnter = kind;
+        _pendingEnterPage = target;
+        _pages.jumpToPage(target);
+    }
+  }
+
+  /// The page that just became current: play its object entrances (always —
+  /// the build is the slide's own story), then the pending page-enter
+  /// effect if this landing was the programmatic one. A swipe lands here
+  /// with no pending effect: the finger already carried the arrival, and
+  /// any half-played effect from an interrupted tap settles instantly.
+  void _onPageChanged(int value) {
+    setState(() => _page = value);
+    final pending = _pendingEnter;
+    final forThisPage = _pendingEnterPage == value;
+    _pendingEnter = null;
+    _pendingEnterPage = -1;
+    if (pending == null || !forThisPage) {
+      _enterClock
+        ..stop()
+        ..value = 1.0;
+    } else {
+      if (MediaQuery.of(context).disableAnimations) {
+        _enterClock.value = 1.0;
+      } else {
+        _enterClock
+          ..duration = const Duration(milliseconds: 240)
+          ..forward(from: 0);
+      }
+    }
+    _playEntrances(value);
+  }
+
+  /// Run the slide's entrance build: 0 → 1 over the timeline motion_math
+  /// gives this count. No animated objects → settle instantly (whole).
+  void _playEntrances(int pageIndex) {
+    final count = entranceCount(widget.deck, _objectsOf(pageIndex));
+    if (count == 0 || MediaQuery.of(context).disableAnimations) {
+      _entranceClock.value = 1.0;
+      return;
+    }
+    _entranceClock.duration =
+        Duration(milliseconds: entranceTimelineMs(count).round());
+    _entranceClock.forward(from: 0);
+  }
+
+  /// The arrival effect around the current page's stage — only while the
+  /// enter clock is mid-flight (idle at 1 it is a pure no-op), and only for
+  /// the page that is current (the effect belongs to the landing).
+  Widget _arrive(int i, Widget child) {
+    if (i != _page) return child;
+    final kind = transitionOf(
+        widget.deck, _slides.isEmpty ? null : _slides[i]['id']);
+    if (kind != kTransitionFade &&
+        kind != kTransitionZoom &&
+        kind != kTransitionRise) {
+      return child;
+    }
+    return AnimatedBuilder(
+      animation: _enterClock,
+      builder: (context, built) {
+        if (_enterClock.value >= 1.0) return built!;
+        final t = Curves.easeOutCubic.transform(_enterClock.value);
+        Widget out = built!;
+        if (kind == kTransitionRise) {
+          out = Transform.translate(
+            offset: Offset(0, 22 * (1 - t)),
+            child: out,
+          );
+        } else if (kind == kTransitionZoom) {
+          out = Transform.scale(scale: 0.955 + 0.045 * t, child: out);
+        }
+        return Opacity(opacity: t, child: out);
+      },
+      child: child,
+    );
   }
 
   @override
@@ -180,7 +308,7 @@ class _PresenterScreenState extends State<_PresenterScreen> {
           PageView.builder(
             controller: _pages,
             itemCount: _slides.length,
-            onPageChanged: (value) => setState(() => _page = value),
+            onPageChanged: _onPageChanged,
             itemBuilder: (context, i) {
               final layout = _layouts[i];
               return Center(
@@ -193,7 +321,9 @@ class _PresenterScreenState extends State<_PresenterScreen> {
                       ? const Center(
                           child: Text('Unable to render this slide',
                               style: TextStyle(color: kText2)))
-                      : SlideStage(
+                      : _arrive(
+                          i,
+                          SlideStage(
                           // The SAME layered stage the editor renders:
                           // every inserted/drawn object presents — text
                           // boxes, images, icons, media cards, tables and
@@ -217,7 +347,13 @@ class _PresenterScreenState extends State<_PresenterScreen> {
                           imageMeta: (widget.deck['imageMeta'] as Map?)
                               ?.cast<String, dynamic>(),
                           chartPalette: _chartPalette,
+                          // The entrance build: only the current page
+                          // carries the clock — neighbors build settled.
+                          entranceClock:
+                              i == _page ? _entranceClock : null,
+                          entranceKinds: i == _page ? _entranceKinds : null,
                           // Read-only: no selection, no gestures.
+                        ),
                         ),
                 ),
               );

@@ -55,6 +55,20 @@ section, statement, stat wall, split, comparison, chart hero, closing);
 design family (DNA) switcher; undo/redo (60 steps, safe mid-typing); deck
 rename; comments.
 
+**Transitions** — the ribbon's Transitions tab: how each slide arrives
+when presenting (Push — the classic slide-along default, Fade, Zoom, Rise,
+Cut), per slide or applied to all, one undo step a pick. Swipes still follow
+the finger; tap / link navigation honors the target slide's kind.
+
+**Animations** — the ribbon's Animations tab: entrance effects per object
+(None, Fade, Rise, Pop — the chips read the selection), staggered in
+draw order whenever the slide is shown, with a Preview button that replays
+the build right on the canvas. Selecting an object on the tab keeps the tab
+(it is the selection's face there).
+
+**Help** — the ribbon's Help tab: the in-app guide — how a deck is built,
+the gestures that have no button, the ribbon map, export notes.
+
 **Insert drawer** — rides the ribbon's top edge like Files: a 3×2 grid
 (Text Box, Image, Shapes, Table, Icons / Stickers, Media); inserting or
 tapping an object swaps the grid for that object's editing panel. Text boxes
@@ -96,7 +110,9 @@ components: save a selection as a reusable component, place it on any slide,
 update it globally. Objects export 1:1 into PPTX and PDF.
 
 **Presenter** — the editor's own stage (the shared SlideStage render) at the
-deck's own aspect ratio, never a hardcoded one.
+deck's own aspect ratio, never a hardcoded one — and presentation-time
+motion: the Transitions tab's kinds drive tap / link arrivals, and the
+Animations tab's entrances play their staggered build on every slide shown.
 
 **Export** — .pptx and .pdf via the share sheet, rendered on a background
 isolate (the UI never freezes): real object content in both — styled text
@@ -121,7 +137,8 @@ refuses updates across signers).
   pairing Registry DO (code+secret, TTL, attempt limiting), Deck DO with
   hibernating WebSocket broadcast and version log. Not yet deployed.
 - Flutter: everything under "What's in the app" above; the widget suite
-  (138 tests at v0.2.40 — image depth added 7) keeps the contracts.
+  (256 tests — 238 at v0.2.40 plus the motion suite's 18) keeps the
+  contracts.
 - CI: cargo test (native + wasm32), worker typecheck + end-to-end MCP flow
   against a local workerd, flutter analyze + widget tests, resolved-pin and
   lock-drift gates, per-ABI release-signed APK on tags.
@@ -141,6 +158,9 @@ refuses updates across signers).
 - Media objects export as their card (video/audio bytes are not embedded in
   PPTX/PDF).
 - Layout assistance is smart guides (no auto-layout collision avoidance yet).
+- Transitions and entrance effects are presentation-time (the app's playback
+  layer — the deck files carry the intent); the PPTX/PDF exporters render
+  slides statically and do not write transition/animation fields yet.
 
 ## Milestones
 

@@ -313,6 +313,17 @@ extension _EditorBuildFlow on _EditorScreenState {
                                         ? _textSession?.focus
                                         : null,
                                     typing: _typing,
+                                    // The Animations tab's live preview: the
+                                    // same clock the presenter runs, driving
+                                    // the same stagger — only while the tab is
+                                    // open (idle at 1 = every object whole).
+                                    entranceClock: _navTab == _NavTab.animations
+                                        ? _entranceClock
+                                        : null,
+                                    entranceKinds:
+                                        _navTab == _NavTab.animations
+                                            ? _entranceKinds
+                                            : null,
                                   ),
                                 ),
                               ),
@@ -416,19 +427,16 @@ extension _EditorBuildFlow on _EditorScreenState {
             ),
             // ---- editing chrome: tool row + filmstrip + ribbon nav ---------------
             if (_mode == _Mode.editing) ...[
-              // Tabs with no tools yet (transitions / animations / help)
-              // skip the band entirely; Files and Insert live in their docked
-              // drawers instead of a contextual row — the canvas keeps the
-              // space until their toolboxes get spec'd.
-              // Draw is an island over the canvas now (see above).
+              // The drawer tabs (Files, Insert, Design) live in their docked
+              // sheets instead of a contextual row, and Draw is an island
+              // over the canvas now (see above) — every OTHER tab renders
+              // its band here: AI, Transitions, Animations, Slide show,
+              // Review, View, Help.
               if (_navTab != null &&
                   _navTab != _NavTab.draw &&
                   _navTab != _NavTab.files &&
                   _navTab != _NavTab.insert &&
-                  _navTab != _NavTab.design &&
-                  _navTab != _NavTab.transitions &&
-                  _navTab != _NavTab.animations &&
-                  _navTab != _NavTab.help)
+                  _navTab != _NavTab.design)
                 // Draw is the one tab whose row changes height: the
                 // toolbox's palette band cross-fades the band 48 <-> 94,
                 // the same reveal the typing toolbar's palette row does —

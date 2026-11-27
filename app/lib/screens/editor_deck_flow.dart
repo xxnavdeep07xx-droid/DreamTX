@@ -202,6 +202,26 @@ extension _EditorDeckFlow on _EditorScreenState {
         deck['imageMeta'] = liveMeta;
       }
     }
+    // Slide transitions + object entrances (the Transitions and Animations
+    // tabs): app-owned deck-level maps the Rust core drops on every
+    // round-trip. The SAME carry contract as sections/tables/imageMeta —
+    // carried forward, then sanitized against the NEW deck's live slide
+    // and object ids, so a deleted slide (or its object) folds its entry
+    // away instead of haunting the deck.
+    if (!deck.containsKey('transitions')) {
+      final carried = _deck['transitions'];
+      if (carried is Map && carried.isNotEmpty) {
+        deck['transitions'] = Map<String, dynamic>.from(carried);
+      }
+    }
+    sanitizeDeckTransitions(deck);
+    if (!deck.containsKey('animations')) {
+      final carried = _deck['animations'];
+      if (carried is Map && carried.isNotEmpty) {
+        deck['animations'] = Map<String, dynamic>.from(carried);
+      }
+    }
+    sanitizeDeckAnimations(deck);
     // Slide furniture: carry the settings forward (the core drops the key),
     // then rebuild every slide's furniture objects from them, so the slide
     // numbers follow the order on every change.
