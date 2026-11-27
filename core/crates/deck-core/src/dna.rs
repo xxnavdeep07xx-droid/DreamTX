@@ -203,8 +203,11 @@ pub fn next_variant(dna: &Dna) -> Dna {
     s ^= s << 13;
     s ^= s >> 7;
     s ^= s << 17;
-    Dna { family: dna.family, seed: s }
+    Dna { family: dna.family, seed: s & SEED_SAFE_MASK }
 }
+
+/// Seeds stay within 53 bits: exact through the app's JSON (doubles).
+pub const SEED_SAFE_MASK: u64 = (1u64 << 53) - 1;
 
 /// Flip to the next curated family (cycles all five).
 pub fn cycle_family(dna: &Dna) -> Dna {
@@ -248,6 +251,24 @@ mod tests {
         }
         // 50 seeds over 6 accents + bg drift should produce >1 identity.
         assert!(seen.len() >= 2);
+    }
+
+    #[test]
+    fn seed_loads_from_an_integer_or_a_float() {
+        let int: Dna = serde_json::from_str(r#"{"family":"bold","seed":42}"#).unwrap();
+        assert_eq!(int.seed, 42);
+        // The value the app sent back as a double (above 2^63) used to fail.
+        let float: Dna = serde_json::from_str(r#"{"family":"bold","seed":1.0862707888999072e+19}"#).unwrap();
+        assert!(float.seed > 0);
+    }
+
+    #[test]
+    fn variants_stay_within_53_bits() {
+        let mut d = Dna { family: DnaFamily::Bold, seed: u64::MAX };
+        for _ in 0..200 {
+            d = next_variant(&d);
+            assert!(d.seed <= SEED_SAFE_MASK);
+        }
     }
 
     #[test]
