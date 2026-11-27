@@ -156,12 +156,21 @@ class _ObjectPanel extends StatelessWidget {
             ),
           ];
         }
+        // The text session is still being wired (selection raced the
+        // session attach): an honest spinner state, never a bare rail
+        // button over an empty body that reads as a dead panel.
         return [
           _PanelGroup(
             id: 'none',
             icon: Icons.hourglass_empty,
             label: 'Loading…',
-            body: (p, ctx) => const _PanelBody(children: []),
+            body: (p, ctx) => const _PanelBody(children: [
+              Padding(
+                padding: EdgeInsets.symmetric(vertical: 40),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+              _PanelLabel('Preparing text tools…'),
+            ]),
           ),
         ];
       case kContentTable:
@@ -278,7 +287,7 @@ class _RailButton extends StatelessWidget {
         width: 54,
         height: 46,
         child: Material(
-          color: active ? const Color(0x1FFFFFFF) : Colors.transparent,
+          color: active ? kActiveWash : Colors.transparent,
           child: InkWell(
             onTap: onTap,
             child: Icon(
@@ -1486,12 +1495,17 @@ class _PanelIconToggle extends StatelessWidget {
   const _PanelIconToggle({
     super.key,
     required this.icon,
+    required this.label,
     required this.onTap,
     this.active = false,
   });
 
-
   final IconData icon;
+
+  /// The control's name — shown on long-press (Tooltip) and spoken by
+  /// screen readers (Semantics). Icon-only buttons are invisible to
+  /// assistive tech and unexplainable to sighted users without it.
+  final String label;
   final VoidCallback onTap;
   final bool active;
 
@@ -1502,16 +1516,24 @@ class _PanelIconToggle extends StatelessWidget {
       child: SizedBox(
         width: 40,
         height: 40,
-        child: Material(
-          color: active ? kPurpleWash : kElevated,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-            side: BorderSide(color: active ? kPurple : kHairline),
-          ),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(10),
-            onTap: onTap,
-            child: Icon(icon, size: 19, color: active ? kPurple : kText2),
+        child: Tooltip(
+          message: label,
+          child: Semantics(
+            button: true,
+            label: label,
+            value: active ? 'on' : 'off',
+            child: Material(
+              color: active ? kPurpleWash : kElevated,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+                side: BorderSide(color: active ? kPurple : kHairline),
+              ),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: onTap,
+                child: Icon(icon, size: 19, color: active ? kPurple : kText2),
+              ),
+            ),
           ),
         ),
       ),

@@ -524,9 +524,12 @@ extension _EditorChrome on _EditorScreenState {
   }
 
   void _showPairSheet() {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
+    // The shared sheet wrapper: SafeArea'd, scroll-controlled and padded
+    // above the keyboard by the REAL viewInsets — the pair sheet's own
+    // bottom padding is pure breathing room, and its capped scroll body
+    // carries whatever the keyboard leaves of the modal.
+    dreamSheet<void>(
+      context,
       builder: (_) => PairSheet(deck: _deck, onDeckUpdate: _applyRemoteDeck),
     );
   }

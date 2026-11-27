@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import '../core/color_utils.dart';
 import '../core/ink_math.dart';
 import '../core/object_content.dart';
+import '../theme.dart';
 
 /// Interactive vector overlay layer: paints every object (fills, gradients,
 /// strokes, arrows, shadows, glow) and — when `interactive` — handles
@@ -218,6 +219,7 @@ class _ShapesLayerState extends State<ShapesLayer> {
                 overlayOnly: widget.overlayOnly,
                 designW: widget.designW,
                 designH: widget.designH,
+                scale: _scale.clamp(0.1, 4.0).toDouble(),
               ),
             ),
           ),
@@ -275,10 +277,13 @@ class _ShapesLayerState extends State<ShapesLayer> {
     );
   }
 
+  /// The rotate handle sits 28 SCREEN px above the object's top edge
+  /// (kept in sync with the painted stem in [_paintSelection]) — the
+  /// hit-test geometry and the painted affordance are the same point.
   Offset _rotateHandle(Map obj) {
     final c = _center(obj);
     final rot = ((obj['rotation'] ?? 0) as num).toDouble();
-    final top = Offset(c.dx, (obj['y'] as num).toDouble() - 28);
+    final top = Offset(c.dx, (obj['y'] as num).toDouble() - 28 / _scale);
     return _rotateAround(top, c, rot);
   }
 
@@ -821,6 +826,7 @@ class _ShapesPainter extends CustomPainter {
     this.overlayOnly = false,
     this.designW = 1280,
     this.designH = 720,
+    this.scale = 1.0,
   });
 
   final List<Map<String, dynamic>> objects;
@@ -857,6 +863,14 @@ class _ShapesPainter extends CustomPainter {
   /// decks had guides that overshot or undershot the canvas).
   final double designW;
   final double designH;
+
+  /// The design→screen scale (design px per screen px, ~0.28 on a phone).
+  /// Interactive CHROME — selection handles, ruler strip, guide lines,
+  /// lasso outlines — is painted at SCREEN-constant sizes (dp divided by
+  /// this scale) so the affordances stay finger-sized and legible instead
+  /// of shrinking to hairlines with the slide. Document geometry (objects,
+  /// ink) stays design-space.
+  final double scale;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -911,7 +925,7 @@ class _ShapesPainter extends CustomPainter {
         Paint()
           ..color = const Color(0xB3FFFFFF)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.5,
+          ..strokeWidth = 1.5 / scale,
       );
     }
     // Draw B: the loop being drawn, and the dashed outlines of the lasso
@@ -926,30 +940,30 @@ class _ShapesPainter extends CustomPainter {
         Paint()
           ..color = const Color(0xCCFFFFFF)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.5,
+          ..strokeWidth = 1.5 / scale,
       );
     }
     if (lassoIds.isNotEmpty) {
       for (final obj in objects) {
         if (!lassoIds.contains(obj['id'])) continue;
-        _paintLassoOutline(canvas, obj, lassoDelta);
+        _paintLassoOutline(canvas, obj, lassoDelta, scale);
       }
     }
-    if (showRuler) _paintRuler(canvas, designW, designH);
+    if (showRuler) _paintRuler(canvas, designW, designH, scale);
     // selection overlay
     if (selectedId != null) {
       for (final o in objects) {
         if (o['id'] == selectedId) {
-          _paintSelection(canvas, o);
+          _paintSelection(canvas, o, scale);
           break;
         }
       }
     }
-    // smart guides
+    // smart guides — the theme's own magenta (chrome family), 1.5 screen px
     for (final g in guides) {
       final paint = Paint()
-        ..color = const Color(0xFFFF0099)
-        ..strokeWidth = 1.5;
+        ..color = kMagenta
+        ..strokeWidth = 1.5 / scale;
       if (g.axis == 'x') {
         canvas.drawLine(Offset(g.pos, 0), Offset(g.pos, designH), paint);
       } else {
@@ -974,20 +988,23 @@ class _ShapesPainter extends CustomPainter {
       oldDelegate.lassoDelta != lassoDelta ||
       oldDelegate.overlayOnly != overlayOnly ||
       oldDelegate.designW != designW ||
-      oldDelegate.designH != designH;
+      oldDelegate.designH != designH ||
+      oldDelegate.scale != scale;
 }
 
 /// The ruler: a translucent strip along the top and left edges, ticks from
-/// [rulerTicks], major ticks labelled in design px. Drawn in design space,
-/// so it scales with the slide like everything else.
-void _paintRuler(Canvas canvas, double w, double h) {
-  const thick = 22.0;
+/// [rulerTicks], major ticks labelled in design px. GEOMETRY is design
+/// space, but the strip's thickness and the label glyphs are screen-sized
+/// (divided by the canvas scale) so the ruler reads as a ruler on a phone
+/// instead of a 6px sliver — and both edges get labels, not just the top.
+void _paintRuler(Canvas canvas, double w, double h, double scale) {
+  final thick = 22.0 / scale;
   final bg = Paint()..color = const Color(0xB0000000);
   canvas.drawRect(Rect.fromLTWH(0, 0, w, thick), bg);
   canvas.drawRect(Rect.fromLTWH(0, 0, thick, h), bg);
   final tick = Paint()
     ..color = const Color(0xB3FFFFFF)
-    ..strokeWidth = 1;
+    ..strokeWidth = 1.0 / scale;
   for (final t in rulerTicks(w)) {
     final len = t.kind == 2 ? thick : (t.kind == 1 ? thick * 0.6 : thick * 0.3);
     canvas.drawLine(Offset(t.pos, thick - len), Offset(t.pos, thick), tick);
@@ -995,22 +1012,33 @@ void _paintRuler(Canvas canvas, double w, double h) {
       final label = TextPainter(
         text: TextSpan(
           text: '${t.pos.round()}',
-          style: const TextStyle(fontSize: 11, color: Color(0xDDFFFFFF)),
+          style: TextStyle(fontSize: 11.0 / scale, color: const Color(0xDDFFFFFF)),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
-      label.paint(canvas, Offset(t.pos + 2, 2));
+      label.paint(canvas, Offset(t.pos + 2.0 / scale, 2.0 / scale));
     }
   }
   for (final t in rulerTicks(h)) {
     final len = t.kind == 2 ? thick : (t.kind == 1 ? thick * 0.6 : thick * 0.3);
     canvas.drawLine(Offset(thick - len, t.pos), Offset(thick, t.pos), tick);
+    if (t.kind == 2) {
+      final label = TextPainter(
+        text: TextSpan(
+          text: '${t.pos.round()}',
+          style: TextStyle(fontSize: 11.0 / scale, color: const Color(0xDDFFFFFF)),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      label.paint(canvas, Offset(2.0 / scale, t.pos + 2.0 / scale));
+    }
   }
 }
 
 /// A dashed frame around one lasso-selected object, rotated with it and
-/// shifted by [delta] (the live drag offset).
-void _paintLassoOutline(Canvas canvas, Map obj, Offset delta) {
+/// shifted by [delta] (the live drag offset). Stroke is screen-weight
+/// (divided by the canvas scale) so the marching frame stays visible.
+void _paintLassoOutline(Canvas canvas, Map obj, Offset delta, double scale) {
   final rot = ((obj['rotation'] ?? 0) as num).toDouble();
   final rect = Rect.fromLTWH(
     ((obj['x'] ?? 0) as num).toDouble() + delta.dx,
@@ -1028,12 +1056,18 @@ void _paintLassoOutline(Canvas canvas, Map obj, Offset delta) {
     Paint()
       ..color = const Color(0xB3FFFFFF)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5,
+      ..strokeWidth = 1.5 / scale,
   );
   canvas.restore();
 }
 
-void _paintSelection(Canvas canvas, Map obj) {
+/// Selection chrome — outline, corner handles, rotate stem — all painted
+/// at SCREEN-constant sizes (divided by the canvas scale): on a phone the
+/// ~0.28 scale turned the old 7-design-px dots into ~2 screen px, i.e.
+/// invisible affordances for a fully functional hit area. Now the dots
+/// render ~7 screen px, the rings ~1.5 screen px, and the rotate stem 28
+/// screen px — matching the generous touch radius in `_handleAt`.
+void _paintSelection(Canvas canvas, Map obj, double scale) {
   final rot = ((obj['rotation'] ?? 0) as num).toDouble();
   final c = objectCenter(obj);
   canvas.save();
@@ -1047,19 +1081,19 @@ void _paintSelection(Canvas canvas, Map obj) {
     (obj['h'] as num).toDouble(),
   );
   final outline = Paint()
-    ..color = const Color(0xFFFF3B30)
-    ..strokeWidth = 1.6
+    ..color = kAccent
+    ..strokeWidth = 1.6 / scale
     ..style = PaintingStyle.stroke;
   canvas.drawRect(rect.deflate(1), outline);
   final handle = Paint()
     ..color = Colors.white
-    ..strokeWidth = 1.5
+    ..strokeWidth = 1.5 / scale
     ..style = PaintingStyle.fill;
   final handleBorder = Paint()
-    ..color = const Color(0xFFFF3B30)
-    ..strokeWidth = 1.5
+    ..color = kAccent
+    ..strokeWidth = 1.5 / scale
     ..style = PaintingStyle.stroke;
-  const hs = 7.0;
+  final hs = 7.0 / scale;
   for (final corner in [
     rect.topLeft,
     rect.topRight,
@@ -1070,8 +1104,9 @@ void _paintSelection(Canvas canvas, Map obj) {
     canvas.drawCircle(corner, hs, handleBorder);
   }
   // rotate handle above top-center
-  final rh = Offset(rect.center.dx, rect.top - 28);
-  canvas.drawLine(Offset(rect.center.dx, rect.top), Offset(rect.center.dx, rect.top - 28), outline);
+  final stem = 28.0 / scale;
+  final rh = Offset(rect.center.dx, rect.top - stem);
+  canvas.drawLine(Offset(rect.center.dx, rect.top), Offset(rect.center.dx, rect.top - stem), outline);
   canvas.drawCircle(rh, hs, handle);
   canvas.drawCircle(rh, hs, handleBorder);
   canvas.restore();
@@ -1093,7 +1128,7 @@ void _paintEraseVeil(Canvas canvas, Map obj) {
   canvas.translate(-c.dx, -c.dy);
   canvas.drawRect(
     Rect.fromLTWH(x, y, w, h),
-    Paint()..color = const Color(0x66141417),
+    Paint()..color = kSurface.withValues(alpha: 0.4),
   );
   canvas.restore();
 }

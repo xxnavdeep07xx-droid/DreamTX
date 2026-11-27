@@ -118,6 +118,7 @@ class DreamColorChips extends StatelessWidget {
         _SwatchChip(
           color: c,
           size: chipSize,
+          label: '#${hexKeyOf(c)}',
           selected: selected == hexKeyOf(c),
           onTap: () => onPick(hexKeyOf(c)),
         ),
@@ -214,11 +215,17 @@ class _SwatchChip extends StatelessWidget {
   const _SwatchChip({
     required this.color,
     required this.size,
+    required this.label,
     required this.selected,
     required this.onTap,
   });
 
   final Color color;
+
+  /// The swatch's name (its hex) — color-only circles are mute for screen
+  /// readers and unguessable on long-press; the label makes each one
+  /// announceable and explainable.
+  final String label;
   final double size;
   final bool selected;
   final VoidCallback onTap;
@@ -227,18 +234,26 @@ class _SwatchChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: selected ? kMagenta : kHairline,
-              width: selected ? 2 : 1,
+      child: Tooltip(
+        message: label,
+        child: Semantics(
+          button: true,
+          selected: selected,
+          label: label,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onTap,
+            child: Container(
+              width: size,
+              height: size,
+              decoration: BoxDecoration(
+                color: color,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: selected ? kMagenta : kHairline,
+                  width: selected ? 2 : 1,
+                ),
+              ),
             ),
           ),
         ),

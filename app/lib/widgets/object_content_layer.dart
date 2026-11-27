@@ -831,7 +831,7 @@ class _MediaView extends StatelessWidget {
                   ? Border.all(
                       color: hexToColor((stroke['color'] ?? '17181A').toString()),
                       width: strokeWidth)
-                  : Border.all(color: const Color(0x332A2A31)),
+                  : Border.all(color: kHairline.withValues(alpha: 0.2)),
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -929,6 +929,17 @@ class ChartPainter extends CustomPainter {
     tp.paint(canvas, at);
   }
 
+  /// The laid-out width of a legend label at the same 9sp the legend paints
+  /// with — the advance is measured, never estimated per character, so wide
+  /// glyphs cannot overrun their slot into the next entry.
+  double _textWidth(String s) {
+    final tp = TextPainter(
+      text: TextSpan(text: s, style: TextStyle(color: textColor, fontSize: 9)),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    return tp.width;
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     final w = size.width;
@@ -937,7 +948,7 @@ class ChartPainter extends CustomPainter {
     final series = data.series;
     final labels = data.labels;
     final axis = Paint()
-      ..color = const Color(0xFF9E9EA6)
+      ..color = kText2
       ..strokeWidth = 0.5;
 
     var top = 8.0;
@@ -969,7 +980,7 @@ class ChartPainter extends CustomPainter {
         canvas.drawRect(Rect.fromLTWH(lx, legendY, 8, 8),
             Paint()..color = _hex(color));
         _text(canvas, name, Offset(lx + 12, legendY - 2));
-        lx += 12.0 + name.length * 5.5 + 14.0;
+        lx += 12.0 + _textWidth(name) + 14.0;
       }
     }
 
@@ -1081,7 +1092,60 @@ class ChartPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant ChartPainter old) => true;
+  bool shouldRepaint(covariant ChartPainter old) =>
+      !_sameChartData(old.data, data) ||
+      old.textColor != textColor ||
+      !_strListEquals(old.palette, palette);
+}
+
+/// Value equality for the chart payload: [chartDataOf] rebuilds a fresh
+/// [ChartData] on every parent rebuild, so identity checks in
+/// [ChartPainter.shouldRepaint] would always report a change and repaint
+/// every chart on screen for every unrelated editor setState. The payload
+/// is small and flat — comparing its scalars and lists by value is cheap
+/// and keeps unrelated rebuilds free.
+bool _sameChartData(ChartData a, ChartData b) {
+  if (identical(a, b)) return true;
+  if (a.style != b.style || a.title != b.title) return false;
+  if (!_strListEquals(a.labels, b.labels)) return false;
+  if (a.series.length != b.series.length) return false;
+  for (var i = 0; i < a.series.length; i++) {
+    final sa = a.series[i], sb = b.series[i];
+    if (sa.name != sb.name || sa.color != sb.color) return false;
+    if (sa.values.length != sb.values.length) return false;
+    for (var j = 0; j < sa.values.length; j++) {
+      if (sa.values[j] != sb.values[j]) return false;
+    }
+  }
+  return true;
+}
+
+/// Value equality for string lists — fresh list instances with equal
+/// content must read as equal (see [_sameChartData]).
+bool _strListEquals(List<String> a, List<String> b) {
+  if (identical(a, b)) return true;
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
+
+/// Value equality for merge-region lists (same rationale as
+/// [_strListEquals] for the table painter).
+bool _mergeListEquals(List<Map<String, dynamic>> a, List<Map<String, dynamic>> b) {
+  if (identical(a, b)) return true;
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    final x = a[i], y = b[i];
+    if (x['r'] != y['r'] ||
+        x['c'] != y['c'] ||
+        x['rs'] != y['rs'] ||
+        x['cs'] != y['cs']) {
+      return false;
+    }
+  }
+  return true;
 }
 
 class _TableView extends StatelessWidget {
@@ -1260,12 +1324,12 @@ class _TablePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_TablePainter old) =>
-      old.cells != cells ||
+      !_strListEquals(old.cells, cells) ||
       old.gridColor != gridColor ||
       old.cellStyle != cellStyle ||
       old.rows != rows ||
       old.cols != cols ||
-      old.merges != merges ||
+      !_mergeListEquals(old.merges, merges) ||
       old.headerFill != headerFill ||
       old.headerText != headerText ||
       old.bandFill != bandFill;

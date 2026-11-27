@@ -464,8 +464,17 @@ extension _EditorDeckFlow on _EditorScreenState {
     final i = _NavTab.values.indexOf(tab);
     final view = _navScroll.position.viewportDimension;
     final maxExtent = _navScroll.position.maxScrollExtent;
-    final itemLeft = i * _navItemWidth;
-    if (itemLeft >= -4 && itemLeft + _navItemWidth <= view + 4) {
+    // Viewport-space left edge: content offset minus the CURRENT scroll
+    // pixels. The visibility test must see where the tab actually sits on
+    // screen — content coordinates alone are only correct while the bar
+    // sits at scroll 0, and twelve tabs × 66dp ≈ 800dp of content in a
+    // ~390dp viewport means the bar is scrolled most of the time. Without
+    // the offset, an off-screen tab (e.g. Insert while the bar rests near
+    // Help) is wrongly judged "visible", the early return fires and the
+    // freshly-lit pill stays off-screen.
+    final pixels = _navScroll.position.pixels;
+    final viewLeft = i * _navItemWidth - pixels;
+    if (viewLeft >= -4 && viewLeft + _navItemWidth <= view + 4) {
       return; // fully visible — the bar stays put
     }
     final target = (i * _navItemWidth + _navItemWidth / 2 - view / 2)

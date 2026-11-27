@@ -323,7 +323,7 @@ class _ToolButton extends StatelessWidget {
           onPressed: onTap,
           visualDensity: VisualDensity.compact,
           style: IconButton.styleFrom(
-            backgroundColor: active ? const Color(0x1FFFFFFF) : null,
+            backgroundColor: active ? kActiveWash : null,
           ),
         ),
       ),

@@ -659,7 +659,7 @@ class _DrawToolButton extends StatelessWidget {
           onPressed: onTap,
           visualDensity: VisualDensity.compact,
           style: IconButton.styleFrom(
-            backgroundColor: active ? const Color(0x1FFFFFFF) : null,
+            backgroundColor: active ? kActiveWash : null,
           ),
         ),
       ),
@@ -876,7 +876,7 @@ class _PresetChip extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 10),
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: selected ? const Color(0x1FFFFFFF) : null,
+            color: selected ? kActiveWash : null,
             borderRadius: BorderRadius.circular(15),
             border: Border.all(color: selected ? kText2 : kHairline),
           ),

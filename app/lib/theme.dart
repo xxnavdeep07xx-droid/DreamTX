@@ -23,6 +23,12 @@ const Color kMagenta = Color(0xFFE1306C); // gradient middle
 const Color kOrange = Color(0xFFFF6B4A); // gradient end
 const Color kPurpleWash = Color(0x24A855F7); // icon-chip wash on tiles — kPurple at ~14% over the dark surfaces, so a tile's glyph sits in its own quiet field of the signature color
 
+/// The active-state wash: 12% white over any surface — the ONE tint behind
+/// an active pill, tool chip or swatch across the studio's chrome. A named
+/// token because it appears in many hands; the five copies that each spelled
+/// the literal could drift apart silently.
+const Color kActiveWash = Color(0x1FFFFFFF);
+
 /// The signature gradient: story rings, create buttons, selected thumbnail.
 const LinearGradient kInkGradient = LinearGradient(
   begin: Alignment.topLeft,

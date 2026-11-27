@@ -437,10 +437,11 @@ extension _EditorBuildFlow on _EditorScreenState {
                   _navTab != _NavTab.files &&
                   _navTab != _NavTab.insert &&
                   _navTab != _NavTab.design)
-                // Draw is the one tab whose row changes height: the
-                // toolbox's palette band cross-fades the band 48 <-> 94,
-                // the same reveal the typing toolbar's palette row does —
-                // every other tab stays a constant 48.
+                // A constant-height band: every tab that lands here (AI,
+                // Transitions, Animations, Slide show, Review, View, Help)
+                // renders a single 48dp tool row. (Draw's old in-band
+                // toolbox no longer passes through here — the Draw tab is
+                // the floating island — so the height is a plain 48.)
                 Container(
                   decoration: const BoxDecoration(
                     color: kSurface,
@@ -449,7 +450,7 @@ extension _EditorBuildFlow on _EditorScreenState {
                       bottom: BorderSide(color: kHairline),
                     ),
                   ),
-                  height: _navTab == _NavTab.draw ? null : 48,
+                  height: 48,
                   child: _contextualRow(),
                 ),
               // ---- filmstrip (stories-style, gradient ring on the live slide) --

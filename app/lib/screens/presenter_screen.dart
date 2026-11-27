@@ -301,6 +301,11 @@ class _PresenterScreenState extends State<_PresenterScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Cutout-aware chrome: the presenter runs edge-to-edge (immersive), so
+    // the exit glyph and the counter must sit clear of any display cutout —
+    // `padding` carries the notch inset on cutout devices and reads zero on
+    // ordinary ones, so nothing moves where it does not have to.
+    final pad = MediaQuery.paddingOf(context);
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
@@ -370,8 +375,8 @@ class _PresenterScreenState extends State<_PresenterScreen>
             ),
           ),
           Positioned(
-            top: 24,
-            right: 12,
+            top: 24 + pad.top,
+            right: 12 + pad.right,
             child: IconButton(
               tooltip: 'Exit',
               icon: const Icon(Icons.close, color: Colors.white, size: 26),
@@ -381,7 +386,7 @@ class _PresenterScreenState extends State<_PresenterScreen>
           Positioned(
             left: 0,
             right: 0,
-            bottom: 18,
+            bottom: 18 + pad.bottom,
             child: Center(
               child: Text(
                 _slides.isEmpty ? '' : '${_page + 1} / ${_slides.length}',
