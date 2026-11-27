@@ -22,6 +22,7 @@ import '../core/link_math.dart';
 import '../core/link_open.dart';
 import '../core/media_pickers.dart';
 import '../core/media_playback.dart';
+import '../core/motion_math.dart';
 import '../core/object_content.dart';
 import '../core/resources.dart';
 import '../core/store.dart';
@@ -57,6 +58,7 @@ part 'editor_slide_flow.dart';
 part 'editor_design_flow.dart';
 part 'editor_build_flow.dart';
 part 'editor_chrome.dart';
+part 'editor_motion_flow.dart';
 
 
 /// Screen 2 — Editor. Canvas + filmstrip + a PowerPoint-style bottom ribbon —
@@ -89,13 +91,20 @@ class EditorScreen extends StatefulWidget {
 }
 
 class _EditorScreenState extends State<EditorScreen>
-    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
+    with WidgetsBindingObserver, TickerProviderStateMixin {
   late Map<String, dynamic> _deck;
   int _index = 0;
 
   /// Draw E: the ink replay clock. Idle at 1 (every scribble whole); a
   /// replay runs it 0 → 1 (see [_replayInk]).
   late final AnimationController _inkReplay =
+      AnimationController(vsync: this, value: 1.0);
+
+  /// The Animations tab's entrance clock. Idle at 1 (every object whole);
+  /// a preview runs it 0 → 1 with the same timeline math the presenter
+  /// runs (motion_math), so the canvas and the deck's playback agree by
+  /// construction.
+  late final AnimationController _entranceClock =
       AnimationController(vsync: this, value: 1.0);
 
   /// Draw C: where the Draw island sits and what it shows (per device).
@@ -320,6 +329,7 @@ class _EditorScreenState extends State<EditorScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _inkReplay.dispose();
+    _entranceClock.dispose();
     _removeTypingToolbar();
     _disposeTextSession();
     _objectCommitDebounce?.cancel();

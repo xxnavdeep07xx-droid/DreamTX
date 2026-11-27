@@ -303,7 +303,12 @@ extension _EditorSessionFlow on _EditorScreenState {
     // the Insert sheet (rising from behind the navbar) whichever editing
     // tab was active — Draw just as Insert — while a read-only deck never
     // gets here (the stage is non-interactive in viewing).
-    if (_mode == _Mode.editing && _navTab != _NavTab.insert) {
+    // The Animations tab is the exception: IT is the selection's face
+    // there (the entrance chips read the selection), so a pick on that
+    // tab keeps the tab and its row instead of swapping to Insert.
+    if (_mode == _Mode.editing &&
+        _navTab != _NavTab.insert &&
+        _navTab != _NavTab.animations) {
       _setNavTab(_NavTab.insert);
     }
   }

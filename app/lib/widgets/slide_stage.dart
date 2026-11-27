@@ -7,6 +7,7 @@ import '../theme.dart';
 import '../core/chart_math.dart';
 import '../core/ink_math.dart';
 import '../core/link_math.dart';
+import '../core/motion_math.dart';
 import '../core/object_content.dart';
 import 'object_content_layer.dart';
 import 'rich_doc.dart';
@@ -64,6 +65,8 @@ class SlideStage extends StatelessWidget {
     this.onLassoMove,
     this.showRuler = false,
     this.inkReplay,
+    this.entranceClock,
+    this.entranceKinds,
     this.onObjectLongPress,
     this.onCanvasLongPress,
     this.textController,
@@ -142,6 +145,18 @@ class SlideStage extends StatelessWidget {
   /// runs; at 1 (the idle value) every scribble is whole. Null = no replay.
   final Animation<double>? inkReplay;
 
+  /// The Animations tab's entrance clock (0..1): each animated object
+  /// arrives on its staggered slice of the timeline (motion_math). At 1
+  /// (the idle value) every object is whole. Null = no entrance behavior
+  /// (the editor passes it only on the Animations tab; the presenter, on
+  /// the slide that just landed).
+  final Animation<double>? entranceClock;
+
+  /// The deck's entrance map (objectId → kind) — `deck['animations']`
+  /// (app-owned deck data the core drops; the editor carries it). Only
+  /// objects with an entry here animate.
+  final Map<String, String>? entranceKinds;
+
   /// Long-press wiring (editing only; the presenter passes nothing —
   /// read-only stages never build the recognizers): an object long-press
   /// opens its actions sheet, an empty-canvas long-press pastes the
@@ -176,6 +191,22 @@ class SlideStage extends StatelessWidget {
         }
       }
       final replayCount = replayIndex.length;
+
+      // The entrance build's stagger order: animated objects in the deck's
+      // own z-order (exactly the ink replay's index math — same stage, same
+      // rule), so the preview and the presenter agree by construction.
+      final enterClock = entranceClock;
+      final enterKinds = entranceKinds;
+      final enterIndex = <Object?, int>{};
+      if (enterClock != null && enterKinds != null) {
+        for (final obj in objects) {
+          final id = obj['id'];
+          if (id != null && enterKinds[id.toString()] != null) {
+            enterIndex[id] = enterIndex.length;
+          }
+        }
+      }
+      final enterCount = enterIndex.length;
       Widget scribblePaint(Map<String, dynamic> obj) {
         final i = replayIndex[obj['id']];
         if (replay == null || i == null) {
@@ -243,6 +274,25 @@ class SlideStage extends StatelessWidget {
                       ],
                     )
                   : contentChild;
+              // The entrance wrap: only objects with a kind, only while a
+              // clock drives the stage. The effect lives INSIDE the object's
+              // Positioned box (before rotation), so an entrance on a
+              // rotated object reads as the object arriving, not the frame.
+              final kind = obj['id'] == null
+                  ? null
+                  : enterKinds?[obj['id'].toString()];
+              final slot = obj['id'] == null ? null : enterIndex[obj['id']];
+              final entered = (enterClock != null &&
+                      kind != null &&
+                      slot != null)
+                  ? _ObjectEntrance(
+                      kind: kind,
+                      slot: slot,
+                      count: enterCount,
+                      clock: enterClock,
+                      child: badged,
+                    )
+                  : badged;
               return Positioned(
                 left: x,
                 top: y,
@@ -251,9 +301,9 @@ class SlideStage extends StatelessWidget {
                 child: rot != 0
                     ? Transform.rotate(
                         angle: rot * math.pi / 180.0,
-                        child: badged,
+                        child: entered,
                       )
-                    : badged,
+                    : entered,
               );
             }(),
           // The interaction + selection overlay on TOP of everything: all
@@ -333,6 +383,68 @@ class _LinkBadge extends StatelessWidget {
         border: Border.all(color: Colors.white, width: 1.5),
       ),
       child: const Icon(Icons.link, size: 11, color: Colors.white),
+    );
+  }
+}
+
+/// One animated object's arrival, driven by its staggered slice of the
+/// entrance clock (the ink replay's AnimatedBuilder pattern, applied to the
+/// object itself). At progress 1 the child renders untouched — the wrap is
+/// a pure no-op in steady state.
+class _ObjectEntrance extends StatelessWidget {
+  const _ObjectEntrance({
+    required this.kind,
+    required this.slot,
+    required this.count,
+    required this.clock,
+    required this.child,
+  });
+
+  /// The entrance kind (motion_math: fade / rise / pop).
+  final String kind;
+
+  /// This object's stagger slot (z-order among the animated) and the count.
+  final int slot;
+  final int count;
+
+  /// The entrance clock (0..1 over the whole build's timeline).
+  final Animation<double> clock;
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: clock,
+      builder: (context, built) {
+        final p = entranceProgress(slot, count, clock.value);
+        if (p >= 1.0) return built!;
+        final eased = Curves.easeOut.transform(p);
+        switch (kind) {
+          case kEntranceFade:
+            return Opacity(opacity: eased, child: built);
+          case kEntranceRise:
+            return Opacity(
+              opacity: eased,
+              child: Transform.translate(
+                offset: Offset(0, 24 * (1 - eased)),
+                child: built,
+              ),
+            );
+          case kEntrancePop:
+            final pop = Curves.easeOutBack.transform(p);
+            return Opacity(
+              opacity: eased,
+              child: Transform.scale(
+                scale: 0.55 + 0.45 * pop.clamp(0.0, 1.2),
+                child: built,
+              ),
+            );
+          default:
+            return built!;
+        }
+      },
+      child: child,
     );
   }
 }

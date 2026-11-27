@@ -388,9 +388,23 @@ extension _EditorChrome on _EditorScreenState {
         // the band; the band skips this tab.
         return const SizedBox.shrink();
       case _NavTab.transitions:
-        return const SizedBox.shrink();
+        // The slide's arrival kind when presenting — one chip strip, the
+        // deck-level map rides the deck (motion_math). One undo step a pick.
+        return _TransitionsRow(
+          kind: _slideTransition,
+          onPick: _setSlideTransition,
+          onApplyAll: () => _applyTransitionToAll(_slideTransition),
+        );
       case _NavTab.animations:
-        return const SizedBox.shrink();
+        // Entrance effects for the selected object, staggered playback in
+        // the presenter (and Preview right on the canvas).
+        return _AnimationsRow(
+          selected: _selectedObject != null,
+          selectedKind: _selectedEntrance,
+          onPick: _setSelectedEntrance,
+          onPreview: _previewEntrances,
+          animatedCount: _slideEntranceCount,
+        );
       case _NavTab.slideshow:
         return Row(
           children: [
@@ -450,7 +464,20 @@ extension _EditorChrome on _EditorScreenState {
           ),
         );
       case _NavTab.help:
-        return const SizedBox.shrink();
+        // The guide: how the app works, where everything lives, the
+        // gestures that have no button.
+        return Row(
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 10),
+              child: FilledButton.tonalIcon(
+                onPressed: _showHelpSheet,
+                icon: const Icon(Icons.help_outline, size: 18),
+                label: const Text('Open help'),
+              ),
+            ),
+          ],
+        );
     }
   }
 
