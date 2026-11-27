@@ -691,7 +691,25 @@ pub struct Series {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Dna {
     pub family: DnaFamily,
+    /// Accepts an integer or a float: the app's JSON decoder turns integers
+    /// above 2^53 into doubles, which used to fail the whole command.
+    #[serde(deserialize_with = "de_seed")]
     pub seed: u64,
+}
+
+/// Reads a seed from an integer or from a float (rounded, clamped to u64).
+fn de_seed<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u64, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Repr {
+        Int(u64),
+        Float(f64),
+    }
+    Ok(match Repr::deserialize(d)? {
+        Repr::Int(v) => v,
+        Repr::Float(f) if f.is_finite() && f > 0.0 => f.min(u64::MAX as f64) as u64,
+        Repr::Float(_) => 0,
+    })
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

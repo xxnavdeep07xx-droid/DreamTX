@@ -447,7 +447,7 @@ pub fn execute(req: &str) -> Value {
         }),
         Command::NewDeck { title, family, blank } => {
             let fam = parse_family(&family).unwrap_or(DnaFamily::SwissEditorial);
-            let seed = fresh_seed(&title);
+            let seed = fresh_seed(&title) & crate::dna::SEED_SAFE_MASK;
             let mut deck = Deck {
                 id: format!("d{:x}", seed & 0xFFFF_FFFF),
                 title: title.clone(),
