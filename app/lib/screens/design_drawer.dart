@@ -140,6 +140,7 @@ class DesignDrawer extends StatelessWidget {
                           key: ValueKey('design_variant_${v['seed']}'),
                           bg: hexToColor(v['palette']['bg'] as String),
                           accent: hexToColor(v['palette']['accent'] as String),
+                          label: 'Variant ${v['seed']}',
                           selected: (v['seed'] as num).toInt() == currentSeed,
                           onTap: () => onVariant((v['seed'] as num).toInt()),
                         ),
@@ -180,6 +181,7 @@ class DesignDrawer extends StatelessWidget {
                       for (final c in palette.take(7))
                         DesignSwatch(
                           bg: c,
+                          label: '#${colorToHex(c)}',
                           selected: slideBackground == colorToHex(c),
                           onTap: () => onBackground(colorToHex(c)),
                         ),
@@ -236,7 +238,9 @@ class _SectionLabel extends StatelessWidget {
 }
 
 /// A round colour swatch: the background colour, an optional accent dot,
-/// and an accent ring when it is the current choice.
+/// and an accent ring when it is the current choice. [label] names the
+/// swatch for tooltips and screen readers — a color-only circle is mute
+/// otherwise.
 class DesignSwatch extends StatelessWidget {
   const DesignSwatch({
     super.key,
@@ -244,6 +248,7 @@ class DesignSwatch extends StatelessWidget {
     required this.selected,
     required this.onTap,
     this.accent,
+    this.label,
   });
 
   final Color bg;
@@ -251,9 +256,14 @@ class DesignSwatch extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
+  /// Optional name (e.g. '#0F62FE' or 'Variant 3'); spoken and shown when
+  /// known, omitted silently when the caller has no name to give.
+  final String? label;
+
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    final swatch = GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
         width: 36,
@@ -275,6 +285,12 @@ class DesignSwatch extends StatelessWidget {
                 decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
               ),
       ),
+    );
+    final l = label;
+    if (l == null) return swatch;
+    return Tooltip(
+      message: l,
+      child: Semantics(button: true, selected: selected, label: l, child: swatch),
     );
   }
 }

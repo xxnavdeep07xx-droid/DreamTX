@@ -250,74 +250,97 @@ class _PairSheetState extends State<PairSheet> {
     final mcpUrl = pairing == null
         ? null
         : '$_serverUrl/p/${pairing['token']}/mcp';
+    // The sheet is capped at ~88% of the screen and its surplus SCROLLS:
+    // with the URL field focused, a multi-line error and the status row on
+    // the table, the min-size column could exceed the modal's height on
+    // small screens (RenderFlex overflow). The keyboard inset itself is
+    // applied by the shared dreamSheet wrapper at the call site; this
+    // sheet only adds its own breathing room.
+    final maxH = MediaQuery.of(context).size.height * 0.88;
     return Padding(
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text('Pair with your AI', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 8),
-          const Text(
-            'Paste the URL into ChatGPT / Claude / any MCP client. '
-            'It controls this deck only — for 15 minutes.',
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            style: const TextStyle(color: kText, fontSize: 14),
-            cursorColor: kPurple,
-            decoration: darkInput(
-              label: 'DreamTX server URL',
-              hint: 'https://dreamtx.your-name.workers.dev',
-            ),
-            controller: _urlField,
-            onChanged: (v) => _serverUrl = v,
-            onSubmitted: _saveServerUrl,
-          ),
-          const SizedBox(height: 12),
-          if (mcpUrl != null) ...[
-            _CopyRow(label: 'Pairing code', value: pairing!['code'].toString()),
-            _CopyRow(label: 'MCP URL', value: mcpUrl),
-            const SizedBox(height: 8),
-          ],
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-            ),
-          Row(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxH),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: FilledButton.icon(
-                  icon: const Icon(Icons.link),
-                  label: const Text('Generate pairing code'),
-                  onPressed: _pair,
+              Text('Pair with your AI',
+                  style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 8),
+              const Text(
+                'Paste the URL into ChatGPT / Claude / any MCP client. '
+                'It controls this deck only — for 15 minutes.',
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                style: const TextStyle(color: kText, fontSize: 14),
+                cursorColor: kPurple,
+                decoration: darkInput(
+                  label: 'DreamTX server URL',
+                  hint: 'https://dreamtx.your-name.workers.dev',
                 ),
+                controller: _urlField,
+                onChanged: (v) => _serverUrl = v,
+                onSubmitted: _saveServerUrl,
+              ),
+              const SizedBox(height: 12),
+              if (mcpUrl != null) ...[
+                _CopyRow(
+                    label: 'Pairing code', value: pairing!['code'].toString()),
+                _CopyRow(label: 'MCP URL', value: mcpUrl),
+                const SizedBox(height: 8),
+              ],
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    // Bounded: a raw exception can be a screenful; three
+                    // lines carry the reason, the log keeps the rest.
+                    _error!,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                  ),
+                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      icon: const Icon(Icons.link),
+                      label: const Text('Generate pairing code'),
+                      onPressed: _pair,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(
+                    _status.contains('live') || _status.contains('connected')
+                        ? Icons.circle
+                        : Icons.circle_outlined,
+                    size: 12,
+                    color: _status.contains('live') ||
+                            _status.contains('connected')
+                        ? Colors.green
+                        : Colors.grey,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Deck status: $_status',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Icon(
-                _status.contains('live') || _status.contains('connected')
-                    ? Icons.circle
-                    : Icons.circle_outlined,
-                size: 12,
-                color: _status.contains('live') || _status.contains('connected')
-                    ? Colors.green
-                    : Colors.grey,
-              ),
-              const SizedBox(width: 6),
-              Expanded(child: Text('Deck status: $_status')),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -340,7 +363,12 @@ class _CopyRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(label, style: Theme.of(context).textTheme.labelSmall),
-                Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
               ],
             ),
           ),

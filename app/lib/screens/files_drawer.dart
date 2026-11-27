@@ -197,6 +197,13 @@ Future<void> showResourceLibrary(
             future: ResourceStore.open()
                 .then((s) => s.list(brand: brand, deckId: deckId)),
             builder: (context, snapshot) {
+              // The store's answer is one of four visible states — waiting,
+              // failed, empty or the shelves — never a bare list that reads
+              // "empty" while the scan is still in flight (or after it
+              // threw): a load in progress and a load that failed are
+              // different facts than "nothing here".
+              final waiting = snapshot.connectionState != ConnectionState.done;
+              final failed = snapshot.hasError;
               final items = snapshot.data ?? const [];
               return ListView(
                 padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
@@ -225,14 +232,65 @@ Future<void> showResourceLibrary(
                     ),
                   ),
                   const SizedBox(height: 8),
-                  // Loose files first (newest last, as always), then one
-                  // section per imported folder — a shelf of brand folders
-                  // reads as shelves, not noise.
-                  ..._libraryRows(context,
-                      items: items,
-                      brand: brand,
-                      deckId: deckId,
-                      reload: reload),
+                  if (waiting)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 56),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (failed)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.warning_amber_outlined,
+                              size: 32, color: kAccent),
+                          const SizedBox(height: 10),
+                          const Text(
+                            'Could not read this library',
+                            style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: kText),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            snapshot.error.toString(),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                                fontSize: 11.5, color: kText2),
+                          ),
+                          const SizedBox(height: 14),
+                          FilledButton.tonalIcon(
+                            onPressed: () => reload(() {}),
+                            icon: const Icon(Icons.refresh, size: 18),
+                            label: const Text('Retry'),
+                          ),
+                        ],
+                      ),
+                    )
+                  else if (items.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 36),
+                      child: Center(
+                        child: Text(
+                          'Nothing here yet — add files or a folder.',
+                          style: TextStyle(fontSize: 12.5, color: kText2),
+                        ),
+                      ),
+                    )
+                  else
+                    // Loose files first (newest last, as always), then one
+                    // section per imported folder — a shelf of brand folders
+                    // reads as shelves, not noise.
+                    ..._libraryRows(context,
+                        items: items,
+                        brand: brand,
+                        deckId: deckId,
+                        reload: reload),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     child: Row(
@@ -275,7 +333,9 @@ Future<void> showResourceLibrary(
                               'uploaded. Only this deck lists them; other '
                               'decks never see them. Inserting into slides '
                               'is not supported yet.',
-                      style: const TextStyle(fontSize: 11, color: kText3),
+                      // kText2, not kText3: this is a privacy/storage
+                      // disclosure the user is expected to actually read.
+                      style: const TextStyle(fontSize: 11, color: kText2),
                     ),
                   ),
                 ],

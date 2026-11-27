@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../core/link_math.dart';
+import '../theme.dart';
 
 /// What the link sheet returns: the new link, or null to remove it.
 /// A cancelled sheet returns no LinkEdit at all.
@@ -103,8 +104,9 @@ class _LinkSheetState extends State<LinkSheet> {
                 controller: _url,
                 keyboardType: TextInputType.url,
                 autocorrect: false,
-                decoration: InputDecoration(
-                  hintText: 'https://…',
+                style: const TextStyle(color: kText, fontSize: 14),
+                cursorColor: kPurple,
+                decoration: darkInput(hint: 'https://…').copyWith(
                   errorText: hasUrlText && urlLink(_url.text) == null
                       ? 'Use an https, http, or mailto link, with no spaces'
                       : null,

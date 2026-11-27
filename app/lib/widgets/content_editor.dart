@@ -607,7 +607,7 @@ class _ContentSheetState extends State<ContentSheet> {
                         const SizedBox(height: 2),
                         Text(
                           archetypeLabelOf(_archetype),
-                          style: const TextStyle(fontSize: 12, color: Color(0xFF9E9EA6)),
+                          style: const TextStyle(fontSize: 12, color: kText2),
                         ),
                       ],
                     ),

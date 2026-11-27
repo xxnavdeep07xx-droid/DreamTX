@@ -126,7 +126,7 @@ class _InspectorSheetState extends State<_InspectorSheet> {
                   ),
                   Text(
                     (widget.object['preset'] ?? 'shape').toString().replaceAll('_', ' '),
-                    style: const TextStyle(fontSize: 12, color: Color(0xFF9E9EA6)),
+                    style: const TextStyle(fontSize: 12, color: kText2),
                   ),
                 ],
               ),
@@ -328,7 +328,7 @@ class _InspectorSheetState extends State<_InspectorSheet> {
         padding: const EdgeInsets.only(top: 14, bottom: 6),
         child: Text(
           text.toUpperCase(),
-          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: Color(0xFF9E9EA6)),
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: kText2),
         ),
       );
 
@@ -378,10 +378,24 @@ class _ColorField extends StatefulWidget {
 class _ColorFieldState extends State<_ColorField> {
   late TextEditingController _controller;
 
+  /// The last value that COMMITTED (a valid 6-hex). The preview swatch holds
+  /// this while the field holds a partial or invalid string, so it never
+  /// flips to a phantom mid-typing color.
+  late String _lastValid;
+
+  static String _normalize(String v) =>
+      v.trim().toUpperCase().replaceAll('#', '');
+
+  bool _isValid(String v) {
+    final hex = _normalize(v);
+    return hex.length == 6 && int.tryParse(hex, radix: 16) != null;
+  }
+
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.initial.toUpperCase());
+    _lastValid = _normalize(widget.initial);
   }
 
   @override
@@ -391,14 +405,25 @@ class _ColorFieldState extends State<_ColorField> {
   }
 
   void _commit(String v) {
-    final hex = v.trim().toUpperCase().replaceAll('#', '');
-    if (hex.length == 6 && int.tryParse(hex, radix: 16) != null) {
+    if (_isValid(v)) {
+      final hex = _normalize(v);
       widget.onChanged(hex);
+      setState(() => _lastValid = hex);
+    } else {
+      // Nothing commits — but the hint and the swatch still need to reflect
+      // the field's current (in)validity.
+      setState(() {});
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final text = _controller.text;
+    final valid = _isValid(text);
+    // Quiet while the user is mid-word ("1A"); honest once the entry looks
+    // complete but is not a 6-digit hex ("GGGGGG", "1234567").
+    final showHint =
+        text.isNotEmpty && !valid && _normalize(text).length >= 6;
     return Padding(
       padding: const EdgeInsets.only(top: 8, bottom: 8),
       child: Column(
@@ -422,13 +447,23 @@ class _ColorFieldState extends State<_ColorField> {
                 width: 34,
                 height: 34,
                 decoration: BoxDecoration(
-                  color: hexToColor(_controller.text),
+                  // Stable preview: the live value while valid, the last
+                  // committed one otherwise — never a mid-typing phantom.
+                  color: valid ? hexToColor(text) : hexToColor(_lastValid),
                   border: Border.all(color: Colors.black26),
                   borderRadius: BorderRadius.circular(6),
                 ),
               ),
             ],
           ),
+          if (showHint)
+            const Padding(
+              padding: EdgeInsets.only(top: 2),
+              child: Text(
+                'Enter 6 hex digits, e.g. A1B2C3 — changes apply only when the value parses',
+                style: TextStyle(fontSize: 10.5, color: kAccent),
+              ),
+            ),
           const SizedBox(height: 4),
           DreamColorChips(
             palette: kSwatchPalette,
@@ -584,7 +619,7 @@ class _LayersSheetState extends State<_LayersSheet> {
                     child: Text('Layers', style: Theme.of(context).textTheme.titleLarge),
                   ),
                   Text('${objects.length} objects · ${_sel.length} selected',
-                      style: const TextStyle(fontSize: 12, color: Color(0xFF9E9EA6))),
+                      style: const TextStyle(fontSize: 12, color: kText2)),
                 ],
               ),
             ),
@@ -665,7 +700,7 @@ class _LayersSheetState extends State<_LayersSheet> {
           alignment: Alignment.centerLeft,
           child: Text(
             text.toUpperCase(),
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: Color(0xFF9E9EA6)),
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: kText2),
           ),
         ),
       );
@@ -697,8 +732,8 @@ class _LayersSheetState extends State<_LayersSheet> {
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
           ),
-          if (isComp) const Padding(padding: EdgeInsets.only(left: 4), child: Icon(Icons.extension_outlined, size: 14, color: Color(0xFF9E9EA6))),
-          if (locked) const Padding(padding: EdgeInsets.only(left: 4), child: Icon(Icons.lock_outline, size: 14, color: Color(0xFF9E9EA6))),
+          if (isComp) const Padding(padding: EdgeInsets.only(left: 4), child: Icon(Icons.extension_outlined, size: 14, color: kText2)),
+          if (locked) const Padding(padding: EdgeInsets.only(left: 4), child: Icon(Icons.lock_outline, size: 14, color: kText2)),
         ],
       ),
       subtitle: Text(

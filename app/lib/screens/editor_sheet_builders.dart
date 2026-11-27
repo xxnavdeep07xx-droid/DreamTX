@@ -745,11 +745,12 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                   controller: widget.field,
                   minLines: 1,
                   maxLines: 4,
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    hintText: 'Add a comment',
-                    border: OutlineInputBorder(),
-                  ),
+                  style: const TextStyle(color: kText, fontSize: 14),
+                  cursorColor: kPurple,
+                  // The studio's field chrome (black fill, hairline border,
+                  // purple focus ring) instead of the seeded default — every
+                  // other input on every other sheet already wears it.
+                  decoration: darkInput(hint: 'Add a comment'),
                 ),
               ),
               IconButton(

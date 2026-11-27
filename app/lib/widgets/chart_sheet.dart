@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../core/chart_math.dart';
+import '../theme.dart';
 
 /// Chart data editor (object actions → Edit chart): title, style, and the
 /// rows (label + one value per series). Every series' values are editable;
@@ -132,13 +133,12 @@ class _ChartSheetState extends State<ChartSheet> {
         controller: c,
         keyboardType:
             const TextInputType.numberWithOptions(decimal: true, signed: true),
-        decoration: InputDecoration(
-          isDense: true,
-          hintText: _cols.length > 1 ? _names[s] : 'Value',
-          errorText: parseChartValue(c.text) == null && c.text.trim().isNotEmpty
-              ? 'Number'
-              : null,
-        ),
+        decoration: darkInput(hint: _cols.length > 1 ? _names[s] : 'Value')
+            .copyWith(
+                errorText:
+                    parseChartValue(c.text) == null && c.text.trim().isNotEmpty
+                        ? 'Number'
+                        : null),
         onChanged: (_) => setState(() {}),
       ),
     );
@@ -163,7 +163,9 @@ class _ChartSheetState extends State<ChartSheet> {
             TextField(
               key: const Key('chart_title'),
               controller: _title,
-              decoration: const InputDecoration(labelText: 'Title'),
+              style: const TextStyle(color: kText, fontSize: 14),
+              cursorColor: kPurple,
+              decoration: darkInput(label: 'Title'),
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 12),
@@ -218,8 +220,10 @@ class _ChartSheetState extends State<ChartSheet> {
                               child: TextField(
                                 key: Key('chart_label_$i'),
                                 controller: _labels[i],
-                                decoration: const InputDecoration(
-                                    isDense: true, hintText: 'Label'),
+                                style: const TextStyle(
+                                    color: kText, fontSize: 14),
+                                cursorColor: kPurple,
+                                decoration: darkInput(hint: 'Label'),
                                 onChanged: (_) => setState(() {}),
                               ),
                             ),

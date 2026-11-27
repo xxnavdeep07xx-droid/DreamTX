@@ -125,11 +125,16 @@ class _FloatingIslandState extends State<FloatingIsland> {
         _dy = 0;
       }),
       child: SizedBox(
-        width: 22,
+        // 40-wide hit zone (was 22 — the thinnest control in the app) with
+        // the 18px glyph centered: the long-press-to-lift gesture needs a
+        // landable target, and 22dp wide asked too much of a fingertip.
+        width: 40,
         height: 48,
-        child: Icon(Icons.drag_indicator,
-            size: 18,
-            color: _lifted ? const Color(0xFFFFFFFF) : const Color(0xFF6B6B74)),
+        child: Center(
+          child: Icon(Icons.drag_indicator,
+              size: 18,
+              color: _lifted ? const Color(0xFFFFFFFF) : kText3),
+        ),
       ),
     );
 

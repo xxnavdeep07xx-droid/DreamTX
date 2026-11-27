@@ -613,7 +613,7 @@ class _LoadErrorCard extends StatelessWidget {
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 11.5, color: kText3),
+                style: const TextStyle(fontSize: 11.5, color: kText2),
               ),
               const SizedBox(height: 20),
               _GradientButton(

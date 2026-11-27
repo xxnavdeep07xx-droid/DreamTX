@@ -40,21 +40,25 @@ class _TextQuickTools extends StatelessWidget {
           children: [
             _PanelIconToggle(
               icon: Icons.format_bold,
+              label: 'Bold',
               active: doc.isFlagActive(a, b, 'bold'),
               onTap: () => actions.toggleFlag('bold'),
             ),
             _PanelIconToggle(
               icon: Icons.format_italic,
+              label: 'Italic',
               active: doc.isFlagActive(a, b, 'italic'),
               onTap: () => actions.toggleFlag('italic'),
             ),
             _PanelIconToggle(
               icon: Icons.format_underline,
+              label: 'Underline',
               active: doc.isFlagActive(a, b, 'underline'),
               onTap: () => actions.toggleFlag('underline'),
             ),
             _PanelIconToggle(
               icon: Icons.format_strikethrough,
+              label: 'Strikethrough',
               active: doc.isFlagActive(a, b, 'strike'),
               onTap: () => actions.toggleFlag('strike'),
             ),
@@ -64,32 +68,38 @@ class _TextQuickTools extends StatelessWidget {
           children: [
             _PanelIconToggle(
               icon: Icons.format_align_left,
+              label: 'Align left',
               active: (para?.align ?? 'left') == 'left',
               onTap: () => actions.setAlign('left'),
             ),
             _PanelIconToggle(
               icon: Icons.format_align_center,
+              label: 'Align center',
               active: (para?.align ?? 'left') == 'center',
               onTap: () => actions.setAlign('center'),
             ),
             _PanelIconToggle(
               icon: Icons.format_align_right,
+              label: 'Align right',
               active: (para?.align ?? 'left') == 'right',
               onTap: () => actions.setAlign('right'),
             ),
             _PanelIconToggle(
               icon: Icons.format_align_justify,
+              label: 'Justify',
               active: (para?.align ?? 'left') == 'justify',
               onTap: () => actions.setAlign('justify'),
             ),
             const Spacer(),
             _PanelIconToggle(
               icon: Icons.format_list_bulleted,
+              label: 'Bullet list',
               active: (para?.list ?? 'none') == 'bullet',
               onTap: () => actions.toggleList('bullet'),
             ),
             _PanelIconToggle(
               icon: Icons.format_list_numbered,
+              label: 'Numbered list',
               active: (para?.list ?? 'none') == 'number',
               onTap: () => actions.toggleList('number'),
             ),
@@ -208,6 +218,7 @@ class _TextCharacterTools extends StatelessWidget {
             _PanelIconToggle(
               key: const ValueKey('panel_font_minus'),
               icon: Icons.remove,
+              label: 'Smaller text',
               onTap: () => actions.setFontSize(
                   (_fontSize - 4).clamp(8.0, 96.0).toDouble()),
             ),
@@ -224,6 +235,7 @@ class _TextCharacterTools extends StatelessWidget {
             _PanelIconToggle(
               key: const ValueKey('panel_font_plus'),
               icon: Icons.add,
+              label: 'Larger text',
               onTap: () => actions.setFontSize(
                   (_fontSize + 4).clamp(8.0, 96.0).toDouble()),
             ),
@@ -234,16 +246,19 @@ class _TextCharacterTools extends StatelessWidget {
           children: [
             _PanelIconToggle(
               icon: Icons.format_strikethrough,
+              label: 'Strikethrough',
               active: doc.isFlagActive(a, b, 'strike'),
               onTap: () => actions.toggleFlag('strike'),
             ),
             _PanelIconToggle(
               icon: Icons.subscript,
+              label: 'Subscript',
               active: doc.isFlagActive(a, b, 'subscript'),
               onTap: () => actions.toggleFlag('subscript'),
             ),
             _PanelIconToggle(
               icon: Icons.superscript,
+              label: 'Superscript',
               active: doc.isFlagActive(a, b, 'superscript'),
               onTap: () => actions.toggleFlag('superscript'),
             ),
@@ -288,16 +303,19 @@ class _TextParaTools extends StatelessWidget {
           children: [
             _PanelIconToggle(
               icon: Icons.vertical_align_top,
+              label: 'Align top',
               active: doc.valign == 'top',
               onTap: () => actions.setValign('top'),
             ),
             _PanelIconToggle(
               icon: Icons.vertical_align_center,
+              label: 'Align middle',
               active: doc.valign == 'middle',
               onTap: () => actions.setValign('middle'),
             ),
             _PanelIconToggle(
               icon: Icons.vertical_align_bottom,
+              label: 'Align bottom',
               active: doc.valign == 'bottom',
               onTap: () => actions.setValign('bottom'),
             ),
@@ -324,6 +342,7 @@ class _TextParaTools extends StatelessWidget {
           children: [
             _PanelIconToggle(
               icon: Icons.format_indent_decrease,
+              label: 'Decrease indent',
               onTap: () => actions.indentBy(-1),
             ),
             SizedBox(
@@ -338,6 +357,7 @@ class _TextParaTools extends StatelessWidget {
             ),
             _PanelIconToggle(
               icon: Icons.format_indent_increase,
+              label: 'Increase indent',
               onTap: () => actions.indentBy(1),
             ),
           ],

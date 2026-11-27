@@ -76,10 +76,11 @@ class _FurnitureSheetState extends State<FurnitureSheet> {
           TextField(
             key: const ValueKey('furniture_footer'),
             controller: _footer,
-            style: const TextStyle(color: kText),
-            decoration: const InputDecoration(
-              labelText: 'Footer text',
-              hintText: 'Leave empty for no footer',
+            style: const TextStyle(color: kText, fontSize: 14),
+            cursorColor: kPurple,
+            decoration: darkInput(
+              label: 'Footer text',
+              hint: 'Leave empty for no footer',
             ),
             onSubmitted: (_) => _commitFooter(),
           ),

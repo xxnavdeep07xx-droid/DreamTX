@@ -121,7 +121,7 @@ class _EditorNavBar extends StatelessWidget {
                         height: 34,
                         child: DecoratedBox(
                           decoration: BoxDecoration(
-                            color: const Color(0x1FFFFFFF),
+                            color: kActiveWash,
                             borderRadius: BorderRadius.circular(17),
                           ),
                         ),
@@ -157,7 +157,7 @@ class _EditorNavBar extends StatelessWidget {
                     gradient: LinearGradient(
                       begin: Alignment.centerLeft,
                       end: Alignment.centerRight,
-                      colors: [kSurface, Color(0x00141417)],
+                      colors: [kSurface, Colors.transparent],
                     ),
                   ),
                 ),
@@ -174,7 +174,7 @@ class _EditorNavBar extends StatelessWidget {
                     gradient: LinearGradient(
                       begin: Alignment.centerRight,
                       end: Alignment.centerLeft,
-                      colors: [kSurface, Color(0x00141417)],
+                      colors: [kSurface, Colors.transparent],
                     ),
                   ),
                 ),
@@ -260,4 +260,4 @@ const List<(String, String)> _designFamilies = [
   ('pastel', 'Pastel'),
 ];
 
-const TextStyle _rowHint = TextStyle(fontSize: 10.5, color: kText3);
+const TextStyle _rowHint = TextStyle(fontSize: 10.5, color: kText2);

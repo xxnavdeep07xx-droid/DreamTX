@@ -246,7 +246,10 @@ class _InsertSheetState extends State<InsertSheet> {
         children: [
           for (var r = 0; r * 4 < _shapePicks.length; r++)
             Padding(
-              padding: EdgeInsets.only(bottom: r * 4 + 3 < _shapePicks.length ? 10 : 0),
+              // Padding only while another row FOLLOWS — the off-by-one test
+              // (r*4+3) treated the last full row as having a successor and
+              // left a phantom gap under the grid.
+              padding: EdgeInsets.only(bottom: r * 4 + 4 < _shapePicks.length ? 10 : 0),
               child: Row(
                 children: [
                   for (var c = 0; c < 4; c++)
